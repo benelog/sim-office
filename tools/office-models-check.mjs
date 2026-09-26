@@ -5,6 +5,8 @@
 //   node tools/office-models-check.mjs --names    # also print the node names of each pack
 //   node tools/office-models-check.mjs city food  # only these
 //   node tools/office-models-check.mjs --sizes furniture   # bounding box of each piece: size [w h d] and min corner (glTF Y-up)
+//   node tools/office-models-check.mjs --box cars homeware  # the BOX lines for office/zones/index.js ([minx, maxx, minz, maxz, miny, maxy] at scale 1;
+//                                                          # trees are made symmetric so their trunk stays at `at`, plants keep their roots under the floor)
 //
 // Fails (exit 1) when a texture is not inside the .glb (an image with a uri), a top-level node name repeats,
 // a piece is not at the origin, or a file is too big.
@@ -14,13 +16,15 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = path.join(ROOT, 'office', 'models');
-const COUNTS = { city: 48, roads: 25, cars: 11, furniture: 140, food: 78, extras: 13, nature: 71 };   // top-level nodes per pack
-const UNTEXTURED = ['furniture', 'nature'];       // colour materials only
+const COUNTS = { city: 48, roads: 25, cars: 7, furniture: 140, food: 78, extras: 13, nature: 49, park: 16, homeware: 19, buildings: 9, wild: 33 };   // top-level nodes per pack
+const UNTEXTURED = ['furniture', 'park', 'cars', 'homeware', 'buildings', 'wild'];       // colour materials only
 const LIMIT = 3 * 1024 * 1024;               // base64 bytes
+const LIMITS = { nature: 4 * 1024 * 1024 };  // the textured trees
 
 const args = process.argv.slice(2);
 const names = args.includes('--names');
 const sizes = args.includes('--sizes');
+const boxes = args.includes('--box');
 const only = args.filter(a => !a.startsWith('--'));
 
 function readPack(file) {
@@ -80,7 +84,7 @@ for (const f of files) {
   if (p.key !== pack) problems.push(`key '${p.key}' is not the file name`);
   if (images.some(im => im.uri || im.bufferView === undefined)) problems.push('image not embedded (uri)');
   if (!UNTEXTURED.includes(pack) && !images.length) problems.push('no texture');
-  if (p.b64 > LIMIT) problems.push(`${Math.round(p.b64 / 1024)} KB over the limit`);
+  if (p.b64 > (LIMITS[pack] || LIMIT)) problems.push(`${Math.round(p.b64 / 1024)} KB over the limit`);
   const seen = new Set(), dup = new Set();
   for (const n of all) (seen.has(n) ? dup : seen).add(n);
   if (dup.size) problems.push(`repeated node names ${[...dup].join(' ')}`);
@@ -96,6 +100,17 @@ for (const f of files) {
   if (sizes) for (const i of j.scenes[j.scene || 0].nodes) {
     const b = bounds(j, i);
     console.log(`  ${nodes[i].name.padEnd(28)} size [${b.max.map((v, k) => r2(v - b.min[k])).join(', ')}]  min [${b.min.map(r2).join(', ')}]`);
+  }
+  if (boxes) {
+    const lines = [];
+    for (const i of j.scenes[j.scene || 0].nodes) {
+      const b = bounds(j, i), n = nodes[i].name, plant = /^(nature|wild)$/.test(pack);
+      let [x0, x1, z0, z1, y0, y1] = [b.min[0], b.max[0], b.min[2], b.max[2], b.min[1], b.max[1]];
+      if (plant && /^tree/.test(n)) { const rx = Math.max(-x0, x1), rz = Math.max(-z0, z1); x0 = -rx; x1 = rx; z0 = -rz; z1 = rz; }
+      if (plant) y0 = Math.max(y0, 0);
+      lines.push(`${/^[a-z][a-z0-9]*$/i.test(n) ? n : `'${n}'`}:[${[x0, x1, z0, z1, y0, y1].map(r2).join(',')}]`);
+    }
+    console.log(`    ${pack}: {\n      ${lines.join(', ').replace(/(.{100,}?), /g, '$1,\n      ')}\n    },`);
   }
   if (problems.length) failed++;
 }

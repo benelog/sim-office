@@ -71,7 +71,7 @@
     K.prop('city', 'building-skyscraper-a', 10.0, -2.0, 270), K.prop('city', 'low-detail-building-wide-a', -10.0, -1.0, 90),
     K.prop('city', 'building-g', 2.0, -9.5, 0), K.prop('city', 'low-detail-building-c', -5.0, -9.5, 0),
     K.prop('roads', 'light-square', -2.0, 5.0, 0), K.prop('roads', 'light-square', 4.0, 5.0, 0),
-    K.prop('city', 'tree-small', 1.0, 4.9, 0), K.prop('cars', 'sedan-sports', 3.0, 6.4, 90), K.prop('cars', 'police', -4.5, 8.6, 270)
+    K.prop('city', 'tree-small', 1.0, 4.9, 0), K.prop('cars', 'sports-car', 3.0, 6.4, 90), K.prop('cars', 'police', -4.5, 8.6, 270)
   ]);
 
   SO_ZONES.client = {

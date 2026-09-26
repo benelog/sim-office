@@ -34,7 +34,7 @@
   const PAYDAYS = listOf(CFG.payday_days).map(Number);
   const RENT_DAY = +CFG.rent_day || 21;
   const WALK = 1.25, RUN = 2.9, TURN = 2.5, PLAYER_R = 0.2, NPC_R = 0.24, TALK_R = 1.45, PLACE_R = 1.35;
-  const PACK_SCALE = { city: 3, roads: 3, cars: 0.6, furniture: 1, food: 0.6, extras: 1, nature: 2 };
+  const PACK_SCALE = { city: 3, roads: 3, cars: 0.5, furniture: 1, food: 0.6, extras: 1, nature: 0.4, park: 2, homeware: 0.4, buildings: 1, wild: 1 };
   // the player's choices (office/models/<id>.js, tools/office-characters.py): people the cast does not wear
   const CHARACTER_LABELS = {
     'man-casual-3': 'Blazer ♂', 'man-hoodie-2': 'Hoodie ♂', 'man-suit-2': 'Suit ♂', 'man-adventurer': 'Jacket ♂',
@@ -258,6 +258,10 @@
       color: m.color ? m.color.clone() : new T.Color(0xffffff), map: m.map || null,
       transparent: !!m.transparent, opacity: m.opacity == null ? 1 : m.opacity, alphaTest: m.alphaTest || 0, side: m.side, vertexColors: !!m.vertexColors
     });
+    if (m.flatShading) {          // a mesh without normals (the Quaternius colour packs): the loader asks for flat shading, which
+      t.defines = Object.assign({}, t.defines, { FLAT_SHADED: '' });     // the toon material has no switch for; its shader has the define
+      t.customProgramCacheKey = () => 'flat';
+    }
     if (m.emissive && m.emissive.getHex() && !m.emissiveMap) t.emissive = m.emissive.clone();
     t.name = m.name;
     toonCache.set(m, t);
@@ -664,7 +668,9 @@
     if (Array.isArray(p.solid)) return [p.solid[0], 0.8 * s, p.solid[1]];
     if (p.pack === 'city') return [0.9 * s, 1.4 * s, 0.9 * s];
     if (p.pack === 'roads') return [0.25 * s, 0.5 * s, 0.25 * s];
-    if (p.pack === 'cars') return [1.1 * s, 1 * s, 2.3 * s];
+    if (p.pack === 'cars') return [1.8 * s, 1.2 * s, 4 * s];
+    if (p.pack === 'buildings') return [4 * s, 5 * s, 3 * s];
+    if (p.pack === 'homeware') return [1.5 * s, 1.5 * s, 1 * s];
     if (p.pack === 'food') return [0.25 * s, 0.25 * s, 0.25 * s];
     return [0.5 * s, 0.6 * s, 0.5 * s];
   }
@@ -2312,7 +2318,7 @@
       }
     });
     // ----- props: water and ground first, then buildings and furniture, then the small things
-    const order = (p) => p.pack === 'box' && (p.size || [1, 1, 1])[1] <= 0.03 ? 0 : /^(building|wall)/.test(p.node || '') || p.pack === 'box' ? 1 : p.pack === 'furniture' || p.pack === 'extras' ? 2 : 3;
+    const order = (p) => p.pack === 'box' && (p.size || [1, 1, 1])[1] <= 0.03 ? 0 : /^(building|house|wall)/.test(p.node || '') || p.pack === 'box' ? 1 : p.pack === 'furniture' || p.pack === 'homeware' || p.pack === 'extras' ? 2 : 3;
     props.slice().sort((a, b) => order(a) - order(b)).forEach(p => {
       if (!p || !p.at) return;
       const node = p.node || '', r = footprint(p);
@@ -2323,21 +2329,21 @@
         else rect(r, p.color || MAPC.box, 'rgba(0,0,0,0.18)');
         return;
       }
-      if (p.pack === 'city') {
+      if (p.pack === 'city' || p.pack === 'buildings') {
         if (/^building-skyscraper/.test(node)) rect(r, MAPC.tower, MAPC.towerEdge, 1.2);
-        else if (/^(building|low-detail)/.test(node)) { const key = KEY_BUILDINGS[p.id]; rect(r, key ? MAPC[key] : MAPC.building, MAPC.buildingEdge, 1.2); }
+        else if (/^(building|house|low-detail)/.test(node)) { const key = KEY_BUILDINGS[p.id]; rect(r, key ? MAPC[key] : MAPC.building, MAPC.buildingEdge, 1.2); }
         else if (/^tree/.test(node)) disc(p.at[0], p.at[1], Math.max(3, 0.55 * s), MAPC.tree, MAPC.treeEdge);
         else if (/^fence/.test(node)) rect(r, MAPC.fence);
         else if (/^planter/.test(node)) rect(r, MAPC.planter);
         else if (/^detail-(parasol|awning|overhang)/.test(node)) rect(r, 'rgba(255,255,255,0.35)');
         return;
       }
-      if (p.pack === 'nature') {
-        const sc = (PACK_SCALE.nature || 2) * (p.scale || 1);
-        if (/^tree/.test(node)) disc(p.at[0], p.at[1], Math.max(3, 0.32 * sc * s), /fall/.test(node) ? '#c98a3e' : /dark|pine/.test(node) ? '#3f7a3c' : MAPC.tree, MAPC.treeEdge);
-        else if (/^plant|^grass/.test(node)) disc(p.at[0], p.at[1], Math.max(1.5, 0.16 * sc * s), MAPC.bush);
-        else if (/^flower/.test(node)) disc(p.at[0], p.at[1], 1.6, MAPC.flower[(node.match(/red|yellow|purple/) || ['red'])[0]]);
-        else if (/^(rock|stone)/.test(node)) rect(r, MAPC.rock, MAPC.rockEdge);
+      if (p.pack === 'nature' || p.pack === 'park' || p.pack === 'wild') {
+        const sc = (PACK_SCALE[p.pack] || 1) * (p.scale || 1);
+        if (/^tree/.test(node)) disc(p.at[0], p.at[1], Math.max(3, (p.pack === 'nature' ? 1.6 : 0.32) * sc * s), /fall|autumn|twisted/.test(node) ? '#c98a3e' : /dark|pine|dead/.test(node) ? '#3f7a3c' : MAPC.tree, MAPC.treeEdge);
+        else if (/^plant|^grass|^bush|^fern|^clover/.test(node)) disc(p.at[0], p.at[1], Math.max(1.5, (p.pack === 'nature' ? 0.8 : 0.16) * sc * s), MAPC.bush);
+        else if (/^flower|^petal/.test(node)) disc(p.at[0], p.at[1], 1.6, MAPC.flower[(node.match(/red|yellow|purple/) || [/-4/.test(node) ? 'yellow' : 'red'])[0]]);
+        else if (/^(rock|stone|pebble)/.test(node)) rect(r, MAPC.rock, MAPC.rockEdge);
         else if (/^statue/.test(node)) { rect(r, '#e9e4d8', MAPC.rockEdge); }
         else if (/^fence/.test(node)) rect(r, MAPC.fence);
         else if (/^(log|stump|canoe|bridge|sign|pot)/.test(node)) rect(r, MAPC.bench);

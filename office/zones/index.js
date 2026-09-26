@@ -22,8 +22,8 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
 
 (function () {
   var ORIGIN = 'origin';
-  var SCALE = { furniture: 1, city: 3, roads: 3, cars: 0.6, food: 0.6, extras: 1, nature: 2 };
-  // Bounding box of each Kenney model at scale 1: [minx, maxx, minz, maxz, miny, maxy].
+  var SCALE = { furniture: 1, city: 3, roads: 3, cars: 0.5, food: 0.6, extras: 1, nature: 0.4, park: 2, homeware: 0.4, buildings: 1, wild: 1 };
+  // Bounding box of each model at scale 1: [minx, maxx, minz, maxz, miny, maxy] (Quaternius packs: node tools/office-models-check.mjs --box <pack>).
   var BOX = {
     furniture: {
       bathroomCabinet:[0.2,0.43,-0.21,-0.08,0,0.39], bathroomCabinetDrawer:[0,0.43,-0.45,-0.13,0.058,0.53],
@@ -117,43 +117,70 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
       'low-detail-building-wide-a':[-0.5,0.5,-0.25,0.25,0,1.1], 'low-detail-building-wide-b':[-0.5,0.5,-0.25,0.25,0,1.15]
     },
     // Nature Kit (trees, bushes, flowers, rocks, paths); all centred, with a 0.05 base under the ground (prop() lifts them)
+    // Kenney Nature Kit odds and ends (pack 'park'): signs, lilies, logs, pots, statues; the plants are Quaternius now
+    park: {
+      sign:[-0.15,0.15,-0.05,0.02,-0.05,0.36], lily_large:[-0.14,0.13,-0.16,0.15,-0.05,0.05], lily_small:[-0.09,0.1,-0.11,0.11,-0.05,-0.01],
+      log:[-0.11,0.12,-0.35,0.36,-0.05,0.12], log_large:[-0.5,0.5,-0.25,0.3,-0.05,0.37], stump_round:[-0.16,0.16,-0.19,0.18,-0.05,0.16],
+      stump_old:[-0.16,0.2,-0.19,0.18,-0.05,0.22], pot_large:[-0.28,0.28,-0.24,0.25,-0.05,0.15], pot_small:[-0.16,0.16,-0.14,0.14,-0.05,0.22],
+      canoe:[-0.15,0.15,-0.57,0.58,-0.05,0.13], statue_column:[-0.15,0.15,-0.15,0.15,-0.05,0.95], statue_obelisk:[-0.15,0.16,-0.15,0.16,-0.05,0.83],
+      statue_block:[-0.2,0.2,-0.2,0.2,-0.05,0.35], bridge_wood:[-0.52,0.52,-0.52,0.52,-0.05,0.35], fence_simple:[-0.5,0.5,-0.5,-0.43,-0.05,0.3],
+      fence_gate:[-0.5,0.5,-0.5,-0.43,-0.05,0.3]
+    },
+    // Quaternius Stylized Nature MegaKit (scale 0.4): trees symmetric about the trunk, roots left under the floor
     nature: {
-      bridge_stoneRound:[-0.52,0.52,-0.52,0.52,-0.05,0.4], bridge_wood:[-0.52,0.52,-0.52,0.52,-0.05,0.35],
-      canoe:[-0.15,0.15,-0.57,0.58,-0.05,0.13], fence_gate:[-0.5,0.5,-0.5,-0.43,-0.05,0.3],
-      fence_planks:[-0.5,0.5,-0.53,-0.43,-0.05,0.3], fence_simple:[-0.5,0.5,-0.5,-0.43,-0.05,0.3],
-      fence_simpleLow:[-0.52,0.52,-0.52,-0.41,-0.05,0.15], flower_purpleA:[-0.1,0.06,-0.09,0.09,-0.05,0.19],
-      flower_purpleB:[-0.13,0.08,-0.12,0.12,-0.05,0.16], flower_redA:[-0.1,0.06,-0.09,0.09,-0.05,0.24],
-      flower_redB:[-0.13,0.08,-0.12,0.12,-0.05,0.21], flower_yellowA:[-0.1,0.06,-0.09,0.09,-0.05,0.14],
-      flower_yellowB:[-0.13,0.08,-0.12,0.12,-0.05,0.11], grass:[-0.2,0.18,-0.24,0.15,-0.05,0.2],
-      grass_large:[-0.2,0.21,-0.21,0.2,-0.05,0.2], grass_leafs:[-0.12,0.11,-0.13,0.13,-0.05,0.09],
-      lily_large:[-0.14,0.13,-0.16,0.15,-0.05,0.05], lily_small:[-0.09,0.1,-0.11,0.11,-0.05,-0.01],
-      log:[-0.11,0.12,-0.35,0.36,-0.05,0.12], log_large:[-0.5,0.5,-0.25,0.3,-0.05,0.37],
-      mushroom_red:[-0.09,0.08,-0.1,0.1,-0.05,0.15], mushroom_tanGroup:[-0.14,0.13,-0.11,0.14,-0.05,0.2],
-      path_stone:[-0.5,0.5,-0.3,0.28,-0.05,0], path_stoneCircle:[-0.47,0.46,-0.44,0.44,-0.05,0],
-      path_stoneCorner:[-0.47,0.27,-0.3,0.48,-0.05,0], path_stoneEnd:[-0.12,0.5,-0.29,0.28,-0.05,0],
-      path_wood:[-0.5,0.5,-0.26,0.25,-0.05,0], path_woodCorner:[-0.5,0.25,-0.25,0.5,-0.05,0],
-      path_woodEnd:[-0.11,0.5,-0.26,0.25,-0.05,0], plant_bush:[-0.2,0.2,-0.2,0.2,-0.05,0.19],
-      plant_bushDetailed:[-0.3,0.3,-0.3,0.3,-0.05,0.31], plant_bushLarge:[-0.19,0.18,-0.17,0.17,-0.05,0.19],
-      plant_bushSmall:[-0.19,0.19,-0.17,0.17,-0.05,0.16], plant_flatShort:[-0.14,0.14,-0.14,0.14,-0.05,0.19],
-      plant_flatTall:[-0.14,0.13,-0.14,0.13,-0.05,0.23], pot_large:[-0.28,0.28,-0.24,0.25,-0.05,0.15],
-      pot_small:[-0.16,0.16,-0.14,0.14,-0.05,0.22], rock_largeA:[-0.39,0.39,-0.51,0.51,-0.05,0.21],
-      rock_largeB:[-0.38,0.39,-0.51,0.51,-0.05,0.38], rock_smallA:[-0.18,0.18,-0.18,0.18,-0.05,0.14],
-      rock_smallB:[-0.18,0.18,-0.18,0.18,-0.05,0.13], rock_smallC:[-0.18,0.18,-0.18,0.18,-0.05,0.07],
-      rock_tallA:[-0.49,0.49,-0.34,0.34,-0.05,0.95], sign:[-0.15,0.15,-0.05,0.02,-0.05,0.36],
-      statue_block:[-0.2,0.2,-0.2,0.2,-0.05,0.35], statue_column:[-0.15,0.15,-0.15,0.15,-0.05,0.95],
-      statue_obelisk:[-0.15,0.16,-0.15,0.16,-0.05,0.83], stone_largeA:[-0.39,0.39,-0.51,0.51,-0.05,0.21],
-      stone_smallA:[-0.18,0.18,-0.18,0.18,-0.05,0.14], stump_old:[-0.16,0.2,-0.19,0.18,-0.05,0.22],
-      stump_round:[-0.16,0.16,-0.19,0.18,-0.05,0.16], tree_cone:[-0.26,0.27,-0.26,0.27,-0.05,1.38],
-      tree_default:[-0.38,0.38,-0.33,0.32,-0.05,1.66], tree_default_fall:[-0.38,0.38,-0.33,0.32,-0.05,1.66],
-      tree_detailed:[-0.43,0.42,-0.37,0.39,-0.05,1.28], tree_detailed_dark:[-0.43,0.42,-0.37,0.39,-0.05,1.28],
-      tree_fat:[-0.38,0.38,-0.33,0.32,-0.05,1.1], tree_fat_fall:[-0.38,0.38,-0.33,0.32,-0.05,1.1],
-      tree_oak:[-0.32,0.32,-0.37,0.37,-0.05,1.18], tree_oak_fall:[-0.32,0.32,-0.37,0.37,-0.05,1.18],
-      tree_pineDefaultA:[-0.27,0.26,-0.27,0.26,-0.05,1.5], tree_pineRoundA:[-0.31,0.31,-0.36,0.35,-0.05,1.32],
-      tree_pineSmallA:[-0.25,0.25,-0.25,0.25,-0.05,0.92], tree_pineTallA:[-0.18,0.21,-0.19,0.2,-0.05,1.48],
-      tree_plateau:[-0.33,0.28,-0.33,0.32,-0.05,1.2], tree_simple:[-0.18,0.17,-0.2,0.21,-0.05,1.47],
-      tree_small:[-0.18,0.17,-0.2,0.21,-0.05,1.06], tree_small_fall:[-0.18,0.17,-0.2,0.21,-0.05,1.06],
-      tree_tall:[-0.2,0.2,-0.23,0.23,-0.05,1.64], tree_thin:[-0.26,0.42,-0.25,0.37,-0.05,1.44],
-      tree_thin_fall:[-0.26,0.42,-0.25,0.37,-0.05,1.44]
+      bush:[-0.92,0.99,-0.97,0.99,0,1.35], 'bush-flowers':[-0.92,0.99,-0.97,0.99,0,1.35], clover:[-0.5,0.29,-0.4,0.36,0,1.13],
+      fern:[-1.38,1.45,-1.28,1.37,0,0.76], 'flower-3':[-0.48,0.43,-0.52,0.36,0,2.05], 'flower-3-group':[-0.61,0.87,-0.8,0.79,0,2.02],
+      'flower-4':[-0.51,0.57,-0.4,0.37,0,2.39], 'flower-4-group':[-0.93,0.85,-0.64,0.73,0,2.43], 'grass-short':[-0.36,0.28,-0.48,0.26,0,1.31],
+      'grass-tall':[-0.4,0.49,-0.48,0.51,0,1.84], 'grass-wispy-short':[-0.73,0.59,-0.58,0.63,0,0.99], 'grass-wispy-tall':[-0.74,0.8,-0.82,0.78,0,1.64],
+      mushroom:[-0.33,0.23,-0.45,0.33,0,0.45], 'mushroom-laetiporus':[-0.65,0.72,-0.33,0.77,0,0.61], 'path-round-small-1':[-0.54,0.52,-0.7,0.77,0,0.14],
+      'path-round-small-2':[-0.56,0.58,-0.76,0.6,0,0.12], 'path-round-small-3':[-0.59,0.61,-0.69,0.6,0,0.13],
+      'path-round-thin':[-0.7,0.76,-1.09,1,0,0.13], 'path-round-wide':[-1.05,1.08,-1.13,1.01,0,0.14], 'path-square-small-1':[-0.52,0.5,-0.48,0.5,0,0.17],
+      'path-square-small-2':[-0.5,0.5,-0.5,0.51,0,0.14], 'path-square-small-3':[-0.41,0.44,-0.56,0.53,0,0.2],
+      'path-square-thin':[-0.77,0.79,-1,0.99,0,0.2], 'path-square-wide':[-1.02,1.03,-1,0.99,0,0.2], 'pebble-round-1':[-0.22,0.28,-0.16,0.22,0,0.09],
+      'pebble-round-2':[-0.22,0.23,-0.22,0.19,0,0.1], 'pebble-round-3':[-0.23,0.22,-0.22,0.27,0,0.1], 'pebble-square-1':[-0.23,0.2,-0.2,0.24,0,0.22],
+      'pebble-square-2':[-0.2,0.19,-0.12,0.16,0,0.14], 'pebble-square-3':[-0.19,0.2,-0.17,0.15,0,0.16], 'petal-1':[-0.26,0.2,-0.23,0.23,0,0.24],
+      'petal-2':[-0.32,0.35,-0.33,0.3,0,0.24], 'petal-3':[-0.31,0.3,-0.27,0.33,0,0.19], 'plant-1':[-0.71,0.56,-0.76,0.62,0,0.98],
+      'plant-1-big':[-0.87,0.94,-1.04,0.92,0,2.31], 'plant-7':[-0.45,0.6,-0.46,0.5,0.08,0.33], 'rock-1':[-1.73,1.5,-1.15,1.84,0,1.99],
+      'rock-2':[-1.71,1.34,-1.16,1.33,0,1.85], 'rock-3':[-1.82,1.6,-0.89,2.6,0,1.99], 'tree-common-1':[-2.19,2.19,-2.35,2.35,0,7.02],
+      'tree-common-2':[-2.24,2.24,-2.42,2.42,0,7.4], 'tree-common-3':[-2.08,2.08,-2.18,2.18,0,9.18], 'tree-common-5':[-1.91,1.91,-2.16,2.16,0,6.76],
+      'tree-dead-1':[-3.52,3.52,-2.9,2.9,0,9.16], 'tree-pine-1':[-2.5,2.5,-2.48,2.48,0,7.08], 'tree-pine-2':[-2.89,2.89,-2.69,2.69,0,7.14],
+      'tree-pine-3':[-2.11,2.11,-2.29,2.29,0,7.16], 'tree-pine-4':[-2.93,2.93,-2.95,2.95,0,10], 'tree-twisted-1':[-11.34,11.34,-6.73,6.73,0,16.52]
+    },
+    // Quaternius Cars Pack (scale 0.5), centred, front +z
+    cars: {
+      hatchback:[-0.82,0.82,-1.65,1.66,-0.03,1.12], police:[-0.89,0.89,-1.87,1.86,-0.02,1.22], sedan:[-0.9,0.9,-2.11,2.11,0.01,1.18],
+      'sports-car':[-0.9,0.9,-1.98,1.98,-0.01,1.15], 'sports-car-2':[-0.94,0.94,-2.03,1.9,-0.02,1.19], suv:[-1.06,1.06,-2.1,2.1,-0.02,1.51],
+      taxi:[-0.9,0.9,-2.01,2.21,-0.01,1.3]
+    },
+    // Quaternius Ultimate Furniture (scale 0.4), centred on the footprint
+    homeware: {
+      armchair:[-0.82,0.82,-0.72,0.72,0,1.36], 'bed-double':[-1.41,1.41,-2.13,2.13,0,1.56], 'bed-twin':[-1.03,1.03,-2.13,2.13,0,1.56],
+      bookcase:[-0.92,0.92,-0.33,0.33,0,3.37], chair:[-0.25,0.25,-0.32,0.32,0,1.07], closet:[-0.78,0.78,-0.44,0.44,0,2.98],
+      'closet-short':[-0.78,0.78,-0.45,0.45,0,2.27], desk:[-0.91,0.91,-0.42,0.42,0,0.92], 'door-1':[-0.87,0.87,-0.16,0.16,0,3.14],
+      'door-2':[-0.8,0.8,-0.16,0.16,0,3.08], 'door-3':[-0.87,0.87,-0.16,0.16,0,3.14], 'night-stand':[-0.29,0.29,-0.25,0.25,0,0.51],
+      'office-chair':[-0.36,0.36,-0.4,0.4,0,1.13], 'sofa-1':[-2.12,2.12,-0.89,0.89,0,1.51], 'sofa-2':[-2,2,-0.77,0.77,0,1.45],
+      'sofa-corner':[-2,2,-1.4,1.4,0,1.45], stool:[-0.25,0.25,-0.27,0.27,0,0.58], 'table-1':[-0.71,0.71,-1.39,1.39,0,0.82],
+      'table-2':[-0.71,0.71,-1.39,1.39,0,0.82]
+    },
+    // Quaternius Buildings Pack (scale 1), centred, front +z
+    buildings: {
+      'building-1-large':[-4,4,-1.37,1.37,0,4.67], 'building-1-small':[-1.87,1.87,-1.37,1.37,0,4.66], 'building-2-large':[-2.86,2.86,-1.11,1.11,0,5.92],
+      'building-2-small':[-1.79,1.79,-1.24,1.24,0,4.97], 'building-3-big':[-2.35,2.35,-2.2,2.2,0,5.68], 'building-3-small':[-1.53,1.53,-2.2,2.2,0,5.68],
+      'building-4':[-2.32,2.32,-1.93,1.93,0,5.49], 'house-1':[-1.28,1.28,-1.93,1.93,0,3.18], 'house-2':[-1.82,1.82,-1.54,1.54,0,2.93]
+    },
+    // Quaternius Ultimate Nature Pack (scale 1): the country beyond town (dress scatters it), trees symmetric
+    wild: {
+      'bush-1':[-0.66,0.66,-0.85,0.85,0,1.21], 'bush-2':[-0.67,0.67,-0.66,0.66,0,1.03], 'bush-berries':[-0.72,0.67,-0.86,0.86,0,1.24],
+      flowers:[-0.36,0.13,-0.5,0.11,0,0.82], grass:[-0.2,0.18,-0.16,0.16,0,1], 'grass-short':[-0.19,0.13,-0.26,0.18,0,0.4],
+      log:[-0.3,0.33,-1.5,1.17,0,0.75], 'plant-1':[-0.59,0.61,-0.37,0.57,0,0.48], 'plant-2':[-0.38,0.31,-0.35,0.34,0,1.77],
+      'rock-1':[-0.24,0.24,-0.25,0.22,0,0.83], 'rock-2':[-0.28,0.28,-0.29,0.28,0,0.55], 'rock-3':[-0.46,0.28,-0.29,0.51,0,0.55],
+      'rock-4':[-0.44,0.3,-0.63,0.63,0,0.51], 'rock-moss-1':[-0.18,0.3,-0.22,0.24,0,0.78], 'rock-moss-2':[-0.26,0.35,-0.36,0.29,0,0.55],
+      stump:[-0.81,0.55,-0.45,0.58,0,0.62], 'tree-autumn-1':[-0.97,0.97,-1.6,1.6,0,2.44], 'tree-autumn-2':[-0.84,0.84,-1.6,1.6,0,3.07],
+      'tree-birch-1':[-0.88,0.88,-1.91,1.91,0,3.57], 'tree-birch-2':[-0.74,0.74,-1.23,1.23,0,3.99], 'tree-birch-3':[-0.81,0.81,-1.13,1.13,0,4.02],
+      'tree-common-1':[-0.97,0.97,-1.6,1.6,0,2.44], 'tree-common-2':[-0.84,0.84,-1.6,1.6,0,3.07], 'tree-common-3':[-0.7,0.7,-0.79,0.79,0,3.38],
+      'tree-common-4':[-1.1,1.1,-1.12,1.12,0,2.67], 'tree-common-5':[-0.82,0.82,-1.41,1.41,0,2.48], 'tree-pine-1':[-1.02,1.02,-0.98,0.98,0,2.69],
+      'tree-pine-2':[-0.98,0.98,-1.02,1.02,0,3.55], 'tree-pine-3':[-1.1,1.1,-1.01,1.01,0,3.31], 'tree-pine-4':[-0.73,0.73,-0.95,0.95,0,3.34],
+      'tree-pine-5':[-0.79,0.79,-0.71,0.71,0,2.69], 'tree-willow-1':[-0.95,0.95,-1.87,1.87,0,2.83], 'tree-willow-2':[-1.08,1.08,-2.8,2.8,0,3.27]
     },
     // odds and ends from other Kenney kits (Mini Market, Mini Arcade, Factory Kit); all centred
     extras: {
@@ -164,13 +191,6 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
       'shelf-bags':[-0.4,0.4,-0.35,0.35,0,0.89], 'shelf-boxes':[-0.4,0.4,-0.35,0.35,0,0.85],
       'shopping-basket':[-0.17,0.18,-0.18,0.17,0,0.25], 'shopping-cart':[-0.15,0.15,-0.25,0.23,0,0.39],
       'ticket-machine':[-0.2,0.2,-0.16,0.24,0,0.92], 'vending-machine':[-0.25,0.25,-0.22,0.25,0,0.75]
-    },
-    cars: {
-      ambulance:[-0.75,0.75,-1.65,1.6,-0,1.8], delivery:[-0.75,0.75,-1.65,1.6,-0,1.65],
-      'hatchback-sports':[-0.65,0.65,-1.45,1.4,-0,1.1], police:[-0.75,0.75,-1.55,1.55,-0,1.3],
-      sedan:[-0.75,0.75,-1.3,1.25,-0,1.3], 'sedan-sports':[-0.65,0.65,-1.3,1.25,-0,1.1],
-      suv:[-0.75,0.75,-1.35,1.35,-0,1.3], taxi:[-0.75,0.75,-1.4,1.35,-0,1.5], truck:[-0.75,0.75,-1.5,1.45,-0,1.3],
-      van:[-0.75,0.75,-1.4,1.35,-0,1.35]
     },
     roads: {
       'construction-barrier':[-0.068,0.068,-0.112,0.112,0,0.13],
@@ -272,6 +292,7 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
   //   opts.ground: { pattern, y, strips: [{ pattern, rect, dir: 'x' | 'z' }] }   (the land around the room)
   //   opts.mountains: { side: 'n' | 's' | 'w' | 'e', from, depth, width, height, seed }   (a range beyond the town)
   //   opts.sea: { side, from, beach, width, depth }   (the sea beyond the town, a strip of sand before it)
+  //   opts.wild: { seed, rects: [[x0, z0, x1, z1], ...], avoid: [[x0, z0, x1, z1], ...], density }   (woods on the plains beyond town)
   //   opts.tower: { top, bottom, color }   (the building under a room that is not on the ground floor)
   //   opts.skyline: { kind: 'city' | 'suburb' | 'airport' | 'harbor', seed, r, y, h }
   //   opts.panels: [{ kind, wall: 'n' | 's' | 'w' | 'e', along, y, w, h, ... }] or with at: [x, z] and turn
@@ -376,6 +397,58 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
     mesh.name = 'mountains';
     return sidePlace(mesh, o.side, o.from || 36);
   }
+  // The country beyond town: trees, bushes and rocks of the 'wild' pack (Quaternius Ultimate Nature) scattered over
+  // rectangles nobody can walk to, as InstancedMesh per piece (a few draw calls for hundreds of trees). density is
+  // pieces per 100 square units (default 4); avoid keeps corridors clear (the streets running out of town).
+  var WILD = [['tree-common-1', 5], ['tree-common-2', 5], ['tree-common-3', 4], ['tree-common-4', 4], ['tree-common-5', 4],
+    ['tree-autumn-1', 2], ['tree-autumn-2', 2], ['tree-pine-1', 4], ['tree-pine-2', 4], ['tree-pine-3', 3], ['tree-pine-4', 3], ['tree-pine-5', 3],
+    ['tree-birch-1', 3], ['tree-birch-2', 2], ['tree-birch-3', 2], ['tree-willow-1', 1], ['tree-willow-2', 1],
+    ['bush-1', 6], ['bush-2', 6], ['bush-berries', 3], ['rock-1', 2], ['rock-2', 2], ['rock-3', 1], ['rock-4', 1], ['rock-moss-1', 2], ['rock-moss-2', 1],
+    ['stump', 1], ['log', 1], ['plant-1', 3], ['plant-2', 3], ['flowers', 3], ['grass', 4], ['grass-short', 4]];
+  function wild(api, keep, o) {
+    var T = api.T, g = new T.Group(), r = rng(o.seed || 5), density = o.density || 4;
+    g.name = 'dress-wild';
+    var total = 0;
+    WILD.forEach(function (k) { total += k[1]; });
+    var spots = {};
+    (o.rects || []).forEach(function (rc) {
+      var n = Math.round((rc[2] - rc[0]) * (rc[3] - rc[1]) * density / 100);
+      for (var i = 0; i < n; i++) {
+        var x = rc[0] + r() * (rc[2] - rc[0]), z = rc[1] + r() * (rc[3] - rc[1]);
+        if ((o.avoid || []).some(function (a) { return x > a[0] && x < a[2] && z > a[1] && z < a[3]; })) continue;
+        var pick = r() * total, name = WILD[0][0];
+        for (var j = 0; j < WILD.length; j++) { pick -= WILD[j][1]; if (pick <= 0) { name = WILD[j][0]; break; } }
+        (spots[name] = spots[name] || []).push([x, z, r() * Math.PI * 2, 0.85 + r() * 0.4]);
+      }
+    });
+    api.loadPack('wild').then(function () {
+      if (!api.packReady('wild')) return;
+      var m4 = new T.Matrix4(), pos = new T.Vector3(), q = new T.Quaternion(), up = new T.Vector3(0, 1, 0), sc = new T.Vector3();
+      Object.keys(spots).forEach(function (name) {
+        var node = api.packNode('wild', name), list = spots[name];
+        if (!node) return;
+        node.updateMatrixWorld(true);
+        node.traverse(function (mesh) {
+          if (!mesh.isMesh) return;
+          var im = new T.InstancedMesh(mesh.geometry, mesh.material, list.length);
+          list.forEach(function (sp, i) {
+            q.setFromAxisAngle(up, sp[2]);
+            sc.setScalar(sp[3]);
+            m4.compose(pos.set(sp[0], -0.03, sp[1]), q, sc).multiply(mesh.matrixWorld);
+            im.setMatrixAt(i, m4);
+          });
+          im.instanceMatrix.needsUpdate = true;
+          im.castShadow = true;
+          im.receiveShadow = true;
+          im.frustumCulled = false;
+          im.name = 'wild-' + name;
+          g.add(im);
+        });
+      });
+    });
+    return g;
+  }
+
   // the sea: water out to the horizon (fog takes it), a strip of sand between the grass and the water
   function sea(api, keep, o) {
     var T = api.T, W = o.width || 320, D = o.depth || 130, beach = o.beach == null ? 3 : o.beach;
@@ -913,6 +986,7 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
     // the country beyond the edge of town
     if (o.mountains) g.add(mountains(api, keep, o.mountains));
     if (o.sea) g.add(sea(api, keep, o.sea));
+    if (o.wild) g.add(wild(api, keep, o.wild));
     // the building under a room upstairs: four faces with windows
     if (o.tower) {
       var tw = o.tower, top = tw.top == null ? -0.02 : tw.top, bot = tw.bottom, hh = top - bot, m = tw.margin == null ? 0.3 : tw.margin;

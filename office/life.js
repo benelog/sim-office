@@ -4,7 +4,7 @@
    - Traffic lights (roads traffic-light): the lamp faces are found in the model by their colour in the colormap and
      covered with lamps of their own (emissive when lit). They change every 15 s: 12 s green and 3 s amber for one
      axis, then the other (a 30 s cycle); a light controls the traffic its lamps face.
-   - Cars (cars pack, 0.6): the road tiles (tiles with node road-*) make a grid of cells; a car keeps to the right
+   - Cars (cars pack, Quaternius, scale 0.5): the road tiles (tiles with node road-*) make a grid of cells; a car keeps to the right
      lane through each cell, picks a way at every junction, turns round at a dead end, rolls its wheels, slows
      and stops for people, cars and red lights in front, and pushes you out of its way (it never runs you over).
      Lanes blocked by a parked car (a solid on the lane) are never entered. Headlights and tail lights after 19:30.
@@ -16,8 +16,10 @@
   'use strict';
   const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];              // east, south, west, north (x right, z towards the viewer)
   const OPEN = { straight: [0, 2], bend: [2, 1] };               // at turn 0: road-straight runs along x, road-bend joins -x and +z
-  const LANE = 0.45, CRUISE = 2.4, TURNING = 1.4, CYCLE = 30, GREEN = 12;
-  const CARS = [['taxi', null], ['sedan', '#b9d0ff'], ['suv', '#ffe2c4'], ['van', '#cfeecf']];
+  // LANE: how far from the middle of the road a car drives (the road is 2.4 wide on a 3 x 3 tile, so a lane is 1.2 and
+  // its middle 0.6 out). CARS: the type and a tint on the paint (null: the pack's own colour).
+  const LANE = 0.6, CRUISE = 2.4, TURNING = 1.4, CYCLE = 30, GREEN = 12;
+  const CARS = [['taxi', null], ['sedan', null], ['suv', '#c9d6e6'], ['hatchback', '#f2d4b0'], ['sports-car', null], ['sports-car-2', '#c5e0c8']];
   const SEATS = /^(bench|benchCushion|chair|chairCushion|chairRounded|chairModernCushion|chairModernFrameCushion)$/;
   const rnd = (a, b) => a + Math.random() * (b - a);
   const pick = (l) => l[Math.floor(Math.random() * l.length)];
@@ -197,12 +199,20 @@
     function makeCar(type, tint, cell, din, s0) {
       const obj = api.packNode('cars', type);
       if (!obj) return null;
-      const box = (((window.SO_ZONE_KIT || {}).BOX || {}).cars || {})[type] || [-0.75, 0.75, -1.3, 1.25, 0, 1.3];
-      const k = 0.6, g = new T.Group(), wheels = [];
+      const kit = window.SO_ZONE_KIT || {};
+      const box = ((kit.BOX || {}).cars || {})[type] || [-0.9, 0.9, -2.1, 2.1, 0, 1.2];
+      const k = (kit.SCALE || {}).cars || 0.5, g = new T.Group(), wheels = [], lamps = [];
       obj.scale.setScalar(k);
       obj.traverse(o => {
         if (!o.isMesh) return;
-        if (/_body$/.test(o.name) && tint) { const m = o.material.clone(); m.color.multiply(new T.Color(tint)); o.material = mat(m); }
+        // the paint ('paint' materials) takes the tint; the head and tail light materials glow at night
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        const own = mats.map(m => {
+          if (/^paint/.test(m.name) && tint) { const c = m.clone(); c.color.multiply(new T.Color(tint)); return mat(c); }
+          if (/^(Head|Tail)lights/i.test(m.name)) { const c = m.clone(); c.emissive = new T.Color(/^Head/i.test(m.name) ? '#fff1c0' : '#ff3a2a'); c.emissiveIntensity = 0; lamps.push(c); return mat(c); }
+          return m;
+        });
+        o.material = Array.isArray(o.material) ? own : own[0];
         const w = /wheel-(front|back)/.exec(o.name);
         if (w) {
           o.rotation.order = 'YXZ';
@@ -230,7 +240,7 @@
       lights.push(beam);
       root.add(g);
       const half = (box[3] - box[2]) * k / 2;
-      const car = { type, g, wheels, lights, cell, din, dout: 0, path: null, s: s0, v: 0, half, ghost: 0, stuck: 0, steer: 0,
+      const car = { type, g, wheels, lights, lamps, cell, din, dout: 0, path: null, s: s0, v: 0, half, ghost: 0, stuck: 0, steer: 0,
         m1: { x: 0, z: 0, r: 0.5 }, m2: { x: 0, z: 0, r: 0.5 }, x: 0, z: 0, dx: 0, dz: 1 };
       car.dout = chooseExit(cell, din);
       car.path = cellPath(cell, din, car.dout);
@@ -300,6 +310,7 @@
       car.wheels.forEach(w => { w.o.rotation.x += car.v * dt / w.r; if (w.front) w.o.rotation.y = car.steer; });
       const on = night;
       car.lights.forEach(l => { l.visible = on; });
+      car.lamps.forEach(m => { m.emissiveIntensity = on ? 1.2 : 0; });
     }
     function startCars() {
       if (dead || !cells.size) return;

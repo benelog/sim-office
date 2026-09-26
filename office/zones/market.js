@@ -61,8 +61,8 @@
 
   // ----- outside: the parking lot in front (south) and Main Street beyond it, the neighbours
   add([
-    K.prop('cars', 'suv', -2.8, 7.4, 180), K.prop('cars', 'sedan', 1.1, 7.4, 180), K.prop('cars', 'van', 5.0, 7.4, 0),
-    K.prop('cars', 'hatchback-sports', -4.1, 11.2, 90),
+    K.prop('cars', 'suv', -2.8, 7.4, 180), K.prop('cars', 'sedan', 1.1, 7.4, 180), K.prop('cars', 'suv', 5.0, 7.4, 0),
+    K.prop('cars', 'hatchback', -4.1, 11.2, 90),
     K.prop('roads', 'light-square', -6.0, 6.0, 0), K.prop('roads', 'light-square', 3.2, 6.0, 0),
     K.prop('city', 'building-g', -10.2, -0.5, 0), K.prop('city', 'building-c', 10.0, -0.8, 0),
     K.prop('city', 'building-a', -5.0, 17.0, 180), K.prop('city', 'building-d', 1.0, 17.0, 180), K.prop('city', 'low-detail-building-wide-a', 7.0, 17.2, 180),

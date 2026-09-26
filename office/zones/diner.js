@@ -83,7 +83,7 @@
     c('building-d', -7.0, 13.6, 180), c('building-h', -1.5, 13.6, 180), c('building-b', 4.0, 13.6, 180), c('low-detail-building-wide-a', 9.5, 13.8, 180),
     c('low-detail-building-g', -2.5, -9.5, 0), c('low-detail-building-wide-b', 4.5, -9.8, 0),
     r('dumpster', 1.2, -5.6, 0), r('light-square', -2.5, 5.9, 0), r('light-square', 4.5, 5.9, 0),
-    car('sedan', -0.6, 7.3, 90), car('taxi', 6.6, 7.3, 90), car('hatchback-sports', -6.2, 9.7, 270),
+    car('sedan', -0.6, 7.3, 90), car('taxi', 6.6, 7.3, 90), car('hatchback', -6.2, 9.7, 270),
     c('tree-small', 1.8, 11.6, 0), c('tree-small', -4.4, 11.6, 0)
   ]);
 

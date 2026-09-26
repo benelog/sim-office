@@ -1,12 +1,12 @@
 # office/models — Sim Office 모델 팩
 
-`tools/office-models.py`(소품: Kenney CC0 키트)와 `tools/office-characters.py`(인물: Quaternius CC0)가 만드는 **생성물**입니다. 직접 고치지 않습니다.
+`tools/office-models.py`(소품: Kenney와 Quaternius의 CC0 키트)와 `tools/office-characters.py`(인물: Quaternius CC0)가 만드는 **생성물**입니다. 직접 고치지 않습니다.
 파일마다 .glb 하나를 base64로 담아 `(window.SO_MODELS = window.SO_MODELS || {})['<pack>'] = '<base64>';`로 둡니다(`file://`에서 fetch 없이 `<script>`로 읽음). 텍스처(`colormap.png`)는 .glb 안에 들어 있습니다(bufferView, 외부 `uri` 없음).
 
 ## 만들기·점검
 
 ```sh
-blender -b --python tools/office-models.py                               # 전부 (소품 팩 7개, 몇 초)
+blender -b --python tools/office-models.py                               # 전부 (소품 팩 11개, 1분쯤)
 blender -b --python tools/office-models.py -- city food                 # 이것만
 blender -b --python tools/office-models.py -- --list                     # 팩·원본 키트·노드 수
 blender -b --python tools/office-models.py -- food --keep-glb /tmp/glb   # .glb도 남김(확인용)
@@ -14,17 +14,21 @@ blender -b --python tools/office-models.py -- --copy-from /tmp/claude-1000/kenne
 node tools/office-models-check.mjs            # 크기·노드 수·텍스처 포함 검사 (문제 있으면 exit 1; 인물은 아래 office-characters-check)
 node tools/office-models-check.mjs --names cars       # 노드 이름(자식은 {…})
 node tools/office-models-check.mjs --sizes furniture  # 조각마다 크기 [w h d]와 최소 모서리(glTF Y-up, 근사)
+node tools/office-models-check.mjs --box cars homeware # office/zones/index.js에 붙여 넣을 BOX 줄
 ```
 
-- 원본: `kenney/<kit>/<이름>.glb` + `kenney/<kit>/Textures/colormap.png` + `kenney/<kit>/License.txt`. 쓰는 파일만 복사해 두었습니다.
-  kit 폴더: `city-kit-commercial`(2.1), `city-kit-suburban`(2.0), `city-kit-roads`, `car-kit`, `furniture-kit`(GLTF format 폴더의 .glb), `food-kit`, `mini-market`, `mini-arcade`, `factory-kit`(3.0), `nature-kit`(GLTF format 폴더의 .glb).
+- Kenney 원본: `kenney/<kit>/<이름>.glb` + `kenney/<kit>/Textures/colormap.png` + `kenney/<kit>/License.txt`. 쓰는 파일만 복사해 두었습니다.
+  kit 폴더: `city-kit-commercial`(2.1), `city-kit-suburban`(2.0), `city-kit-roads`, `furniture-kit`(GLTF format 폴더의 .glb), `food-kit`, `mini-market`, `mini-arcade`, `factory-kit`(3.0), `nature-kit`(GLTF format 폴더의 .glb; `park` 팩). `car-kit`은 2026-09-27에 Quaternius 자동차로 바뀌어 더 쓰지 않습니다.
   원본 zip은 `https://kenney.nl/assets/<slug>` 페이지의 `https://kenney.nl/media/pages/assets/<slug>/<hash>/kenney_<slug>.zip` 링크에서 받습니다(curl에 User-Agent 필요).
-- 빌드 스크립트 안에서도 검사합니다: 노드 이름 중복·누락, 조각이 원점에 있는지, 이미지가 포함됐는지, 크기 한도(팩 3MB, base64 기준). 하나라도 어긋나면 실패합니다.
+- Quaternius 원본(`quaternius/<kit>/`, 폴더마다 `License.txt`에 출처): `cars/*.fbx`(Cars Pack, itch.io zip의 FBX), `stylized-nature-megakit/*.gltf+.bin+.png`(무료 standard판 68개 중 49개; 노멀맵·정점색을 .gltf에서 빼고 텍스처는 512px로 줄임), `ultimate-furniture/*.glb`와 `buildings/*.glb`(Google Drive가 다운로드 한도로 막혀 [poly.pizza](https://poly.pizza)가 팩의 FBX를 변환한 glb를 받음: `RootNode` 아래 배율 100의 부품들), `ultimate-nature/*.fbx`(Ultimate Nature Pack 150개 중 33개). 빌드 스크립트의 `PACKS`가 게임 이름 → 원본 파일을 정합니다.
+  Quaternius 팩 페이지의 Drive 링크가 막히면 itch.io(`quaternius.itch.io/<slug>`: 다운로드 페이지의 csrf 토큰으로 `POST /<slug>/file/<upload_id>` → 60초짜리 서명 URL)나 poly.pizza에서 받습니다.
+- Quaternius 조각의 정규화: 부모 빈 노드를 없애고 변환을 정점에 구움, 가구·건물은 발자국 가운데·바닥 y=0으로 옮김, 자동차는 바퀴 원점을 차축에 둠, 안 쓰는 재질 슬롯 제거. 색 재질만 있는 팩(`cars`, `homeware`, `buildings`, `wild`)은 정점을 합치고 **법선 없이** 내보내 크기를 1/3로 줄입니다(three.js GLTFLoader가 법선 없는 메시에 flatShading을 켜고, 엔진의 toon 재질이 `FLAT_SHADED`로 이어받음 — 각진 저폴리 룩 그대로). 텍스처 팩(`nature`)은 줄기를 Decimate로 1/4로 줄이고 법선을 byte, UV를 16비트로 양자화합니다(`KHR_mesh_quantization`).
+- 빌드 스크립트 안에서도 검사합니다: 노드 이름 중복·누락, 조각이 원점에 있는지, 이미지가 포함됐는지, 크기 한도(팩 3MB, `nature`는 4MB, base64 기준). 하나라도 어긋나면 실패합니다.
 - 내보내기: glTF Y-up, 탄젠트 없음(원본에 있던 TANGENT를 빼서 작아짐).
 
 ## 공통 규칙
 
-- 팩의 **최상위 노드 = Kenney 파일 이름**(`building-a`, `desk`, `cup-coffee`). 모두 원점, 회전·배율 없음. 원본 파일의 원점을 그대로 둡니다(발밑 y=0).
+- 팩의 **최상위 노드 = Kenney 파일 이름**(`building-a`, `desk`, `cup-coffee`) 또는 Quaternius 조각의 게임 이름(`sedan`, `tree-pine-1`, `bed-double`; 빌드 스크립트의 표). 모두 원점, 회전·배율 없음. Kenney는 원본 파일의 원점을 그대로(발밑 y=0), Quaternius 가구·건물은 발자국 가운데, 자동차·식물은 원본 원점(줄기 밑)입니다.
   `scene.getObjectByName('<이름>')`으로 골라 `SkeletonUtils.clone`/`clone()`하면 됩니다.
 - 여러 노드로 된 조각은 원본 구조를 자식으로 둡니다. 자식 이름은 `<조각>_<원본 노드 이름>`(`sedan_body`, `desk_drawer`), 같은 이름이 겹치면 `-2`, `-3`(`cheese_wedge-2`). 원본 최상위 노드에 배율·회전이 있으면(가구 `toilet`, `kitchenCoffeeMachine` 등) 빈 노드로 한 번 감쌌습니다(`toilet` > `toilet_toilet` > `toilet_cover`). 자식 하나 없이 배율만 있던 메시(음식 대부분)는 배율을 메시에 구워 넣었습니다.
 - 재질: 텍스처 팩은 재질 하나 `colormap`(도시 팩은 `colormap`(상가)과 `colormap-suburban`(주택) 두 개). 가구는 텍스처 없이 색 재질 15개를 조각들이 공유: `wood woodDark metal metalLight metalMedium metalDark glass(알파 0.5, BLEND) carpet carpetDarker carpetWhite carpetBlue fur plant lamp _defaultMat(흰색: 벽·세면대 등)`.
@@ -117,13 +121,13 @@ road-straight road-straight-half road-crossroad road-crossroad-line road-interse
 - 도로 타일은 1×1(두께 0.02, 원점이 가운데). 예외: `road-curve` 2×2, `road-side` 1×1.31, `road-straight-half` 0.5×1.
 - 소품 높이: 가로등 0.6~0.67, 신호등 0.51, 표지판 0.48~0.49, 고속도로 표지 0.71, 전봇대 0.52.
 
-## cars — 11개, 1647 KB (car-kit)
+## cars — 7개, 371 KB (Quaternius Cars Pack; 색 재질, 법선 없음)
 
-sedan sedan-sports suv hatchback-sports taxi van delivery police truck ambulance wheel-default
+sedan(NormalCar1, 파랑) hatchback(NormalCar2, 하늘색) sports-car(SportsCar, 주황) sports-car-2(SportsCar2, 흰색) suv(SUV, 흰색) taxi(Taxi, 노랑) police(Cop, 흑백)
 
-- 차 노드 = 바퀴 달린 완성체. 자식: `<차>_body`, `<차>_wheel-front-left`, `_wheel-front-right`, `_wheel-back-left`, `_wheel-back-right`(바퀴 노드의 원점이 바퀴 중심이라 x축으로 돌리면 굴러감), 문이 있는 차는 `ambulance_door-left/right`, `delivery_door`.
-- 정면 +Z, 폭 1.3~1.5, 길이 2.55(sedan)~3.25(ambulance, delivery), 높이 1.1~1.8, 바닥 y=0.
-- `wheel-default`만은 원점이 바퀴 중심(y −0.3~0.3)입니다.
+- 차 노드 = 빈 노드, 자식 `<차>_body`, `<차>_wheel-back`(뒷바퀴 둘이 한 메시), `_wheel-front-left`, `_wheel-front-right`. 바퀴 노드의 원점이 차축(바퀴 가운데)이라 x축으로 돌리면 굴러가고 y축으로 돌리면 조향합니다(원본 NormalCar2의 오른쪽 앞바퀴 원점이 어긋나 있어 빌드 때 모든 바퀴의 원점을 경계 상자 가운데로 다시 잡음).
+- 정면 +Z, 원점은 원본 그대로(가운데, 바닥 y≈0). 배율 1에서 폭 1.6~2.1, 길이 3.3~4.2, 높이 1.1~1.5 → 게임 배율 0.5.
+- 재질: 차마다 도장 재질을 `paint`(`paint.001`…, 색마다 하나)로 이름 붙여 두어 life.js가 `/^paint/`에 색을 곱합니다. `Headlights`·`TailLights`는 밤에 emissive를 켭니다. 그 밖에 `Windows`, `Black`, `Grey`, 경찰차 `WhiteLights`·`BlueLights`.
 
 ## furniture — 140개, 2283 KB (furniture-kit, GLTF format 폴더의 .glb 전부)
 
@@ -156,20 +160,56 @@ apple banana orange lemon grapes strawberry watermelon pear cherries avocado tom
 
 - 재질: `colormap`(Mini Market·Mini Arcade는 같은 그림이라 이미지 하나), `colormap-factory-kit`, `material-glass`.
 
-## nature — 71개, 838 KB (Nature Kit; 텍스처 없이 색 재질)
+## nature — 49개, 3665 KB (Quaternius Stylized Nature MegaKit, 무료 standard판; 텍스처 12장)
 
-공원·정원·마을 가장자리·강변에 쓰는 자연물. 모두 원점이 바닥 가운데이고, 키트 특성상 바닥 아래 0.05만큼 받침이 있어(`miny -0.05`) `SO_ZONE_KIT.prop()`이 그만큼 띄웁니다(길 조각은 얇은 판처럼 보이도록 city.js가 `lift`를 0.02로 덮어씀). 게임 기본 배율 2.
+공원·정원·마을 가장자리·강변의 식물과 바위. 원점은 줄기 밑(x·z는 원본 그대로, 뿌리가 바닥 아래 0.2~0.3까지 내려가 있어 BOX의 y0은 0으로 잘라 둠 — 엔진이 띄우지 않음). 게임 기본 배율 0.4.
 
-- 나무(20): tree_oak tree_oak_fall tree_default tree_default_fall tree_detailed tree_detailed_dark tree_fat tree_fat_fall tree_small tree_small_fall tree_tall tree_thin tree_thin_fall tree_pineDefaultA tree_pineRoundA tree_pineTallA tree_pineSmallA tree_simple tree_plateau tree_cone — 배율 1에서 키 0.97~1.71(게임에서 2~3.4).
-- 덤불·풀·꽃(17): plant_bush plant_bushDetailed plant_bushLarge plant_bushSmall plant_flatShort plant_flatTall grass grass_large grass_leafs flower_purpleA/B flower_redA/B flower_yellowA/B lily_large lily_small — 꽃은 0.16~0.29 높이라 게임에서는 배율 0.55로 씀.
-- 바위(8): rock_smallA/B/C rock_largeA/B rock_tallA stone_smallA stone_largeA (rock은 흙빛, stone은 회색).
-- 길·구조물(16): path_stone path_stoneCircle path_stoneCorner path_stoneEnd path_wood path_woodCorner path_woodEnd bridge_wood bridge_stoneRound fence_simple fence_simpleLow fence_gate fence_planks sign statue_column statue_obelisk statue_block.
-- 그 밖(10): stump_round stump_old log log_large pot_large pot_small mushroom_red mushroom_tanGroup canoe.
-- 재질 19개(색만): leafsGreen leafsDark leafsFall grass woodBark woodBarkDark wood woodDark woodInner woodBirch stone stoneDark dirt dirtDark colorRed colorYellow colorPurple colorTan _defaultMat. 키트 원래 팔레트는 민트(#28e0c0)·주황(#f08858)인데, 옆에 서는 Kenney 도시 키트의 초록·갈색에 맞춰 `tools/office-models.py`의 `RECOLOR`로 다시 칠했습니다(sRGB hex → 선형).
-- 원본 파일에는 `tmpParent`라는 빈 노드가 있어 Blender가 'Orphan Nodes' 컬렉션(뷰 레이어 밖)에 넣습니다. 빌드 스크립트가 씬 컬렉션에 다시 링크합니다.
+- 나무(10): tree-common-1/2/3/5(배율 1에서 키 6.8~9.2 → 게임 2.7~3.7), tree-pine-1…4(7.1~10), tree-twisted-1(붉은 잎의 거목 16.5 × 13.5, 공원 중앙에 배율 0.6으로), tree-dead-1(고사목 9.2). `/^tree/`라 life.js가 흔들고 지도에도 나무로 그립니다. 줄기(`Bark…` 재질)는 빌드 때 Decimate로 1/4(잎 카드는 그대로).
+- 덤불·풀·꽃(15): bush(붉은 잎), bush-flowers, clover, fern(9 × 2.4의 넓은 고사리 무리), flower-3, flower-3-group, flower-4, flower-4-group(꽃대 키 2~2.4라 city.js는 0.55배로), grass-short, grass-tall, grass-wispy-short, grass-wispy-tall, plant-1, plant-1-big, plant-7, petal-1…3(바닥의 꽃잎).
+- 바위·자갈(9): rock-1…3(3 × 2), pebble-round-1…3, pebble-square-1…3(0.3~0.5).
+- 길(10): path-round-small-1…3, path-round-thin, path-round-wide, path-square-small-1…3, path-square-thin, path-square-wide — 돌길 판(두께 0.1~0.17), 엔진은 `path`로 시작하는 노드를 바닥판처럼(그림자 안 드리움) 둡니다.
+- 버섯(2): mushroom, mushroom-laetiporus.
+- 재질(텍스처마다 하나): bark bark-twisted bark-dead(불투명 → JPEG) leaves leaves-twisted leaves-pine leaves-plant flowers(알파 컷아웃 MASK → PNG) grass mushrooms path-rocks rocks. 노멀맵·정점색은 원본에서 뺐고 텍스처는 512px.
+
+## park — 16개, 198 KB (Kenney Nature Kit; 텍스처 없이 색 재질)
+
+2026-09-27까지 `nature` 팩이던 Kenney Nature Kit에서 Quaternius로 대신할 수 없는 것만 남긴 팩: sign lily_large lily_small log log_large stump_round stump_old pot_large pot_small canoe statue_column statue_obelisk statue_block bridge_wood fence_simple fence_gate. 원점 바닥 가운데, 바닥 아래 0.05 받침(`prop()`이 띄움), 게임 기본 배율 2, 팔레트는 전처럼 `RECOLOR`로 초록·갈색. city.js의 `n()`은 이름으로 `park`/`nature`를 고릅니다.
+
+## homeware — 19개, 972 KB (Quaternius Ultimate Furniture Pack; 색 재질, 법선 없음)
+
+집(home)의 가구. 발자국 가운데가 원점, 바닥 y=0, 정면 +Z. 게임 기본 배율 0.4(원본이 큼: 문 3.1, 침대 2.1 × 4.3).
+
+| 노드 | 원본 | 크기 w×h×d (배율 1) |
+|---|---|---|
+| bed-double, bed-twin | BedDouble, BedTwin | 2.83 / 2.06 × 1.56 × 4.26 (머리판이 -Z) |
+| bookcase | Bookcase_Books (책 포함) | 1.85×3.37×0.66 |
+| armchair, chair, office-chair, stool | Sofa_individual, Chair, OfficeChair, Stool | 1.64×1.36×1.43, 0.5×1.07×0.64, 0.72×1.13×0.8, 0.5×0.57×0.54 |
+| closet, closet-short | Closet, ShortCloset | 1.56×2.98×0.88, 1.56×2.27×0.9 |
+| desk, night-stand | Desk, NightStand | 1.82×0.92×0.84, 0.58×0.51×0.5 |
+| door-1, door-2, door-3 | Door1(나무), Door2·Door3(유리창) | 1.6~1.74×3.1×0.32 |
+| sofa-1, sofa-2, sofa-corner | Sofa, Sofa2, Sofa3(ㄱ자) | 4.24×1.51×1.78, 4×1.45×1.54, 4×1.43×2.8 |
+| table-1, table-2 | Table, Table2 | 1.42×0.83×2.78 |
+
+## buildings — 9개, 2541 KB (Quaternius Buildings Pack; 색 재질, 법선 없음)
+
+유럽풍 시내 건물. 발자국 가운데가 원점, 바닥 y=0, 정면(현관) +Z. 게임 기본 배율 1 (Kenney 상가 배율 3과 키가 비슷함: 4.7~5.9, 집 2.9~3.2).
+
+| 노드 | 원본 | 크기 w×h×d | 쓰는 곳 |
+|---|---|---|---|
+| building-1-large, building-1-small | Building1_Large, Building1_Small | 8×4.67×2.74, 3.74×4.66×2.74 (붉은 지붕, 도머창) | 시내 남동 블록(small) |
+| building-2-large, building-2-small | Building2_Large, Building2_Small | 5.72×5.92×2.22, 3.58×4.97×2.48 (갈색 지붕, 하늘색 벽) | Jun의 아파트(large) |
+| building-3-big, building-3-small | Building3_Big, Building3_Small | 4.7×5.68×4.4, 3.06×5.68×4.4 (벽돌빛) | 북동 블록(big) |
+| building-4 | Building4 | 4.64×5.49×3.86 (흰 건물, 지붕 장식) | 북동 블록 |
+| house-1, house-2 | House1, House2 | 2.56×3.18×3.87 (현관 지붕), 3.64×2.93×3.09 | 북서 블록의 집 둘 |
+
+## wild — 33개, 609 KB (Quaternius Ultimate Nature Pack; 색 재질, 법선 없음)
+
+마을 밖 평원(주인공이 못 가는 곳)의 숲. `SO_ZONE_KIT.dress(api, { wild: { seed, rects, avoid, density } })`가 조각마다 InstancedMesh 하나로 뿌립니다(city.js: 서·동·북 평원과 강 건너편, 수백 그루에 드로우 콜 수십 개). 원점 줄기 밑, 배율 1에서 나무 키 2.4~3.6(Kenney 나무와 같은 급), 게임 기본 배율 1. 존 데이터(props)에는 쓰지 않으니 지도에도 안 나옵니다.
+
+tree-common-1…5 tree-autumn-1/2 tree-pine-1…5 tree-birch-1…3 tree-willow-1/2 bush-1 bush-2 bush-berries rock-1…4 rock-moss-1/2 stump log grass grass-short flowers plant-1 plant-2
 
 ## 출처·라이선스
 
-인물: [Quaternius](https://quaternius.com) — [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularmen.html), [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html)([poly.pizza 묶음](https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN)). CC0 1.0. 라이선스 원문은 `quaternius/<pack>/License.txt`.
+[Quaternius](https://quaternius.com) — 인물: [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularmen.html), [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html)([poly.pizza 묶음](https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN)); 소품: [Cars Pack](https://quaternius.com/packs/cars.html), [Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html)(무료 standard판), [Ultimate Furniture Pack](https://quaternius.com/packs/ultimatefurniture.html)([poly.pizza 묶음](https://poly.pizza/bundle/Furniture-Pack-pgvx8Zkq8v)), [Buildings Pack](https://quaternius.com/packs/buildings.html)(poly.pizza), [Ultimate Nature Pack](https://quaternius.com/packs/ultimatenature.html). 모두 CC0 1.0. 라이선스 원문과 출처는 `quaternius/<pack>/License.txt`.
 
-[Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) 2.1, [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban) 2.0, [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Car Kit](https://kenney.nl/assets/car-kit), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit) 3.0, [Nature Kit](https://kenney.nl/assets/nature-kit). 모두 CC0 1.0(표기 의무 없음, "Kenney (www.kenney.nl)" 표기 권장). 라이선스 원문은 `kenney/<kit>/License.txt`.
+[Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial) 2.1, [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban) 2.0, [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit) 3.0, [Nature Kit](https://kenney.nl/assets/nature-kit). 모두 CC0 1.0(표기 의무 없음, "Kenney (www.kenney.nl)" 표기 권장). 라이선스 원문은 `kenney/<kit>/License.txt`.

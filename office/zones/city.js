@@ -8,18 +8,30 @@
    small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
    (airport_shuttle). The Fairview River runs along the south edge of town, the sea lies beyond it (a beach at
    z 31) and a range of mountains rises north of town (from z -48, low enough for the camera, which looks
-   down, to see the ridge; both are SO_ZONE_KIT.dress). Roads and sidewalks are walkable;
+   down, to see the ridge; both are SO_ZONE_KIT.dress, which also scatters the woods of the plains around town,
+   pack 'wild', where nobody can walk). Roads and sidewalks are walkable;
    buildings, parked cars, trees, water and street furniture block.
-   Trees, bushes, flowers, rocks and the park's paths are Kenney's Nature Kit (pack 'nature', scale 2); the
+   Trees, bushes, flowers, rocks and the park's paths are Quaternius's Stylized Nature MegaKit (pack 'nature', scale 0.4),
+   the park's signs, lilies and ornaments Kenney's Nature Kit (pack 'park'); six buildings (the apartment house, two
+   homes, three downtown) are Quaternius's Buildings Pack (pack 'buildings'), the rest Kenney's city kits; the
    `map` block names the streets and areas for the town map (Menu > Map). */
 (function () {
   var K = SO_ZONE_KIT;
   function f(node, x, z, turn, extra) { return K.prop('furniture', node, x, z, turn, extra); }
   function c(node, x, z, turn, extra) { return K.prop('city', node, x, z, turn, extra); }
+  function b(node, x, z, turn, extra) { return K.prop('buildings', node, x, z, turn, extra); }   // Quaternius Buildings Pack (scale 1)
   function r(node, x, z, turn, extra) { return K.prop('roads', node, x, z, turn, extra); }
   function car(node, x, z, turn, extra) { return K.prop('cars', node, x, z, turn, extra); }
   function food(node, x, z, turn, extra) { return K.prop('food', node, x, z, turn, extra); }
-  function n(node, x, z, turn, extra) { return K.prop('nature', node, x, z, turn, extra); }
+  // plants and rocks: Quaternius Stylized Nature MegaKit (pack 'nature', scale 0.4); signs, lilies, logs, pots, the canoe
+  // and the monument: Kenney Nature Kit (pack 'park', scale 2). RESIZE tunes a few pieces to the sizes the park was laid out for.
+  var PARK = /^(sign|lily|log|stump|pot_|canoe|statue|bridge|fence)/;
+  var RESIZE = { 'tree-twisted-1': 0.6, 'tree-common-5': 0.85, bush: 1.2, 'plant-1-big': 0.6, 'pebble-square-1': 2.5, mushroom: 1.5, 'path-square-thin': 1.25, 'path-round-wide': 1.2 };
+  function n(node, x, z, turn, extra) {
+    extra = extra || {};
+    if (RESIZE[node]) extra.scale = (extra.scale || 1) * RESIZE[node];
+    return K.prop(PARK.test(node) ? 'park' : 'nature', node, x, z, turn, extra);
+  }
   // a tree, a bush or a rock that blocks; the footprint is roughly the trunk / the piece
   function tree(node, x, z, turn, scale) { return n(node, x, z, turn || 0, { solid: [0.5, 0.5], scale: scale || 1 }); }
   function bush(node, x, z, turn, scale) { return n(node, x, z, turn || 0, { solid: 'fit', scale: scale || 1 }); }
@@ -51,29 +63,29 @@
   // garden paths
   [-5.0, -4.6].forEach(function (z) { tiles.push(c('path-short', -9.88, z, 0)); });
   // the park's entrance path, from the gate to the plaza
-  [5.35, 6.35].forEach(function (z) { tiles.push(plate('path_stone', -7.5, z, 90, 1.1)); });
-  tiles.push(plate('path_stoneCircle', -7.5, 7.6, 0, 1.9));          // the plaza between the benches
-  tiles.push(plate('path_stoneCircle', -7.5, 10.9, 0, 1.5));         // under the monument
-  [9.3, 9.9].forEach(function (z) { tiles.push(plate('path_stone', -7.5, z, 90, 0.9)); });
+  [5.35, 6.35].forEach(function (z) { tiles.push(plate('path-square-thin', -7.5, z, 90, 1.1)); });
+  tiles.push(plate('path-round-wide', -7.5, 7.6, 0, 1.9));          // the plaza between the benches
+  tiles.push(plate('path-round-wide', -7.5, 10.9, 0, 1.5));         // under the monument
+  [9.3, 9.9].forEach(function (z) { tiles.push(plate('path-square-thin', -7.5, z, 90, 0.9)); });
 
   var props = [
     // ----- north-west: homes on Maple Street
-    c('building-type-f', -10, -7.5, 0, { solid: 'fit', id: 'apartment' }),        // Jun's apartment building
+    b('building-2-large', -10.3, -7.3, 0, { solid: 'fit', id: 'apartment' }),      // Jun's apartment building (red roof, dormers)
     c('building-type-a', -4.4, -7.0, 0, { solid: 'fit' }),
-    c('building-type-h', -10, -11.6, 180, { solid: 'fit' }),
-    c('building-type-g', -4.5, -11.6, 180, { solid: 'fit' }),
-    tree('tree_oak', -13.0, -9.5),
-    tree('tree_small_fall', -7.2, -9.6),
-    tree('tree_oak_fall', -2.2, -9.3),
+    b('house-1', -10, -11.4, 180, { solid: 'fit' }),
+    b('house-2', -4.5, -11.6, 180, { solid: 'fit' }),
+    tree('tree-common-1', -13.0, -9.5),
+    tree('tree-common-5', -7.2, -9.6),
+    tree('tree-common-2', -2.2, -9.3),
     c('fence', -12.9, -4.75, 0, { solid: 'fit', scale: 0.7 }),
     c('fence', -6.9, -4.75, 0, { solid: 'fit', scale: 0.7 }),
     c('planter', -11.3, -4.85, 0, { solid: 'fit' }),
     c('planter', -8.45, -4.85, 0, { solid: 'fit' }),
     // front gardens: flowers and shrubs behind the fences
-    flower('flower_redB', -12.8, -5.3, 0), flower('flower_yellowA', -12.3, -5.25, 30), flower('flower_purpleA', -13.3, -5.3, 0),
-    flower('flower_purpleB', -7.2, -5.3, 0), flower('flower_redA', -6.6, -5.3, 60), flower('flower_yellowB', -6.1, -5.25, 0),
-    bush('plant_bushSmall', -13.0, -5.6, 0, 1.0), bush('plant_bushSmall', -5.2, -5.5, 20, 1.0), bush('plant_bushDetailed', -1.9, -5.9, 0, 0.9),
-    bit('grass_leafs', -11.0, -5.6, 0, 0.6), bit('grass', -3.0, -5.7, 40, 0.6),
+    flower('flower-3-group', -12.8, -5.3, 0), flower('flower-4', -12.3, -5.25, 30), flower('flower-3-group', -13.3, -5.3, 0),
+    flower('flower-4-group', -7.2, -5.3, 0), flower('flower-3', -6.6, -5.3, 60), flower('flower-4-group', -6.1, -5.25, 0),
+    bush('bush-flowers', -13.0, -5.6, 0, 1.0), bush('bush-flowers', -5.2, -5.5, 20, 1.0), bush('bush-flowers', -1.9, -5.9, 0, 0.9),
+    bit('grass-wispy-short', -11.0, -5.6, 0, 0.6), bit('grass-short', -3.0, -5.7, 40, 0.6),
     // bus stop on Maple Street
     { pack: 'box', size: [1.5, 0.9, 0.06], at: [-5.0, -2.85], color: '#8fb3cf', solid: [1.5, 0.1] },
     c('detail-overhang-wide', -5.6, -2.55, 0),                                      // the shelter's roof on two posts
@@ -86,14 +98,14 @@
     // ----- north-east: offices
     c('building-skyscraper-b', 8.2, -8, 0, { solid: 'fit', id: 'lakeside_labs' }),
     c('building-skyscraper-a', 4.0, -10.9, 0, { solid: 'fit' }),
-    c('building-g', 12, -11.5, 0, { solid: 'fit' }),
-    c('building-b', 12, -6.8, 90, { solid: 'fit' }),
+    b('building-3-big', 12, -11.6, 0, { solid: 'fit' }),
+    b('building-4', 12.2, -6.7, 90, { solid: 'fit' }),
     c('planter', 6.6, -5.0, 0, { solid: 'fit' }),
     c('planter', 9.8, -5.0, 0, { solid: 'fit' }),
     c('tree-small', 5.4, -4.6, 0, { solid: [0.4, 0.4] }),
     c('tree-small', 12.6, -4.4, 0, { solid: [0.4, 0.4] }),
     n('pot_large', 11.4, -4.5, 0, { solid: 'fit', scale: 0.8 }),
-    bit('plant_flatTall', 11.4, -4.5, 0, 0.6),
+    bit('plant-1-big', 11.4, -4.5, 0, 0.6),
     f('bench', 6.6, -4.25, 0),
     f('bench', 9.8, -4.25, 0),
     // Nina's coffee cart on the corner of Maple and Lake
@@ -141,35 +153,35 @@
     f('bench', -6.0, 7.6, 270),
     f('trashcan', -8.3, 9.05, 0, { solid: 'fit' }),
     n('statue_obelisk', -7.5, 10.9, 0, { solid: [0.7, 0.7] }),
-    flower('flower_redA', -8.4, 10.3, 0), flower('flower_yellowA', -8.6, 11.0, 0), flower('flower_redB', -8.3, 11.6, 0),
-    flower('flower_yellowB', -6.6, 10.3, 0), flower('flower_redA', -6.4, 11.0, 0), flower('flower_yellowA', -6.7, 11.6, 0),
-    flower('flower_purpleA', -7.9, 11.9, 0), flower('flower_purpleB', -7.1, 11.9, 0),
+    flower('flower-3', -8.4, 10.3, 0), flower('flower-4', -8.6, 11.0, 0), flower('flower-3-group', -8.3, 11.6, 0),
+    flower('flower-4-group', -6.6, 10.3, 0), flower('flower-3', -6.4, 11.0, 0), flower('flower-4', -6.7, 11.6, 0),
+    flower('flower-3-group', -7.9, 11.9, 0), flower('flower-4-group', -7.1, 11.9, 0),
     // flowers along the entrance path
-    flower('flower_purpleB', -8.2, 5.4, 0), flower('flower_redB', -8.25, 6.1, 0), flower('flower_yellowA', -8.15, 6.7, 0),
-    flower('flower_redA', -6.8, 5.4, 0), flower('flower_purpleA', -6.75, 6.1, 0), flower('flower_yellowB', -6.85, 6.7, 0),
+    flower('flower-4-group', -8.2, 5.4, 0), flower('flower-3-group', -8.25, 6.1, 0), flower('flower-4', -8.15, 6.7, 0),
+    flower('flower-3', -6.8, 5.4, 0), flower('flower-3-group', -6.75, 6.1, 0), flower('flower-4-group', -6.85, 6.7, 0),
     // shrubs inside the fence
-    bush('plant_bushDetailed', -12.9, 5.6, 0, 0.9), bush('plant_bush', -11.2, 5.4, 0, 1), bush('plant_bushLarge', -9.8, 5.5, 30, 1),
-    bush('plant_bush', -5.0, 5.4, 0, 1), bush('plant_bushDetailed', -2.6, 5.6, 0, 0.9),
+    bush('bush-flowers', -12.9, 5.6, 0, 0.9), bush('bush-flowers', -11.2, 5.4, 0, 1), bush('bush', -9.8, 5.5, 30, 1),
+    bush('bush-flowers', -5.0, 5.4, 0, 1), bush('bush-flowers', -2.6, 5.6, 0, 0.9),
     // trees
-    tree('tree_oak', -12.2, 6.9),
-    tree('tree_default', -13.1, 10.4),
-    tree('tree_fat_fall', -12.4, 12.3),
-    tree('tree_detailed', -4.0, 6.6),
-    tree('tree_tall', -2.8, 10.4),
-    tree('tree_oak_fall', -5.6, 12.6),
-    tree('tree_pineRoundA', -13.1, 7.9),
-    tree('tree_thin', -9.6, 12.5),
-    tree('tree_small', -10.2, 9.6, 0, 1.1),
-    tree('tree_detailed_dark', -2.3, 13.0, 0, 0.9),
+    tree('tree-common-1', -12.2, 6.9),
+    tree('tree-common-3', -13.1, 10.4),
+    tree('tree-common-2', -12.4, 12.3),
+    tree('tree-common-2', -4.0, 6.6),
+    tree('tree-pine-4', -2.8, 10.4),
+    tree('tree-common-2', -5.6, 12.6),
+    tree('tree-pine-2', -13.1, 7.9),
+    tree('tree-common-3', -9.6, 12.5),
+    tree('tree-common-5', -10.2, 9.6, 0, 1.1),
+    tree('tree-pine-3', -2.3, 13.0, 0, 0.9),
     // the quiet corner: a fallen log, a stump, mushrooms, rocks
     n('log', -11.6, 10.6, 35, { solid: 'fit' }),
     bush('stump_round', -10.8, 11.4, 0, 1),
-    bit('mushroom_tanGroup', -11.3, 11.7, 0, 0.7), bit('mushroom_red', -12.2, 8.3, 0, 0.7),
-    n('rock_largeA', -13.1, 12.8, 20, { solid: 'fit', scale: 0.6 }),
-    bit('rock_smallA', -12.5, 13.2, 0, 0.8), bit('rock_smallC', -13.3, 11.6, 0, 0.8),
-    n('stone_largeA', -3.4, 8.6, 70, { solid: 'fit', scale: 0.5 }),
-    bit('grass_large', -13.3, 8.6, 0, 0.6), bit('grass', -9.2, 6.4, 0, 0.6), bit('grass_leafs', -5.2, 8.6, 0, 0.6), bit('grass', -4.4, 11.6, 0, 0.6),
-    bit('grass', -11.0, 8.9, 0, 0.6), bit('grass_leafs', -6.2, 10.8, 0, 0.6),
+    bit('mushroom-laetiporus', -11.3, 11.7, 0, 0.7), bit('mushroom', -12.2, 8.3, 0, 0.7),
+    n('rock-1', -13.1, 12.8, 20, { solid: 'fit', scale: 0.6 }),
+    bit('rock-2', -12.5, 13.2, 0, 0.8), bit('pebble-square-1', -13.3, 11.6, 0, 0.8),
+    n('rock-2', -3.4, 8.6, 70, { solid: 'fit', scale: 0.5 }),
+    bit('grass-tall', -13.3, 8.6, 0, 0.6), bit('grass-short', -9.2, 6.4, 0, 0.6), bit('grass-wispy-short', -5.2, 8.6, 0, 0.6), bit('grass-short', -4.4, 11.6, 0, 0.6),
+    bit('grass-short', -11.0, 8.9, 0, 0.6), bit('grass-wispy-short', -6.2, 10.8, 0, 0.6),
     r('light-square', -12.5, 1.75, 0, { solid: [0.2, 0.2] }),
     r('light-square', -4.0, 1.75, 0, { solid: [0.2, 0.2] }),
 
@@ -184,13 +196,13 @@
     food('apple', 9.72, 3.5, 0, { lift: 0.42, scale: 0.8 }),
     food('orange', 9.85, 3.46, 0, { lift: 0.42, scale: 0.8 }),
     r('dumpster', 3.0, 7.4, 90, { solid: 'fit' }),
-    c('building-h', 11.8, 11.2, 270, { solid: 'fit' }),
+    b('building-1-small', 11.8, 11.2, 270, { solid: 'fit' }),
     car('sedan', 3.6, 10.8, 0, { solid: 'fit' }),
     car('suv', 5.2, 10.8, 0, { solid: 'fit' }),
-    car('hatchback-sports', 6.8, 10.8, 0, { solid: 'fit' }),
+    car('hatchback', 6.8, 10.8, 0, { solid: 'fit' }),
     r('construction-cone', 8.1, 12.3, 0),
     n('pot_small', 2.9, 3.3, 0, { solid: 'fit', scale: 0.9 }),
-    bit('plant_flatShort', 2.9, 3.3, 0, 0.6),
+    bit('plant-1', 2.9, 3.3, 0, 0.6),
     r('light-square', 2.3, 1.75, 0, { solid: [0.2, 0.2] }),
     r('light-square', 8.2, 1.75, 0, { solid: [0.2, 0.2] }),
     r('light-square', 13.2, 8.0, 270, { solid: [0.2, 0.2] }),
@@ -198,12 +210,12 @@
     // ----- cars parked along the streets
     car('taxi', -8.0, 0.8, 90, { solid: 'fit' }),
     car('sedan', 13.0, -0.8, 270, { solid: 'fit' }),
-    car('delivery', -0.8, 9.5, 180, { solid: 'fit' }),
-    car('sedan-sports', 0.8, -10.5, 0, { solid: 'fit' }),
-    car('van', 14.2, 7.5, 180, { solid: 'fit' }),
+    car('sports-car-2', -0.8, 9.5, 180, { solid: 'fit' }),
+    car('sports-car', 0.8, -10.5, 0, { solid: 'fit' }),
+    car('suv', 14.2, 7.5, 180, { solid: 'fit' }),
 
     // ----- airport shuttle stop, east end of Maple Street
-    car('van', 18.0, -0.8, 90, { solid: 'fit', id: 'airport_shuttle' }),
+    car('suv', 18.0, -0.8, 90, { solid: 'fit', id: 'airport_shuttle' }),
     r('road-sign-street', 19.0, -2.0, 0, { solid: [0.2, 0.2] }),
     f('bench', 17.0, -3.8, 0),
     f('bench', 17.45, -3.8, 0),
@@ -216,37 +228,37 @@
     { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, 22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
     // the bank: reeds, rocks, a canoe pulled up on the grass, lilies in the water
     n('canoe', -13.6, 18.9, 15, { solid: 'fit' }),
-    bit('grass_large', -11.0, 19.3, 0, 0.6), bit('grass_large', -3.3, 19.2, 30, 0.6), bit('grass_large', 5.5, 19.3, 0, 0.6),
-    bit('grass_large', 12.5, 19.2, 60, 0.6), bit('grass', -16.2, 19.0, 0, 0.6), bit('grass', 8.6, 19.1, 0, 0.6), bit('grass_leafs', -7.8, 19.3, 0, 0.6),
-    bit('rock_smallA', -16.0, 19.3, 0, 0.9), n('rock_largeA', -6.4, 19.1, 10, { solid: 'fit', scale: 0.5 }), bit('rock_smallB', 3.6, 19.3, 0, 0.9),
-    n('rock_largeB', 15.2, 19.0, 50, { solid: 'fit', scale: 0.55 }),
+    bit('grass-tall', -11.0, 19.3, 0, 0.6), bit('grass-tall', -3.3, 19.2, 30, 0.6), bit('grass-tall', 5.5, 19.3, 0, 0.6),
+    bit('grass-tall', 12.5, 19.2, 60, 0.6), bit('grass-short', -16.2, 19.0, 0, 0.6), bit('grass-short', 8.6, 19.1, 0, 0.6), bit('grass-wispy-short', -7.8, 19.3, 0, 0.6),
+    bit('rock-2', -16.0, 19.3, 0, 0.9), n('rock-1', -6.4, 19.1, 10, { solid: 'fit', scale: 0.5 }), bit('rock-1', 3.6, 19.3, 0, 0.9),
+    n('rock-3', 15.2, 19.0, 50, { solid: 'fit', scale: 0.55 }),
     bit('lily_large', -8.0, 20.4, 0, 0.8), bit('lily_small', -7.3, 20.8, 0, 0.8), bit('lily_large', 4.2, 20.5, 40, 0.8), bit('lily_small', 10.6, 20.3, 0, 0.8),
     bit('lily_small', -14.6, 20.6, 0, 0.8), bit('lily_large', 16.4, 20.7, 0, 0.8),
 
     // ----- scenery at the edge of town
-    tree('tree_pineTallA', -18.0, -18.0),
-    tree('tree_oak', -18.2, 9.0),
-    tree('tree_pineDefaultA', -17.8, -8.0),
-    tree('tree_default', 18.0, 18.0),
-    tree('tree_detailed_dark', 17.8, 9.5),
-    tree('tree_pineRoundA', 18.2, -12.0),
-    tree('tree_oak_fall', 8.0, 18.2),
-    tree('tree_tall', -9.0, 18.0),
-    tree('tree_cone', -6.0, -18.2),
-    tree('tree_pineTallA', 9.0, -18.0),
-    tree('tree_pineDefaultA', -18.5, 2.6),
-    tree('tree_default_fall', -18.4, -13.5),
-    tree('tree_simple', -18.6, 14.6),
-    tree('tree_detailed', 18.5, 4.0),
-    tree('tree_pineRoundA', 14.0, 18.3),
-    tree('tree_fat', -14.2, 18.4),
-    tree('tree_thin_fall', -3.6, -18.4),
-    tree('tree_tall', 3.8, -18.3),
-    tree('tree_plateau', 15.0, -18.2),
-    tree('tree_oak', -13.5, -18.3),
-    n('rock_largeB', -17.6, 13.2, 0, { solid: 'fit', scale: 0.7 }),
-    n('stone_largeA', 17.3, 12.6, 30, { solid: 'fit', scale: 0.6 }),
-    bit('grass_large', -17.2, -3.0, 0, 0.6), bit('grass', 17.6, -6.5, 0, 0.6), bit('grass_large', 12.0, -17.9, 0, 0.6), bit('grass', -11.6, -17.6, 0, 0.6)
+    tree('tree-pine-4', -18.0, -18.0),
+    tree('tree-common-1', -18.2, 9.0),
+    tree('tree-pine-1', -17.8, -8.0),
+    tree('tree-common-3', 18.0, 18.0),
+    tree('tree-pine-3', 17.8, 9.5),
+    tree('tree-pine-2', 18.2, -12.0),
+    tree('tree-common-2', 8.0, 18.2),
+    tree('tree-pine-4', -9.0, 18.0),
+    tree('tree-pine-3', -6.0, -18.2),
+    tree('tree-pine-4', 9.0, -18.0),
+    tree('tree-pine-1', -18.5, 2.6),
+    tree('tree-common-5', -18.4, -13.5),
+    tree('tree-common-1', -18.6, 14.6),
+    tree('tree-common-2', 18.5, 4.0),
+    tree('tree-pine-2', 14.0, 18.3),
+    tree('tree-common-5', -14.2, 18.4),
+    tree('tree-common-1', -3.6, -18.4),
+    tree('tree-pine-4', 3.8, -18.3),
+    tree('tree-twisted-1', 15.0, -18.2),
+    tree('tree-common-1', -13.5, -18.3),
+    n('rock-3', -17.6, 13.2, 0, { solid: 'fit', scale: 0.7 }),
+    n('rock-2', 17.3, 12.6, 30, { solid: 'fit', scale: 0.6 }),
+    bit('grass-tall', -17.2, -3.0, 0, 0.6), bit('grass-short', 17.6, -6.5, 0, 0.6), bit('grass-tall', 12.0, -17.9, 0, 0.6), bit('grass-short', -11.6, -17.6, 0, 0.6)
   ];
 
   SO_ZONES.city = {
@@ -292,6 +304,9 @@
     setup: function (api) {
       // signs on the fronts of the buildings you go into, the bus stop's timetable, Nina's cart and the park gate
       K.dress(api, { mountains: { side: 'n', from: 48, depth: 44, width: 380, height: 7.5, seed: 3 }, sea: { side: 's', from: 31, beach: 3, width: 340, depth: 140 },
+        // the plains beyond the edge of town (out of reach): woods west, east and north up to the foothills, the far bank of the river
+        wild: { seed: 11, rects: [[-90, -46, -21.5, 19.5], [21.5, -46, 90, 19.5], [-21.5, -46, 21.5, -21.5], [-90, 25.6, 90, 27.6]],
+          avoid: [[-90, -3, 90, 3], [-3, -46, 3, 19.5]] },
         panels: [
         { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Lakeside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
         { kind: 'sign', at: [5.4, 3.47], turn: 180, y: 1.55, w: 2.8, h: 0.5, text: 'Sunny Side Diner', bg: '#c0392b', fg: '#fff6d8', border: '#ffd166', frame: '#7e2a23' },

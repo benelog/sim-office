@@ -91,9 +91,9 @@
   // ----- outside: the apron with a plane at the gate (east) and one taxiing (north), the curb and the parking lot (south)
   add([
     box([2.3, 0.95, 0.9], 12.5, -2.5, '#c9ced6'),                            // the jet bridge to the plane
-    K.prop('cars', 'van', -3.0, 7.6, 90), K.prop('cars', 'taxi', 2.5, 7.6, 90),
-    K.prop('cars', 'sedan', -8.0, 12.2, 0), K.prop('cars', 'suv', -5.4, 12.2, 180), K.prop('cars', 'hatchback-sports', 4.0, 12.2, 0),
-    K.prop('cars', 'truck', 14.5, 3.5, 0), K.prop('cars', 'delivery', -2.0, -8.5, 90),
+    K.prop('cars', 'suv', -3.0, 7.6, 90), K.prop('cars', 'taxi', 2.5, 7.6, 90),
+    K.prop('cars', 'sedan', -8.0, 12.2, 0), K.prop('cars', 'suv', -5.4, 12.2, 180), K.prop('cars', 'hatchback', 4.0, 12.2, 0),
+    K.prop('cars', 'suv', 14.5, 3.5, 0), K.prop('cars', 'sports-car-2', -2.0, -8.5, 90),
     K.prop('roads', 'light-square', -6.0, 5.9, 0), K.prop('roads', 'light-square', 4.0, 5.9, 0),
     K.prop('roads', 'construction-cone', 13.0, -5.0, 0), K.prop('roads', 'construction-cone', 13.6, -5.0, 0)
   ]);
