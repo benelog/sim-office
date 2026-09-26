@@ -3,7 +3,7 @@
    north-south through x = 0, and both carry on to the edge of town (Lake Avenue crosses the river on a bridge
    to the north). North-west: the homes, with the apartment building (apartment_door) and the bus stop on the
    Maple Street sidewalk. North-east: the office towers; Lakeside Labs is the tall one (office_door) with a plaza
-   and Nina's coffee cart on the corner. South-west: Riverside Park with trees, flower beds, a monument and benches
+   and Nina's coffee cart on the corner. South-west: Seaside Park with trees, flower beds, a monument and benches
    (park_bench). South-east: the diner (diner_door) and the grocery store (market_door) face Maple Street, with a
    small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
    (airport_shuttle). The Fairview River runs along the north edge of town with the mountains rising beyond it
@@ -131,7 +131,7 @@
     r('road-sign-stop', -13.25, 1.75, 0, { solid: [0.2, 0.2] }),
     r('road-sign-stop', 13.25, -1.75, 180, { solid: [0.2, 0.2] }),
 
-    // ----- south-west: Riverside Park (x -13.5..-1.5, z 4.65..13.5; Elm Street's tile runs to x -13.5), the gate at x = -7.5 on Maple Street
+    // ----- south-west: Seaside Park (x -13.5..-1.5, z 4.65..13.5; Elm Street's tile runs to x -13.5), the gate at x = -7.5 on Maple Street
     c('fence', -12.9, 4.65, 0, { solid: 'fit', scale: 0.7 }),
     c('fence', -11.9, 4.65, 0, { solid: 'fit', scale: 0.7 }),
     c('fence', -10.9, 4.65, 0, { solid: 'fit', scale: 0.7 }),
@@ -296,7 +296,7 @@
         { name: 'Elm Street', along: 'z', at: -15 }, { name: 'Cedar Street', along: 'z', at: 15 }
       ],
       areas: [
-        { name: 'Riverside Park', name_ko: '리버사이드 공원', at: [-11.5, 11.5] },
+        { name: 'Seaside Park', name_ko: '시사이드 공원', at: [-11.5, 11.5] },
         { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, -22.4], water: true },
         { name: 'Lakeside Labs', name_ko: '레이크사이드 랩스', at: [8.2, -8.6] }
       ]
@@ -315,7 +315,7 @@
         { kind: 'poster', at: [-5.35, -2.81], turn: 0, y: 0.5, w: 0.62, h: 0.8, frame: '#5f6f7f', text: 'Route 5', lines: ['Maple St - Downtown', 'Every 15 min, 6am-11pm', 'Fare $2.00'], band: '#2b5d8a', depth: 0.01 },
         { kind: 'sign', at: [-4.1, -2.26], turn: 0, y: 1.3, w: 0.5, h: 0.22, text: 'BUS', sub: 'Route 5', bg: '#2b5d8a', frame: '#1c3d5c', depth: 0.02 },
         { kind: 'sign', at: [3.73, -3.89], turn: 0, y: 0.24, w: 1.15, h: 0.28, text: "Nina's Coffee", bg: '#5b3a29', fg: '#ffe8c7', border: '#d9a066', depth: 0.005, frame: false },
-        { kind: 'sign', at: [-7.5, 4.62], turn: 180, y: 1.28, w: 1.84, h: 0.3, text: 'Riverside Park', bg: '#3f6b3a', fg: '#f4ecd6', border: '#c9b98a', frame: '#2b4a28', depth: 0.04 }
+        { kind: 'sign', at: [-7.5, 4.62], turn: 180, y: 1.28, w: 1.84, h: 0.3, text: 'Seaside Park', bg: '#3f6b3a', fg: '#f4ecd6', border: '#c9b98a', frame: '#2b4a28', depth: 0.04 }
       ] });
     },
     update: function (api) { K.tick(api); }

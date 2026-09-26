@@ -8,7 +8,7 @@ REPLACE INTO places (id, name, name_ko, zone, kind, note) VALUES
   ('apartment_door', 'Maple Street Apartments', '메이플 스트리트 아파트', 'city', 'door', 'Your building. Leads to home home_door.'),
   ('bus_stop', 'Bus stop on Maple Street', '메이플 스트리트 버스 정류장', 'city', 'transit', 'The Number 12 bus downtown, $2.50 a ride.'),
   ('coffee_cart', 'Coffee cart on Lake Avenue', '레이크 애비뉴 커피 카트', 'city', 'shop', 'Nina''s cart: coffee and pastries.'),
-                                                                                                                      ('park_bench', 'Bench in Riverside Park', '리버사이드 공원 벤치', 'city', 'seat', 'Farmers market on Saturday mornings.'),
+                                                                                                                      ('park_bench', 'Bench in Seaside Park', '시사이드 공원 벤치', 'city', 'seat', 'Farmers market on Saturday mornings.'),
   ('office_door', 'Lakeside Labs entrance', '레이크사이드 랩스 입구', 'city', 'door', 'Same id on both sides: the street entrance in city, the way out in the office zone.'),
   ('diner_door', 'Sunny Side Diner', '서니 사이드 다이너', 'city', 'door', 'Same id on both sides: the street door in city, the way out in the diner zone.'),
   ('market_door', 'Fairview Market', '페어뷰 마켓', 'city', 'door', 'Same id on both sides: the street door in city, the way out in the market zone.'),

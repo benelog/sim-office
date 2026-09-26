@@ -23,7 +23,7 @@ REPLACE INTO calendar (day, time, title, title_ko, place, episode) VALUES
   (5, '11:00', 'Sprint demo and retro', '스프린트 데모와 회고', 'office_meeting', 'd5_demo'),
   (5, '14:00', 'Pay stub questions with Linda', '린다에게 급여명세서 문의', 'office_hr', 'd5_paystub'),
   (5, '17:30', 'Team happy hour (optional)', '팀 해피아워(선택)', 'office_desk_team', 'd5_happy_hour'),
-  (6, '10:00', 'Farmers market in Riverside Park', '리버사이드 공원 파머스 마켓', 'park_bench', 'w_park'),
+  (6, '10:00', 'Farmers market in Seaside Park', '시사이드 공원 파머스 마켓', 'park_bench', 'w_park'),
   (6, '15:00', 'Grocery run', '장보기', 'market_checkout', 'w_market'),
   (7, '10:00', 'Ask Carl about the leaky faucet', '칼에게 새는 수도꼭지 이야기하기', 'apartment_door', 'w_faucet'),
   (7, '20:00', 'Plan the week ahead', '다음 주 계획 세우기', 'home_desk', NULL);

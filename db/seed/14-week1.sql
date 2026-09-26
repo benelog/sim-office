@@ -498,7 +498,7 @@ REPLACE INTO turns (episode, seq, speaker, situation, situation_ko, line, prompt
    'Not really. I''m thinking of checking out the park and exploring the city.',
    '["Not really. I''m thinking of filing an IT ticket.","Not really. It''s due on Friday.","Not really. I''ll have the chicken, please."]',
    '["Use \\"I''m thinking of …ing\\".","Key words: check out, park"]', '["\\"I''m thinking of …ing\\"를 쓰세요.","핵심 단어: check out, park"]',
-   'derek', 'Oh, you should hit the farmers market at Riverside Park on Saturday. It''s great.', '아, 토요일에 리버사이드 공원 파머스 마켓에 꼭 가 봐요. 좋아요.'),
+   'derek', 'Oh, you should hit the farmers market at Seaside Park on Saturday. It''s great.', '아, 토요일에 시사이드 공원 파머스 마켓에 꼭 가 봐요. 좋아요.'),
   ('d3_lunch', 3, 'derek',
    'You sit on a bench with your tacos.', '타코를 들고 벤치에 앉습니다.',
    'Where did you live before you moved here?', 'Say where you are from and when you moved.', '어디 출신이고 언제 이사 왔는지 말하세요.',

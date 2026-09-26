@@ -2,7 +2,7 @@
 -- Push: node tools/dolt.mjs push db/seed/15-weekend.sql
 REPLACE INTO episodes (id, title, title_ko, place, npc, day_from, day_to, time_from, time_to, requires, summary, summary_ko, reward, energy, sort, tags) VALUES
   ('w_park', 'Saturday in the park', '공원의 토요일', 'park_bench', 'carl', 6, 7, '08:00', '18:00', NULL,
-   'Run into Carl in Riverside Park. Talk about your first week, the farmers market, and trash day.', '리버사이드 공원에서 칼을 만납니다. 첫 주 이야기, 파머스 마켓, 쓰레기 버리는 날에 대해 이야기하세요.',
+   'Run into Carl in Seaside Park. Talk about your first week, the farmers market, and trash day.', '시사이드 공원에서 칼을 만납니다. 첫 주 이야기, 파머스 마켓, 쓰레기 버리는 날에 대해 이야기하세요.',
    0, 0, 10, 'small-talk,neighbor,home'),
   ('w_market', 'Weekend grocery run', '주말 장보기', 'market_checkout', 'mike', 6, 7, '09:00', '21:00', NULL,
    'Stock up for the week. Get the buy-one-get-one deal, use your rewards number, and skip the cash back.', '한 주 먹을 것을 사 두세요. 1+1 할인을 챙기고, 적립 번호를 쓰고, 캐시백은 사양하세요.',

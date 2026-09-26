@@ -130,7 +130,7 @@ SO_ZONES.office = {
   ambient: 0.9,                       // 선택
   map: {                              // 선택: 지도(Menu > Map)에 적을 거리 이름과 구역 이름
     streets: [ { name: 'Maple Street', along: 'x', at: 0 }, { name: 'Lake Avenue', along: 'z', at: 0 } ],
-    areas: [ { name: 'Riverside Park', name_ko: '리버사이드 공원', at: [-11.5, 11.5] }, { name: 'Fairview River', at: [10, 22.4], water: true } ]
+    areas: [ { name: 'Seaside Park', name_ko: '시사이드 공원', at: [-11.5, 11.5] }, { name: 'Fairview River', at: [10, 22.4], water: true } ]
   }
 };
 ```
