@@ -3,6 +3,8 @@
 미국의 작은 도시 Fairview에 있는 IT 회사 **Lakeside Labs**에 막 입사한 개발자가 되어, 출퇴근하고 회의하고 점심을 먹고 장을 보며 **미국 일상·직장 영어**를 배우는 오픈 월드 3D 게임입니다.
 정적 웹이고 빌드가 없으며, `office/index.html`을 직접 열어도(`file://`) 동작합니다. 루트 `index.html`은 거기로 넘겨 줍니다.
 
+**플레이: https://benelog.github.io/sim-office/** (GitHub Pages, main 브랜치 루트 그대로) · 소스: https://github.com/benelog/sim-office
+
 ```sh
 google-chrome "file://$PWD/office/index.html"
 ```

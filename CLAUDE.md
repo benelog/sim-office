@@ -7,6 +7,6 @@ Sim Office — 미국 IT 회사의 개발자로 출퇴근하며 미국 일상·�
 - **`file://`에서 동작해야 합니다**: `fetch()` 금지, 외부 텍스처 파일 참조 금지(glb 안에 포함).
 - 점검: `TMPDIR=/tmp/claude-1000 tools/office-check.sh <출력폴더>`. `TMPDIR`이 길면 Chrome이 바로 죽습니다. 스크린숏은 직접 열어 봅니다.
 - 이 컴퓨터의 Chrome 확장 탭에서는 `requestAnimationFrame`이 돌지 않습니다. 사용자에게 보여 줄 때는 `google-chrome "file://$PWD/office/index.html"`처럼 일반 창에 엽니다.
-- 원격 git 저장소: `git@github.com:benelog/sim-office.git`(비공개, origin/main). `git push origin main`.
+- 원격 git 저장소: `git@github.com:benelog/sim-office.git`(공개, origin/main). `git push origin main`. GitHub Pages가 main 루트를 https://benelog.github.io/sim-office/ 로 배포합니다(`.nojekyll`).
 - 저작권: Kenney 에셋은 CC0(표기 권장), three.js는 MIT. 대사·표현은 자체 저작이고 실존 회사·인물 이름을 쓰지 않습니다(Lakeside Labs, Summit Retail, Fairview는 가상). 영어 기본, 한국어는 `_ko`.
 - 2026-09-26 이전에 있던 어린 왕자 3D 게임은 이 저장소에서 지웠습니다(git 이력의 커밋 609621f에 남아 있음).
