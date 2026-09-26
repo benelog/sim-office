@@ -92,6 +92,7 @@ Kenney CC0 팩(원본 zip은 `/tmp/claude-1000/kenney-packs/`에 있음). Blende
 | `cars` | car-kit | sedan, sedan-sports, suv, hatchback-sports, taxi, van, delivery, police, truck, ambulance, wheel-default (차 노드는 바퀴가 포함된 완성체로) | 0.6 |
 | `furniture` | furniture-kit(GLTF format) | 140개 전부 (텍스처 없음, 재질 색) | 1 |
 | `food` | food-kit | 아래 목록(≈70개) | 0.6 |
+| `nature` | nature-kit (Kenney Nature Kit, 텍스처 없이 색 재질) | 나무 20종(tree_oak, tree_default, tree_pine*, *_fall 등), 덤불·풀·꽃(plant_*, grass*, flower_*), 바위(rock_*, stone_*), 길(path_stone*, path_wood*), 다리·통나무·그루터기·카누·표지판·기념비(statue_*)·화분·버섯·수련 — 71개. 팩의 민트·주황 팔레트는 빌드 때 도시 키트의 초록·갈색으로 다시 칠함(`RECOLOR`) | 2 |
 
 food: apple banana orange lemon grapes strawberry watermelon pear cherries avocado tomato onion carrot broccoli cabbage corn pepper paprika mushroom pumpkin egg bread loaf loaf-baguette croissant muffin donut donut-sprinkles cookie cupcake cake-slicer pancakes waffle burger burger-cheese fries hot-dog pizza pizza-box sandwich sub salad taco sushi-salmon maki-salmon rice-ball chinese bowl-soup bowl-cereal plate plate-dinner glass mug cup-coffee cup-tea frappe soda soda-can soda-bottle bottle-ketchup peanut-butter honey cheese bacon meat-patty sausage turkey fish can carton carton-small bag styrofoam ice-cream popsicle candy-bar chocolate barrel.
 
@@ -120,7 +121,11 @@ SO_ZONES.office = {
   portals: [ { at: [-7, 5.5], size: [1.6, 1], to: 'city', arrive: 'office_door', label: 'Leave the office' } ],
   spawn: 'office_lobby',              // 이 존에 처음 올 때(arrive가 없을 때) 서는 곳
   lights: [ { at:[x,z], height: 1.2, color:'#ffe0b0', intensity: 1.5 } ],   // 실내 조명(선택)
-  ambient: 0.9                        // 선택
+  ambient: 0.9,                       // 선택
+  map: {                              // 선택: 지도(Menu > Map)에 적을 거리 이름과 구역 이름
+    streets: [ { name: 'Maple Street', along: 'x', at: 0 }, { name: 'Lake Avenue', along: 'z', at: 0 } ],
+    areas: [ { name: 'Riverside Park', name_ko: '리버사이드 공원', at: [-11.5, 11.5] }, { name: 'Fairview River', at: [10, 22.4], water: true } ]
+  }
 };
 ```
 
@@ -139,7 +144,8 @@ SO_ZONES.office = {
 - 인물: `npcs`의 자리에 서서 가까이 오면 바라봄. 열린 에피소드가 있으면 머리 위 `!`. 없으면 `chatter`를 돌아가며 말함. 자리에 `sit:true`이면 `sit` 애니메이션.
 - 시간·돈·에너지·잠·급여·월세·상점·인벤토리·Phrasebook·저장은 1절대로.
 - 카메라: 플레이어 뒤 위(3인칭), 실내에서는 더 가깝게. 벽 뒤로 카메라가 들어가지 않게 바닥 위로 제한만.
-- 디버그 API `window.SO.debug`: `ready`, `state`('title'|'play'|'talk'|'shop'|'sleep'|'card'), `day`, `time`, `money`, `energy`, `zone`, `start(name?, model?)`, `goto(zone, placeId?)`, `episodes()`(지금 열 수 있는 것), `startEpisode(id)`, `advance()`(현재 턴에 모범 답 → Continue), `autoplayEpisode(id)`, `sleep()`, `buy(itemId)`, `save`(현재 저장 객체), `reset()`.
+- **지도**(Menu > Map, `M`): 존 데이터로 캔버스에 그립니다 — 도로 타일(보도 딸린 3×3 칸), 소품의 발자국(`SO_ZONE_KIT.BOX`, 건물·나무·차·가구), 장소 핀, 문, 존의 `map`에 적은 거리·구역 이름, 사람(지금 있는 자리, 다른 건물 안이면 그 건물 문 앞에 모아서, 열린 에피소드는 `!`), 목표(점선 원), 나(화살표). 실내에 있으면 Town / 지금 있는 곳 탭. 지도 아래에 사람·행동이 있는 장소 목록과 시외(공항·호텔·고객사)에 있는 사람. 열려 있는 동안 0.5초마다 다시 그립니다.
+- 디버그 API `window.SO.debug`: `ready`, `state`('title'|'play'|'talk'|'shop'|'sleep'|'card'), `day`, `time`, `money`, `energy`, `zone`, `start(name?, model?)`, `goto(zone, placeId?)`, `episodes()`(지금 열 수 있는 것), `startEpisode(id)`, `advance()`(현재 턴에 모범 답 → Continue), `autoplayEpisode(id)`, `sleep()`, `buy(itemId)`, `panel(kind)`, `mapTab('town'|'room')`, `save`(현재 저장 객체), `reset()`.
 - 점검: `tools/office-check.sh <outdir> [steps.mjs] [w h]` — `tools/game-check.sh`와 같은 방식(bash에서 Chrome 헤드리스 띄우고 node가 CDP로 붙음, `TMPDIR=/tmp/claude-1000`). 기본 시나리오: 제목 화면 → 시작 → 집 → 각 존으로 goto해서 스크린숏 → 열 수 있는 에피소드 전부 autoplay → 잠 → 콘솔 오류 0, `finished: true`.
 - 모델 팩이 아직 없으면(`SO_MODELS[pack]` 없음) 해당 소품은 회색 상자로 대체하고 콘솔 경고 1줄만.
 

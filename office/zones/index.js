@@ -22,7 +22,7 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
 
 (function () {
   var ORIGIN = 'origin';
-  var SCALE = { furniture: 1, city: 3, roads: 3, cars: 0.6, food: 0.6, extras: 1 };
+  var SCALE = { furniture: 1, city: 3, roads: 3, cars: 0.6, food: 0.6, extras: 1, nature: 2 };
   // Bounding box of each Kenney model at scale 1: [minx, maxx, minz, maxz, miny, maxy].
   var BOX = {
     furniture: {
@@ -115,6 +115,45 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
       'low-detail-building-k':[-0.25,0.25,-0.25,0.25,0,1.55], 'low-detail-building-l':[-0.25,0.25,-0.25,0.25,0,1.85],
       'low-detail-building-m':[-0.25,0.25,-0.25,0.25,0,1.98], 'low-detail-building-n':[-0.25,0.25,-0.25,0.25,0,0.7],
       'low-detail-building-wide-a':[-0.5,0.5,-0.25,0.25,0,1.1], 'low-detail-building-wide-b':[-0.5,0.5,-0.25,0.25,0,1.15]
+    },
+    // Nature Kit (trees, bushes, flowers, rocks, paths); all centred, with a 0.05 base under the ground (prop() lifts them)
+    nature: {
+      bridge_stoneRound:[-0.52,0.52,-0.52,0.52,-0.05,0.4], bridge_wood:[-0.52,0.52,-0.52,0.52,-0.05,0.35],
+      canoe:[-0.15,0.15,-0.57,0.58,-0.05,0.13], fence_gate:[-0.5,0.5,-0.5,-0.43,-0.05,0.3],
+      fence_planks:[-0.5,0.5,-0.53,-0.43,-0.05,0.3], fence_simple:[-0.5,0.5,-0.5,-0.43,-0.05,0.3],
+      fence_simpleLow:[-0.52,0.52,-0.52,-0.41,-0.05,0.15], flower_purpleA:[-0.1,0.06,-0.09,0.09,-0.05,0.19],
+      flower_purpleB:[-0.13,0.08,-0.12,0.12,-0.05,0.16], flower_redA:[-0.1,0.06,-0.09,0.09,-0.05,0.24],
+      flower_redB:[-0.13,0.08,-0.12,0.12,-0.05,0.21], flower_yellowA:[-0.1,0.06,-0.09,0.09,-0.05,0.14],
+      flower_yellowB:[-0.13,0.08,-0.12,0.12,-0.05,0.11], grass:[-0.2,0.18,-0.24,0.15,-0.05,0.2],
+      grass_large:[-0.2,0.21,-0.21,0.2,-0.05,0.2], grass_leafs:[-0.12,0.11,-0.13,0.13,-0.05,0.09],
+      lily_large:[-0.14,0.13,-0.16,0.15,-0.05,0.05], lily_small:[-0.09,0.1,-0.11,0.11,-0.05,-0.01],
+      log:[-0.11,0.12,-0.35,0.36,-0.05,0.12], log_large:[-0.5,0.5,-0.25,0.3,-0.05,0.37],
+      mushroom_red:[-0.09,0.08,-0.1,0.1,-0.05,0.15], mushroom_tanGroup:[-0.14,0.13,-0.11,0.14,-0.05,0.2],
+      path_stone:[-0.5,0.5,-0.3,0.28,-0.05,0], path_stoneCircle:[-0.47,0.46,-0.44,0.44,-0.05,0],
+      path_stoneCorner:[-0.47,0.27,-0.3,0.48,-0.05,0], path_stoneEnd:[-0.12,0.5,-0.29,0.28,-0.05,0],
+      path_wood:[-0.5,0.5,-0.26,0.25,-0.05,0], path_woodCorner:[-0.5,0.25,-0.25,0.5,-0.05,0],
+      path_woodEnd:[-0.11,0.5,-0.26,0.25,-0.05,0], plant_bush:[-0.2,0.2,-0.2,0.2,-0.05,0.19],
+      plant_bushDetailed:[-0.3,0.3,-0.3,0.3,-0.05,0.31], plant_bushLarge:[-0.19,0.18,-0.17,0.17,-0.05,0.19],
+      plant_bushSmall:[-0.19,0.19,-0.17,0.17,-0.05,0.16], plant_flatShort:[-0.14,0.14,-0.14,0.14,-0.05,0.19],
+      plant_flatTall:[-0.14,0.13,-0.14,0.13,-0.05,0.23], pot_large:[-0.28,0.28,-0.24,0.25,-0.05,0.15],
+      pot_small:[-0.16,0.16,-0.14,0.14,-0.05,0.22], rock_largeA:[-0.39,0.39,-0.51,0.51,-0.05,0.21],
+      rock_largeB:[-0.38,0.39,-0.51,0.51,-0.05,0.38], rock_smallA:[-0.18,0.18,-0.18,0.18,-0.05,0.14],
+      rock_smallB:[-0.18,0.18,-0.18,0.18,-0.05,0.13], rock_smallC:[-0.18,0.18,-0.18,0.18,-0.05,0.07],
+      rock_tallA:[-0.49,0.49,-0.34,0.34,-0.05,0.95], sign:[-0.15,0.15,-0.05,0.02,-0.05,0.36],
+      statue_block:[-0.2,0.2,-0.2,0.2,-0.05,0.35], statue_column:[-0.15,0.15,-0.15,0.15,-0.05,0.95],
+      statue_obelisk:[-0.15,0.16,-0.15,0.16,-0.05,0.83], stone_largeA:[-0.39,0.39,-0.51,0.51,-0.05,0.21],
+      stone_smallA:[-0.18,0.18,-0.18,0.18,-0.05,0.14], stump_old:[-0.16,0.2,-0.19,0.18,-0.05,0.22],
+      stump_round:[-0.16,0.16,-0.19,0.18,-0.05,0.16], tree_cone:[-0.26,0.27,-0.26,0.27,-0.05,1.38],
+      tree_default:[-0.38,0.38,-0.33,0.32,-0.05,1.66], tree_default_fall:[-0.38,0.38,-0.33,0.32,-0.05,1.66],
+      tree_detailed:[-0.43,0.42,-0.37,0.39,-0.05,1.28], tree_detailed_dark:[-0.43,0.42,-0.37,0.39,-0.05,1.28],
+      tree_fat:[-0.38,0.38,-0.33,0.32,-0.05,1.1], tree_fat_fall:[-0.38,0.38,-0.33,0.32,-0.05,1.1],
+      tree_oak:[-0.32,0.32,-0.37,0.37,-0.05,1.18], tree_oak_fall:[-0.32,0.32,-0.37,0.37,-0.05,1.18],
+      tree_pineDefaultA:[-0.27,0.26,-0.27,0.26,-0.05,1.5], tree_pineRoundA:[-0.31,0.31,-0.36,0.35,-0.05,1.32],
+      tree_pineSmallA:[-0.25,0.25,-0.25,0.25,-0.05,0.92], tree_pineTallA:[-0.18,0.21,-0.19,0.2,-0.05,1.48],
+      tree_plateau:[-0.33,0.28,-0.33,0.32,-0.05,1.2], tree_simple:[-0.18,0.17,-0.2,0.21,-0.05,1.47],
+      tree_small:[-0.18,0.17,-0.2,0.21,-0.05,1.06], tree_small_fall:[-0.18,0.17,-0.2,0.21,-0.05,1.06],
+      tree_tall:[-0.2,0.2,-0.23,0.23,-0.05,1.64], tree_thin:[-0.26,0.42,-0.25,0.37,-0.05,1.44],
+      tree_thin_fall:[-0.26,0.42,-0.25,0.37,-0.05,1.44]
     },
     // odds and ends from other Kenney kits (Mini Market, Mini Arcade, Factory Kit); all centred
     extras: {

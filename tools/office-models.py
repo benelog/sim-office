@@ -11,7 +11,7 @@ zips with --copy-from <dir> (only the files a pack uses). Each pack becomes offi
 as base64 (the game runs from file://, where neither fetch() nor external textures work), with the texture
 inside the .glb. The people are not Kenney's: tools/office-characters.py makes them (Quaternius).
 
-- A prop pack (city, roads, cars, furniture, food) holds one node per piece, named exactly like the Kenney file
+- A prop pack (city, roads, cars, furniture, food, extras, nature) holds one node per piece, named exactly like the Kenney file
   (building-a, desk, cup-coffee), at the origin with the file's own origin (feet at y=0). A piece made of
   several nodes (a car with its wheels, a desk with its drawer) keeps them as children named <piece>_<node>
   (sedan_body, sedan_wheel-front-left, desk_drawer). One material per texture ('colormap'); the furniture has
@@ -43,6 +43,7 @@ KITS = {
     'mini-market': ('kenney_mini-market', 'Models/GLB format'),
     'mini-arcade': ('kenney_mini-arcade', 'Models/GLB format'),
     'factory-kit': ('kenney_factory-kit_3.0', 'Models/GLB format'),
+    'nature-kit': ('kenney_nature-kit', 'Models/GLTF format'),
 }
 
 
@@ -71,6 +72,18 @@ maki-salmon rice-ball chinese bowl-soup bowl-cereal plate plate-dinner glass mug
 soda-bottle bottle-ketchup peanut-butter honey cheese bacon meat-patty sausage turkey fish can carton carton-small bag
 styrofoam ice-cream popsicle candy-bar chocolate barrel""".split()
 
+# Nature Kit: colour materials like the furniture (no texture). Trees, bushes, flowers, rocks, paths, a bridge, a few
+# park ornaments; for the park, the gardens and the edge of town.
+NATURE = """tree_oak tree_oak_fall tree_default tree_default_fall tree_detailed tree_detailed_dark tree_fat tree_fat_fall
+tree_small tree_small_fall tree_tall tree_thin tree_thin_fall tree_pineDefaultA tree_pineRoundA tree_pineTallA
+tree_pineSmallA tree_simple tree_plateau tree_cone plant_bush plant_bushDetailed plant_bushLarge plant_bushSmall
+plant_flatShort plant_flatTall grass grass_large grass_leafs flower_purpleA flower_purpleB flower_redA flower_redB
+flower_yellowA flower_yellowB lily_large lily_small rock_smallA rock_smallB rock_smallC rock_largeA rock_largeB rock_tallA
+stone_smallA stone_largeA stump_round stump_old log log_large fence_simple fence_simpleLow fence_gate fence_planks
+path_stone path_stoneCircle path_stoneCorner path_stoneEnd path_wood path_woodCorner path_woodEnd bridge_wood
+bridge_stoneRound sign statue_column statue_obelisk statue_block pot_large pot_small mushroom_red mushroom_tanGroup
+canoe""".split()
+
 # pack -> list of (kit, [piece names]); the first kit's texture is the material 'colormap', others 'colormap-<kit>'
 PACKS = {
     'city': [
@@ -96,7 +109,37 @@ PACKS = {
         ('mini-arcade', ['vending-machine', 'ticket-machine']),
         ('factory-kit', ['scanner-high', 'machine-window']),
     ],
+    'nature': [('nature-kit', NATURE)],
 }
+UNTEXTURED = {'furniture', 'nature'}      # colour materials only
+
+# The Nature Kit's own palette is mint and orange (a stylised look of its own); the game recolours its named
+# materials to the greens and browns of the Kenney city kits it stands next to. sRGB hex per material name.
+RECOLOR = {
+    'nature': {
+        'leafsGreen': '#62b24f', 'leafsDark': '#3e8f46', 'grass': '#72bf5a', 'leafsFall': '#e2903c',
+        'woodBark': '#8f6142', 'woodBarkDark': '#74492f', 'wood': '#b58455', 'woodDark': '#8d6239', 'woodInner': '#e9d3b3', 'woodBirch': '#efe9dd',
+        'stone': '#cfd3cf', 'stoneDark': '#a2a7a4', 'dirt': '#a88863', 'dirtDark': '#86694a',
+        'colorRed': '#d94b4f', 'colorYellow': '#f2c14e', 'colorPurple': '#9a7ad6', 'colorTan': '#d9b27c',
+    },
+}
+
+
+def srgb_to_linear(hex_color):
+    def ch(v):
+        c = v / 255.0
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    h = hex_color.lstrip('#')
+    return tuple(ch(int(h[i:i + 2], 16)) for i in (0, 2, 4)) + (1.0,)
+
+
+def recolor(pack):
+    for name, hex_color in RECOLOR.get(pack, {}).items():
+        m = bpy.data.materials.get(name)
+        node = principled(m)
+        if not node:
+            raise SystemExit(f'{pack}: no material {name} to recolour')
+        node.inputs['Base Color'].default_value = srgb_to_linear(hex_color)
 
 LIMIT = 3 * 1024 * 1024   # base64 bytes per pack
 
@@ -136,7 +179,11 @@ def import_glb(path):
         raise SystemExit(f'missing source {path} (run with --copy-from <unpacked Kenney zips>)')
     before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=path, import_pack_images=True)
-    return [o for o in bpy.data.objects if o not in before]
+    new = [o for o in bpy.data.objects if o not in before]
+    for o in new:      # the Nature Kit's 'tmpParent' empties land in an 'Orphan Nodes' collection outside the view layer
+        if o.name not in bpy.context.view_layer.objects:
+            bpy.context.scene.collection.objects.link(o)
+    return new
 
 
 def texture_image(mat):
@@ -261,6 +308,7 @@ def build_pack(pack):
             top, made = add_piece(kit, n)
             objs += made
     merge_materials(objs, tex)
+    recolor(pack)
     return objs
 
 
@@ -295,7 +343,7 @@ def check(pack, path):
         n = nodes[i]
         if any(abs(v) > 1e-6 for v in n.get('translation', [0, 0, 0])) or n.get('rotation', [0, 0, 0, 1]) != [0, 0, 0, 1] and n.get('rotation') is not None:
             problems.append(f'{n.get("name")} not at the origin')
-    if pack != 'furniture' and not j.get('images'):
+    if pack not in UNTEXTURED and not j.get('images'):
         problems.append('no texture')
     return problems
 

@@ -130,6 +130,21 @@ try {
       await shot('panel-' + p);
       await ev('SO.debug.closeCard()');
     }
+    await ev("SO.debug.goto('city', 'bus_stop')");
+    await sleep(800);
+    await ev("SO.debug.panel('map')");
+    await sleep(600);
+    await shot('panel-map-town');
+    await ev('SO.debug.closeCard()');
+    await ev("SO.debug.goto('office', 'office_desk')");
+    await sleep(800);
+    await ev("SO.debug.panel('map')");
+    await sleep(600);
+    await shot('panel-map-from-office');
+    await ev("SO.debug.mapTab('room')");
+    await sleep(600);
+    await shot('panel-map-room');
+    await ev('SO.debug.closeCard()');
     const shopPlace = await ev("((SO_DB.items || []).find(i => !/fare|rent/.test(i.kind)) || {}).place");
     if (shopPlace) {
       await ev(`(async () => { const z = (SO_DB.places.find(p => p.id === ${JSON.stringify(shopPlace)}) || {}).zone; if (z) await SO.debug.goto(z, ${JSON.stringify(shopPlace)}); })()`);

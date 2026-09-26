@@ -34,7 +34,7 @@
   const PAYDAYS = listOf(CFG.payday_days).map(Number);
   const RENT_DAY = +CFG.rent_day || 21;
   const WALK = 1.25, RUN = 2.9, TURN = 2.5, PLAYER_R = 0.2, NPC_R = 0.24, TALK_R = 1.45, PLACE_R = 1.35;
-  const PACK_SCALE = { city: 3, roads: 3, cars: 0.6, furniture: 1, food: 0.6 };
+  const PACK_SCALE = { city: 3, roads: 3, cars: 0.6, furniture: 1, food: 0.6, extras: 1, nature: 2 };
   // the player's choices (office/models/<id>.js, tools/office-characters.py): people the cast does not wear
   const CHARACTER_LABELS = {
     'man-casual-3': 'Blazer ♂', 'man-hoodie-2': 'Hoodie ♂', 'man-suit-2': 'Suit ♂', 'man-adventurer': 'Jacket ♂',
@@ -1524,7 +1524,7 @@
     keys[e.code] = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && state === 'play' && actions.length) { e.preventDefault(); actions[0].run(); }
     if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
-    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar' }[e.code];
+    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map' }[e.code];
     if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
   });
@@ -2149,7 +2149,10 @@
         if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
       }
       body.innerHTML = html;
+    } else if (panelKind === 'map') {
+      renderMapPanel(h, sub, body);
     }
+    panel.classList.toggle('map', panelKind === 'map');
   }
   panel.addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -2161,6 +2164,292 @@
     if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note("You can't afford that.", true); else { pay(-it.price, it.name, 'spend'); G.pass = G.day; saveGame(); renderPanel(); note('Day pass bought. Ride as much as you like today.'); } }
   });
   $('card').addEventListener('click', (e) => { const b = e.target.closest('button[data-say]'); if (b) speak(b.dataset.say); });
+  // ---------------------------------------------------------------- the map (Menu > Map, M): the town, or the room you are in
+  // Drawn on a canvas from the zone's data: road tiles (the kit's 3 x 3 cells with sidewalks), props by their
+  // footprints (SO_ZONE_KIT.BOX), places as pins, doors, the streets and areas the zone names in `map`, the people
+  // (where they are now, or the door of the building they are in), the goal, and you. Redrawn while open.
+  const MAP = { tab: 'town', canvas: null, zone: null };
+  let mapTimer = 0;
+  const MAPC = {
+    grass: '#c5dcae', pave: '#e2ddd2', road: '#faf8f3', roadEdge: '#c9c2b4', line: '#d8cfba', stripe: '#ffffff',
+    floor: '#ece6da', wall: '#5b6477', furniture: '#d9cdb9', furnitureEdge: '#a8967c', box: '#c9c4ba',
+    building: '#efe2cc', buildingEdge: '#b39a76', tower: '#d5dfe9', towerEdge: '#8ea2b7', home: '#f5c98d', office: '#8ebfdc', diner: '#ef9b88', market: '#93cf9b',
+    tree: '#5d9c4b', treeEdge: '#43773a', bush: '#7eb567', rock: '#a9a59d', rockEdge: '#7d7a73', path: '#d9cdb0', water: '#7fb8e6', waterEdge: '#5e98c9',
+    car: '#8b95a6', bench: '#a67c5b', lamp: '#6b7380', fence: '#8d6d4c', planter: '#6a9d55', flower: { red: '#e0575a', yellow: '#f2c74c', purple: '#a074c9' },
+    pin: '#2f7d7a', pinEdge: '#215c5a', door: '#7b5a3e', label: '#1d2433', labelBox: 'rgba(255,255,255,0.88)', street: '#7a7366', area: '#3f6b3a',
+    you: '#16233b', person: '#e0a33a', personEdge: '#8a5f12', bang: '#c24a3d', goal: '#e0a33a'
+  };
+  const KEY_BUILDINGS = { apartment: 'home', lakeside_labs: 'office', diner: 'diner', market: 'market' };
+  const OPEN_DIRS = { straight: [0, 2], crossing: [0, 2], bend: [2, 1], end: [2], square: [], all: [0, 1, 2, 3] };     // east, south, west, north at turn 0
+  function mapZone() { return MAP.tab === 'room' && zoneId && zoneId !== 'city' ? zoneId : 'city'; }
+  // world-axis rectangle of a prop's footprint, from the zone kit's bounding boxes (like the engine's solids)
+  function footprint(p) {
+    const at = p.at || [0, 0], turn = p.turn || 0;
+    if (p.pack === 'box' || !p.pack) { const sz = p.size || [1, 1, 1]; return rectOf(at[0], at[1], sz[0], sz[2], turn); }
+    const kit = window.SO_ZONE_KIT || {}, b = kit.BOX && kit.BOX[p.pack] && kit.BOX[p.pack][p.node];
+    const s = (PACK_SCALE[p.pack] || 1) * (p.scale || 1);
+    if (!b) { const sz = propSize(p); return rectOf(at[0], at[1], sz[0], sz[2], turn); }
+    const a = turn * Math.PI / 180, c = Math.cos(a), sn = Math.sin(a);
+    const cx = (b[0] + b[1]) / 2 * s, cz = (b[2] + b[3]) / 2 * s, w = (b[1] - b[0]) * s, d = (b[3] - b[2]) * s;
+    const mx = at[0] + cx * c + cz * sn, mz = at[1] - cx * sn + cz * c;
+    const W = Math.abs(w * c) + Math.abs(d * sn), D = Math.abs(w * sn) + Math.abs(d * c);
+    return { x0: mx - W / 2, x1: mx + W / 2, z0: mz - D / 2, z1: mz + D / 2 };
+  }
+  function mapBounds(spec) {
+    const [w, d] = spec.size, m = spec.indoor ? 0.7 : 3.5;
+    return { x0: -w / 2 - m, x1: w / 2 + m, z0: -d / 2 - m, z1: d / 2 + m };
+  }
+  // where someone (an npc row) is on the map of zone `mz`: their spot, or the door of the building they are in
+  function personOnMap(n, mz, spec) {
+    const a = npcActors[n.id];
+    if (a && zoneId === mz) return a.leaving ? null : { at: [a.pos.x, a.pos.z], inside: null };
+    const pid = npcPlaceNow(n), pz = zoneOfPlace(pid);
+    if (!pz) return null;
+    if (pz === mz) { const pl = spec.places[pid]; return pl && !pl.guessed ? { at: pl.at, inside: null } : null; }
+    if (mz !== 'city') return null;
+    const via = routeTo('city', pz);
+    return via && via.to === pz ? { at: via.at, inside: pz } : null;
+  }
+  function youOnMap(mz, spec) {
+    if (!player || !G) return null;
+    if (zoneId === mz) return { at: [player.pos.x, player.pos.z], heading: player.heading, inside: null };
+    if (mz !== 'city') return null;
+    const via = routeTo('city', zoneId);
+    return via ? { at: via.at, inside: via.to === zoneId ? zoneId : (TRAVEL_ZONES.includes(zoneId) ? zoneId : via.to) } : null;
+  }
+  function goalOnMap(mz, spec) {
+    if (!G) return null;
+    if (zoneId === mz && goalTarget) return goalTarget.actor ? [goalTarget.actor.pos.x, goalTarget.actor.pos.z] : goalTarget.at;
+    const ep = openEpisodes()[0];
+    if (!ep) return null;
+    const pid = isPhone(ep) ? ep.place : npcPlaceNow(npcRow(ep.npc)) || ep.place, pz = zoneOfPlace(pid);
+    if (pz === mz) { const pl = spec.places[pid]; return pl ? pl.at : null; }
+    if (mz !== 'city') return null;
+    const via = pz && routeTo('city', pz);
+    return via ? via.at : null;
+  }
+  function renderMapPanel(h, sub, body) {
+    const spec = zoneSpec(mapZone());
+    h.textContent = MAP.tab === 'room' && spec.id !== 'city' ? spec.name : `${CFG.city} · town map`;
+    sub.textContent = `${weekday(G.day)}, ${clock(G.minute)}`;
+    const tabs = zoneId && zoneId !== 'city' ? `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="town" aria-selected="${MAP.tab !== 'room'}">Town</button><button type="button" role="tab" data-tab="room" aria-selected="${MAP.tab === 'room'}">${esc(zoneName(zoneId)[0])}</button></div>` : '';
+    body.innerHTML = `${tabs}<canvas class="map" aria-label="Map"></canvas>
+      <div class="legend"><span><i class="you"></i>You</span><span><i class="person"></i>People</span><span><i class="bang">!</i>Someone to talk to</span><span><i class="goal"></i>Where to go</span><span><i class="door"></i>Door</span></div>
+      <div class="map-list"></div>`;
+    MAP.canvas = body.querySelector('canvas.map');
+    body.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { MAP.tab = b.dataset.tab; renderPanel(); }));
+    drawMap();
+  }
+  function drawMap() {
+    const cv = MAP.canvas;
+    if (!cv || !cv.isConnected || !G) return;
+    const mz = mapZone(), spec = zoneSpec(mz), B = mapBounds(spec);
+    const bw = B.x1 - B.x0, bd = B.z1 - B.z0;
+    const body = cv.parentElement, avail = Math.max(240, body.clientWidth - 2);
+    const maxH = Math.max(220, window.innerHeight - 250);
+    const s = Math.min(avail / bw, maxH / bd);
+    const W = Math.round(bw * s), H = Math.round(bd * s), dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
+    const g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const X = (x) => (x - B.x0) * s, Y = (z) => (z - B.z0) * s;
+    const rect = (r, fill, stroke, lw) => { g.beginPath(); g.rect(X(r.x0), Y(r.z0), (r.x1 - r.x0) * s, (r.z1 - r.z0) * s); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); } };
+    const disc = (x, z, r, fill, stroke, lw) => { g.beginPath(); g.arc(X(x), Y(z), r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); } };
+    const halo = (text, x, y, font, color, align) => { g.font = font; g.textAlign = align || 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.strokeText(text, x, y); g.fillStyle = color; g.fillText(text, x, y); };
+    g.fillStyle = spec.indoor ? '#d7d3ca' : MAPC.grass;
+    g.fillRect(0, 0, W, H);
+    g.save();
+    g.beginPath(); g.rect(0, 0, W, H); g.clip();
+    if (spec.indoor) rect({ x0: -spec.size[0] / 2, x1: spec.size[0] / 2, z0: -spec.size[1] / 2, z1: spec.size[1] / 2 }, MAPC.floor, MAPC.wall, 2);
+    // ----- tiles: roads as cells with sidewalks, pavement, paths
+    const tiles = spec.tiles || [], props = spec.props || [];
+    const roadS = (PACK_SCALE.roads || 3);
+    const later = [];      // crosswalk stripes over the asphalt
+    tiles.forEach(p => {
+      if (!p || !p.at) return;
+      if (p.pack === 'roads' && /^road-/.test(p.node || '')) {
+        const S = roadS * (p.scale || 1), half = S / 2, band = 0.4 * S;
+        const kind = /straight|crossing/.test(p.node) ? (/crossing/.test(p.node) ? 'crossing' : 'straight') : /bend/.test(p.node) ? 'bend' : /end/.test(p.node) ? 'end' : /square/.test(p.node) ? 'square' : 'all';
+        rect({ x0: p.at[0] - half, x1: p.at[0] + half, z0: p.at[1] - half, z1: p.at[1] + half }, MAPC.pave);
+        const turn = Math.round((p.turn || 0) / 90), open = OPEN_DIRS[kind].map(d => (((d - turn) % 4) + 4) % 4);
+        g.fillStyle = MAPC.road;
+        g.fillRect(X(p.at[0] - band), Y(p.at[1] - band), 2 * band * s, 2 * band * s);
+        open.forEach(d => {
+          const [dx, dz] = [[1, 0], [0, 1], [-1, 0], [0, -1]][d];
+          const x0 = p.at[0] + (dx > 0 ? band : dx < 0 ? -half : -band), x1 = p.at[0] + (dx > 0 ? half : dx < 0 ? -band : band);
+          const z0 = p.at[1] + (dz > 0 ? band : dz < 0 ? -half : -band), z1 = p.at[1] + (dz > 0 ? half : dz < 0 ? -band : band);
+          g.fillRect(X(x0), Y(z0), (x1 - x0) * s, (z1 - z0) * s);
+        });
+        if (kind === 'crossing') later.push([p.at, open.includes(0) ? 'x' : 'z', S]);
+      } else if (p.pack === 'roads') rect({ x0: p.at[0] - roadS / 2, x1: p.at[0] + roadS / 2, z0: p.at[1] - roadS / 2, z1: p.at[1] + roadS / 2 }, MAPC.pave);
+      else if (/path|floor/i.test(p.node || '')) { const r = footprint(p); if (/Circle/.test(p.node)) disc((r.x0 + r.x1) / 2, (r.z0 + r.z1) / 2, (r.x1 - r.x0) / 2 * s, MAPC.path); else rect(r, MAPC.path); }
+    });
+    later.forEach(([at, along, S]) => {
+      g.fillStyle = MAPC.stripe;
+      for (let i = -2; i <= 2; i++) {
+        if (along === 'x') g.fillRect(X(at[0] + i * 0.27 * S) - 1.5, Y(at[1] - 0.36 * S), 3, 0.72 * S * s);
+        else g.fillRect(X(at[0] - 0.36 * S), Y(at[1] + i * 0.27 * S) - 1.5, 0.72 * S * s, 3);
+      }
+    });
+    // ----- props: water and ground first, then buildings and furniture, then the small things
+    const order = (p) => p.pack === 'box' && (p.size || [1, 1, 1])[1] <= 0.03 ? 0 : /^(building|wall)/.test(p.node || '') || p.pack === 'box' ? 1 : p.pack === 'furniture' || p.pack === 'extras' ? 2 : 3;
+    props.slice().sort((a, b) => order(a) - order(b)).forEach(p => {
+      if (!p || !p.at) return;
+      const node = p.node || '', r = footprint(p);
+      if (p.pack === 'box') {
+        const flat = (p.size || [1, 1, 1])[1] <= 0.03;
+        if (flat) rect(r, /#4f97d6|#5aa0d8/i.test(p.color || '') ? MAPC.water : (p.color || MAPC.box));
+        else if (spec.indoor && (p.size || [1])[1] >= 1) rect(r, MAPC.wall);
+        else rect(r, p.color || MAPC.box, 'rgba(0,0,0,0.18)');
+        return;
+      }
+      if (p.pack === 'city') {
+        if (/^building-skyscraper/.test(node)) rect(r, MAPC.tower, MAPC.towerEdge, 1.2);
+        else if (/^(building|low-detail)/.test(node)) { const key = KEY_BUILDINGS[p.id]; rect(r, key ? MAPC[key] : MAPC.building, MAPC.buildingEdge, 1.2); }
+        else if (/^tree/.test(node)) disc(p.at[0], p.at[1], Math.max(3, 0.55 * s), MAPC.tree, MAPC.treeEdge);
+        else if (/^fence/.test(node)) rect(r, MAPC.fence);
+        else if (/^planter/.test(node)) rect(r, MAPC.planter);
+        else if (/^detail-(parasol|awning|overhang)/.test(node)) rect(r, 'rgba(255,255,255,0.35)');
+        return;
+      }
+      if (p.pack === 'nature') {
+        const sc = (PACK_SCALE.nature || 2) * (p.scale || 1);
+        if (/^tree/.test(node)) disc(p.at[0], p.at[1], Math.max(3, 0.32 * sc * s), /fall/.test(node) ? '#c98a3e' : /dark|pine/.test(node) ? '#3f7a3c' : MAPC.tree, MAPC.treeEdge);
+        else if (/^plant|^grass/.test(node)) disc(p.at[0], p.at[1], Math.max(1.5, 0.16 * sc * s), MAPC.bush);
+        else if (/^flower/.test(node)) disc(p.at[0], p.at[1], 1.6, MAPC.flower[(node.match(/red|yellow|purple/) || ['red'])[0]]);
+        else if (/^(rock|stone)/.test(node)) rect(r, MAPC.rock, MAPC.rockEdge);
+        else if (/^statue/.test(node)) { rect(r, '#e9e4d8', MAPC.rockEdge); }
+        else if (/^fence/.test(node)) rect(r, MAPC.fence);
+        else if (/^(log|stump|canoe|bridge|sign|pot)/.test(node)) rect(r, MAPC.bench);
+        else if (/^lily/.test(node)) disc(p.at[0], p.at[1], 1.6, MAPC.bush);
+        return;
+      }
+      if (p.pack === 'cars') { rect(r, MAPC.car, 'rgba(0,0,0,0.2)'); return; }
+      if (p.pack === 'roads') {
+        if (/^light|^traffic|^electricity/.test(node)) disc(p.at[0], p.at[1], 1.8, MAPC.lamp);
+        else if (/^dumpster|^construction-barrier/.test(node)) rect(r, '#8d9aa5');
+        else if (/^road-sign|^sign/.test(node)) disc(p.at[0], p.at[1], 1.4, MAPC.lamp);
+        return;
+      }
+      if (p.pack === 'furniture') {
+        if (/^wall/.test(node)) rect(r, MAPC.wall);
+        else if (/^(floor|rug)/.test(node)) return;
+        else if (/^bench|^chair|^stool|^lounge/.test(node)) rect(r, MAPC.bench);
+        else if (/^(lamp|plant|potted|books|laptop|computer|pillow|toaster|radio|speaker)/.test(node) || (p.lift || 0) > 0.1) return;
+        else rect(r, MAPC.furniture, MAPC.furnitureEdge);
+        return;
+      }
+      if (p.pack === 'extras') { if (!p.lift) rect(r, MAPC.furniture, MAPC.furnitureEdge); return; }
+    });
+    // ----- streets and areas named by the zone
+    const M = spec.map || {};
+    g.textBaseline = 'middle';
+    (M.streets || []).forEach(st => {
+      g.save();
+      if (st.along === 'x') { g.translate(X(B.x0 + 1.2), Y(st.at)); g.textAlign = 'left'; }
+      else { g.translate(X(st.at), Y(B.z0 + 1.2)); g.rotate(Math.PI / 2); g.textAlign = 'left'; }
+      g.font = '600 10px ' + getComputedStyle(document.body).fontFamily;
+      g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.85)'; g.strokeText(st.name, 0, 0);
+      g.fillStyle = MAPC.street; g.fillText(st.name, 0, 0);
+      g.restore();
+    });
+    (M.areas || []).forEach(a => {
+      const ko = document.body.classList.contains('ko-on') && a.name_ko;
+      halo(a.name, X(a.at[0]), Y(a.at[1]) - (ko ? 6 : 0), 'italic 600 11px ' + getComputedStyle(document.body).fontFamily, a.water ? '#2f6f9f' : MAPC.area);
+      if (ko) halo(a.name_ko, X(a.at[0]), Y(a.at[1]) + 7, '10px ' + getComputedStyle(document.body).fontFamily, a.water ? '#2f6f9f' : MAPC.area);
+    });
+    // ----- doors (portals) and places
+    (spec.portals || []).forEach(p => {
+      const w = Math.max(6, (p.size ? p.size[0] : 1) * s), d = Math.max(4, (p.size ? p.size[1] : 0.6) * s);
+      g.fillStyle = MAPC.door; g.fillRect(X(p.at[0]) - w / 2, Y(p.at[1]) - d / 2, w, d);
+      g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(X(p.at[0]) - w / 2, Y(p.at[1]) - d / 2, w, d);
+    });
+    const font = getComputedStyle(document.body).fontFamily, koOn = document.body.classList.contains('ko-on');
+    const labels = [];
+    Object.keys(spec.places).forEach(pid => {
+      const pl = spec.places[pid];
+      if (!pl || !pl.at || pl.guessed) return;
+      const info = place(pid), isDoor = placeKind(pid) === 'door' || /_door$/.test(pid);
+      const x = X(pl.at[0]), y = Y(pl.at[1]);
+      if (isDoor) { g.fillStyle = MAPC.pin; g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); }
+      else { g.beginPath(); g.arc(x, y, 5.5, 0, Math.PI * 2); g.fillStyle = MAPC.pin; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke(); g.beginPath(); g.arc(x, y, 2, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); }
+      labels.push({ x, y: y - 9, text: info.name, sub: koOn ? info.name_ko : null, w: 0 });
+    });
+    // ----- the goal, the people, you
+    const goal = goalOnMap(mz, spec);
+    if (goal) { g.setLineDash([3, 3]); disc(goal[0], goal[1], 12, null, MAPC.goal, 2.5); g.setLineDash([]); }
+    const open = openEpisodes();
+    const seen = {};
+    rows('npcs').forEach(n => {
+      const at = personOnMap(n, mz, spec);
+      if (!at) return;
+      const k = at.at[0].toFixed(1) + ',' + at.at[1].toFixed(1), j = (seen[k] = (seen[k] || 0) + 1) - 1;
+      const x = X(at.at[0]) + (at.inside ? (j % 3) * 9 - 9 : 0), y = Y(at.at[1]) + (at.inside ? 10 + Math.floor(j / 3) * 9 : 0);
+      g.beginPath(); g.arc(x, y, 4.5, 0, Math.PI * 2); g.fillStyle = MAPC.person; g.fill(); g.strokeStyle = MAPC.personEdge; g.lineWidth = 1.2; g.stroke();
+      if (open.some(e => e.npc === n.id && !isPhone(e))) { g.beginPath(); g.arc(x + 4, y - 5, 5, 0, Math.PI * 2); g.fillStyle = MAPC.bang; g.fill(); halo('!', x + 4, y - 5, 'bold 8px ' + font, '#fff'); g.lineWidth = 1; }
+      if (!at.inside) labels.push({ x: x + 7, y, text: String(n.name).split(' ')[0], person: true, left: true });
+      else if (j === 0) {
+        const names = rows('npcs').filter(m => { const q = personOnMap(m, mz, spec); return q && q.inside === at.inside; }).map(m => String(m.name).split(' ')[0]);
+        const where = TRAVEL_ZONES.includes(at.inside) ? ` · ${zoneName(at.inside)[0].split(',')[0]}` : '';      // by the shuttle: say where they are
+        labels.push({ x: x + 12, y: y + 4, text: (names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}` : names.join(', ')) + where, person: true, left: true });
+      }
+    });
+    const you = youOnMap(mz, spec);
+    if (you) {
+      const x = X(you.at[0]), y = Y(you.at[1]) - (you.inside ? 12 : 0);
+      g.save(); g.translate(x, y);
+      if (you.heading != null) { g.rotate(-you.heading + Math.PI); g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3.5); g.lineTo(-6, 7); g.closePath(); }
+      else { g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); }
+      g.fillStyle = MAPC.you; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.6; g.stroke();
+      g.restore();
+      labels.push({ x: x + 9, y, text: 'You' + (you.inside ? ` · in ${zoneName(you.inside)[0].split(',')[0]}` : ''), you: true, left: true });
+    }
+    // labels last, so that they lie over everything, each in a small box; you and the people first, then the
+    // places, each label at the first of a few spots round its mark that is clear of the labels already placed
+    const placed = [];
+    const overlap = (a) => placed.reduce((sum, b) => sum + Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y)), 0);
+    labels.sort((a, b) => (b.you ? 2 : b.person ? 1 : 0) - (a.you ? 2 : a.person ? 1 : 0)).forEach(l => {
+      g.font = '600 10px ' + font;
+      const tw = g.measureText(l.text).width, sw = l.sub ? (g.font = '9px ' + font, g.measureText(l.sub).width) : 0;
+      const w = Math.max(tw, sw) + 8, hgt = l.sub ? 23 : 14, ax = l.left ? l.x - 7 : l.x, ay = l.left ? l.y : l.y + 9;    // ax, ay: the mark
+      // spots round the mark: right, left, above, below, then the corners; the first clear one, else the least covered
+      const spots = [[ax + 8, ay - hgt / 2], [ax - w - 8, ay - hgt / 2], [ax - w / 2, ay - hgt - 8], [ax - w / 2, ay + 8],
+        [ax + 6, ay - hgt - 6], [ax - w - 6, ay - hgt - 6], [ax + 6, ay + 6], [ax - w - 6, ay + 6]];
+      if (!l.left) spots.unshift(spots.splice(2, 1)[0]);       // places: above first
+      let box = null, best = Infinity;
+      for (const [sx, sy] of spots) { const b = { x: clamp(sx, 0, W - w), y: clamp(sy, 0, H - hgt), w, h: hgt }, o = overlap(b); if (o < best) { best = o; box = b; } if (!o) break; }
+      placed.push(box);
+      g.fillStyle = l.you ? MAPC.you : MAPC.labelBox; g.beginPath(); if (g.roundRect) g.roundRect(box.x, box.y, w, hgt, 4); else g.rect(box.x, box.y, w, hgt); g.fill();
+      g.fillStyle = l.you ? '#fff' : l.person ? '#6d4a0a' : MAPC.label; g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.font = (l.you ? '700 ' : '600 ') + '10px ' + font;
+      g.fillText(l.text, box.x + 4, box.y + 7.5);
+      if (l.sub) { g.font = '9px ' + font; g.fillStyle = '#5b6477'; g.fillText(l.sub, box.x + 4, box.y + 17); }
+    });
+    // compass
+    halo('N', W - 14, 14, '700 11px ' + font, MAPC.label);
+    g.beginPath(); g.moveTo(W - 14, 20); g.lineTo(W - 10, 30); g.lineTo(W - 14, 27); g.lineTo(W - 18, 30); g.closePath(); g.fillStyle = MAPC.label; g.fill();
+    g.restore();
+    // ----- the list under the map: places with people or something to do, and where everyone out of town is
+    const list = body.querySelector('.map-list');
+    if (list) {
+      const items = [];
+      Object.keys(spec.places).forEach(pid => {
+        const pl = spec.places[pid];
+        if (!pl || pl.guessed) return;
+        const people = rows('npcs').filter(n => { const at = personOnMap(n, mz, spec); return at && !at.inside && Math.hypot(at.at[0] - pl.at[0], at.at[1] - pl.at[1]) < 2.2; }).map(n => String(n.name).split(' ')[0]);
+        const acts = placeActions(pid).map(a => a.label.replace(/ \(.*\)$/, ''));
+        const talk = open.filter(e => (isPhone(e) ? e.place === pid : rows('npcs').some(n => n.id === e.npc && (npcPlaceNow(n) === pid)))).map(e => e.title);
+        if (!people.length && !acts.length && !talk.length) return;
+        items.push(`<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')}${people.length ? ' · ' + esc(people.join(', ')) : ''}${acts.length ? ' · ' + esc(acts.join(', ')) : ''}</div>${talk.length ? `<div class="s talk">! ${esc(talk.join(' · '))}</div>` : ''}</div></div>`);
+      });
+      if (mz === 'city') {
+        const away = rows('npcs').filter(n => !personOnMap(n, mz, spec)).map(n => `${String(n.name).split(' ')[0]} (${zoneName(zoneOfPlace(npcPlaceNow(n)))[0]})`);
+        if (away.length) items.push(`<div class="row"><div class="main"><div class="t">Out of town</div><div class="s">${esc(away.join(', '))} · by the airport shuttle</div></div></div>`);
+      }
+      list.innerHTML = items.join('');
+    }
+  }
+
   function buy(id) {
     const i = ITEMS[id];
     if (!i || !G) return false;
@@ -2451,6 +2740,7 @@
     if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) refreshNpcs(false); updateGoal(); }
     if ((actTimer -= dt) <= 0) { actTimer = 0.12; actions = computeActions(); renderActions(); }
     if ((hudTimer -= dt) <= 0) { hudTimer = 0.25; hud(); }
+    if (panelKind === 'map' && !panel.hidden && (mapTimer -= dt) <= 0) { mapTimer = 0.5; drawMap(); }     // people move while the map is open
     envTick(dt);
     markerTick(elapsed);
     cameraTick(dt);
@@ -2605,6 +2895,7 @@
     },
     buy(itemId) { return buy(itemId); },
     panel(kind, arg) { openPanel(kind, arg); return state; },
+    mapTab(t) { MAP.tab = t === 'room' ? 'room' : 'town'; if (panelKind === 'map') renderPanel(); return MAP.tab; },
     closeCard() { if (!$('card').hidden) closeCard(); if (!panel.hidden) closePanel(); return state; },
     reset() { resetGame(); store.del(SET_KEY); return true; },
     // what stands between the player and the camera (for tuning zone files)

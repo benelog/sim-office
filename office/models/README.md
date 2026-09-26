@@ -6,7 +6,7 @@
 ## 만들기·점검
 
 ```sh
-blender -b --python tools/office-models.py                               # 전부 (18개 파일, 몇 초)
+blender -b --python tools/office-models.py                               # 전부 (소품 팩 7개, 몇 초)
 blender -b --python tools/office-models.py -- city food                 # 이것만
 blender -b --python tools/office-models.py -- --list                     # 팩·원본 키트·노드 수
 blender -b --python tools/office-models.py -- food --keep-glb /tmp/glb   # .glb도 남김(확인용)
@@ -17,7 +17,7 @@ node tools/office-models-check.mjs --sizes furniture  # 조각마다 크기 [w h
 ```
 
 - 원본: `kenney/<kit>/<이름>.glb` + `kenney/<kit>/Textures/colormap.png` + `kenney/<kit>/License.txt`. 쓰는 파일만 복사해 두었습니다.
-  kit 폴더: `city-kit-commercial`(2.1), `city-kit-suburban`(2.0), `city-kit-roads`, `car-kit`, `furniture-kit`(GLTF format 폴더의 .glb), `food-kit`, `mini-market`, `mini-arcade`, `factory-kit`(3.0).
+  kit 폴더: `city-kit-commercial`(2.1), `city-kit-suburban`(2.0), `city-kit-roads`, `car-kit`, `furniture-kit`(GLTF format 폴더의 .glb), `food-kit`, `mini-market`, `mini-arcade`, `factory-kit`(3.0), `nature-kit`(GLTF format 폴더의 .glb).
   원본 zip은 `https://kenney.nl/assets/<slug>` 페이지의 `https://kenney.nl/media/pages/assets/<slug>/<hash>/kenney_<slug>.zip` 링크에서 받습니다(curl에 User-Agent 필요).
 - 빌드 스크립트 안에서도 검사합니다: 노드 이름 중복·누락, 조각이 원점에 있는지, 이미지가 포함됐는지, 크기 한도(팩 3MB, base64 기준). 하나라도 어긋나면 실패합니다.
 - 내보내기: glTF Y-up, 탄젠트 없음(원본에 있던 TANGENT를 빼서 작아짐).
@@ -155,8 +155,20 @@ apple banana orange lemon grapes strawberry watermelon pear cherries avocado tom
 
 - 재질: `colormap`(Mini Market·Mini Arcade는 같은 그림이라 이미지 하나), `colormap-factory-kit`, `material-glass`.
 
+## nature — 71개, 838 KB (Nature Kit; 텍스처 없이 색 재질)
+
+공원·정원·마을 가장자리·강변에 쓰는 자연물. 모두 원점이 바닥 가운데이고, 키트 특성상 바닥 아래 0.05만큼 받침이 있어(`miny -0.05`) `SO_ZONE_KIT.prop()`이 그만큼 띄웁니다(길 조각은 얇은 판처럼 보이도록 city.js가 `lift`를 0.02로 덮어씀). 게임 기본 배율 2.
+
+- 나무(20): tree_oak tree_oak_fall tree_default tree_default_fall tree_detailed tree_detailed_dark tree_fat tree_fat_fall tree_small tree_small_fall tree_tall tree_thin tree_thin_fall tree_pineDefaultA tree_pineRoundA tree_pineTallA tree_pineSmallA tree_simple tree_plateau tree_cone — 배율 1에서 키 0.97~1.71(게임에서 2~3.4).
+- 덤불·풀·꽃(17): plant_bush plant_bushDetailed plant_bushLarge plant_bushSmall plant_flatShort plant_flatTall grass grass_large grass_leafs flower_purpleA/B flower_redA/B flower_yellowA/B lily_large lily_small — 꽃은 0.16~0.29 높이라 게임에서는 배율 0.55로 씀.
+- 바위(8): rock_smallA/B/C rock_largeA/B rock_tallA stone_smallA stone_largeA (rock은 흙빛, stone은 회색).
+- 길·구조물(16): path_stone path_stoneCircle path_stoneCorner path_stoneEnd path_wood path_woodCorner path_woodEnd bridge_wood bridge_stoneRound fence_simple fence_simpleLow fence_gate fence_planks sign statue_column statue_obelisk statue_block.
+- 그 밖(10): stump_round stump_old log log_large pot_large pot_small mushroom_red mushroom_tanGroup canoe.
+- 재질 19개(색만): leafsGreen leafsDark leafsFall grass woodBark woodBarkDark wood woodDark woodInner woodBirch stone stoneDark dirt dirtDark colorRed colorYellow colorPurple colorTan _defaultMat. 키트 원래 팔레트는 민트(#28e0c0)·주황(#f08858)인데, 옆에 서는 Kenney 도시 키트의 초록·갈색에 맞춰 `tools/office-models.py`의 `RECOLOR`로 다시 칠했습니다(sRGB hex → 선형).
+- 원본 파일에는 `tmpParent`라는 빈 노드가 있어 Blender가 'Orphan Nodes' 컬렉션(뷰 레이어 밖)에 넣습니다. 빌드 스크립트가 씬 컬렉션에 다시 링크합니다.
+
 ## 출처·라이선스
 
 인물: Quaternius (quaternius.com) — Ultimate Modular Men, Animated Women. CC0 1.0. 라이선스 원문은 `quaternius/<pack>/License.txt`.
 
-Kenney (www.kenney.nl) — City Kit (Commercial) 2.1, City Kit (Suburban) 2.0, City Kit (Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit 3.0. 모두 CC0 1.0(표기 의무 없음, "Kenney (www.kenney.nl)" 표기 권장). 라이선스 원문은 `kenney/<kit>/License.txt`.
+Kenney (www.kenney.nl) — City Kit (Commercial) 2.1, City Kit (Suburban) 2.0, City Kit (Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit 3.0, Nature Kit. 모두 CC0 1.0(표기 의무 없음, "Kenney (www.kenney.nl)" 표기 권장). 라이선스 원문은 `kenney/<kit>/License.txt`.

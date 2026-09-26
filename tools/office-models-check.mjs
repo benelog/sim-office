@@ -14,7 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = path.join(ROOT, 'office', 'models');
-const COUNTS = { city: 48, roads: 25, cars: 11, furniture: 140, food: 78, extras: 13 };   // top-level nodes per pack
+const COUNTS = { city: 48, roads: 25, cars: 11, furniture: 140, food: 78, extras: 13, nature: 71 };   // top-level nodes per pack
+const UNTEXTURED = ['furniture', 'nature'];       // colour materials only
 const LIMIT = 3 * 1024 * 1024;               // base64 bytes
 
 const args = process.argv.slice(2);
@@ -78,7 +79,7 @@ for (const f of files) {
   const images = j.images || [];
   if (p.key !== pack) problems.push(`key '${p.key}' is not the file name`);
   if (images.some(im => im.uri || im.bufferView === undefined)) problems.push('image not embedded (uri)');
-  if (pack !== 'furniture' && !images.length) problems.push('no texture');
+  if (!UNTEXTURED.includes(pack) && !images.length) problems.push('no texture');
   if (p.b64 > LIMIT) problems.push(`${Math.round(p.b64 / 1024)} KB over the limit`);
   const seen = new Set(), dup = new Set();
   for (const n of all) (seen.has(n) ? dup : seen).add(n);

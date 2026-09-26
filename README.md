@@ -14,7 +14,7 @@ google-chrome "file://$PWD/office/index.html"
 - **15일치 47개 에피소드**: 출입증 받기, 온보딩, 스탠드업, 코드 리뷰, 회의 옮기기, IT 헬프데스크, 1:1, 스프린트 플래닝, 마감 협의, HR 서류(W-4·PPO/HMO·401(k)), 급여명세서 읽기, 해피아워 거절, 다이너 주문과 팁, 식료품 계산, 집주인에게 수리 요청, 고객 킥오프, 범위·가격·지급 조건(Net 30/45)·SLA 협상, 출장 승인과 per diem, 항공권·호텔 예약, 공항 체크인·보안 검색·지연, 호텔 체크인·체크아웃, 고객사 방문, 고객과 저녁, 계약 서명, 초과 예약 바우처 협상, 경비 정산, 연봉 인상 요청, 병가 전화 등.
 - **돈**: 시작 $1,200. 격주 금요일(5일·19일)에 순급여 $2,600이 입금되고 21일에 월세 $1,450이 빠집니다. 커피·버스·점심·식료품·출장비를 씁니다.
 - **에너지**: 깨어 있으면 시간당 6씩 줄고 먹으면 회복됩니다. 30 아래면 경고, 20 아래면 느려집니다.
-- **조작**: ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동, P Phrasebook, I 인벤토리, C 달력. 휴대폰은 왼쪽 아래 조이스틱과 행동 버튼. 진행은 `localStorage`(`so.v1.save`)에 저장되고 Continue로 이어갑니다.
+- **조작**: ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동, P Phrasebook, I 인벤토리, C 달력, M 지도(마을 전체와 지금 있는 곳: 장소·문·사람·목표·거리 이름). 휴대폰은 왼쪽 아래 조이스틱과 행동 버튼. 진행은 `localStorage`(`so.v1.save`)에 저장되고 Continue로 이어갑니다.
 
 ## 파일
 
@@ -55,7 +55,7 @@ node tools/db-lint.mjs                          # 내려받은 데이터 검사
 
 ## 모델: Kenney·Quaternius CC0
 
-인물은 Quaternius의 Ultimate Modular Men과 Animated Women을 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
+인물은 Quaternius의 Ultimate Modular Men과 Animated Women을 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개), 자연물(Nature Kit 71개: 나무·덤불·꽃·바위·길, 팔레트는 도시 키트에 맞춰 다시 칠함)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
 
 ```sh
 blender -b --python tools/office-models.py                    # 전부
@@ -82,7 +82,7 @@ SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office
 ## 저작권·출처
 
 - 인물: [Quaternius](https://quaternius.com) Ultimate Modular Men, Animated Women — CC0.
-- 소품: [Kenney](https://www.kenney.nl) City Kit (Commercial, Suburban, Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit — CC0.
+- 소품: [Kenney](https://www.kenney.nl) City Kit (Commercial, Suburban, Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit, Nature Kit — CC0.
 - three.js — MIT (`vendor/three.LICENSE`).
 - 대사·표현·인물·회사(Lakeside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
 - 이 저장소는 2026-09-26 어린 왕자 3D 게임으로 시작했다가 같은 날 Sim Office로 바꿨습니다(이전 게임은 커밋 609621f).
