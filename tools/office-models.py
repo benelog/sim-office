@@ -1,7 +1,7 @@
 """Build the model packs of Sim Office (office/) from Kenney's CC0 kits.
 
     blender -b --python tools/office-models.py                          # every pack
-    blender -b --python tools/office-models.py -- characters city       # only these ('characters' = all 12 people)
+    blender -b --python tools/office-models.py -- city food             # only these
     blender -b --python tools/office-models.py -- --list                # packs, sources and node counts
     blender -b --python tools/office-models.py -- food --keep-glb /tmp/glb   # also keep the .glb (to inspect)
     blender -b --python tools/office-models.py -- --copy-from /tmp/kenney-packs   # first copy the sources
@@ -9,11 +9,8 @@
 Sources are kenney/<kit>/<name>.glb (+ Textures/colormap.png, License.txt), copied from the unpacked Kenney
 zips with --copy-from <dir> (only the files a pack uses). Each pack becomes office/models/<pack>.js: one .glb
 as base64 (the game runs from file://, where neither fetch() nor external textures work), with the texture
-inside the .glb.
+inside the .glb. The people are not Kenney's: tools/office-characters.py makes them (Quaternius).
 
-- A person (character-male-a ... character-female-f) is the Kenney file as it is: skinned meshes body-mesh and
-  head-mesh on the bones root, leg-left, leg-right, torso, arm-left, arm-right, head; only the animations in
-  ANIMATIONS are kept.
 - A prop pack (city, roads, cars, furniture, food) holds one node per piece, named exactly like the Kenney file
   (building-a, desk, cup-coffee), at the origin with the file's own origin (feet at y=0). A piece made of
   several nodes (a car with its wheels, a desk with its drawer) keeps them as children named <piece>_<node>
@@ -37,7 +34,6 @@ OUT = os.path.join(ROOT, 'office', 'models')
 
 # kit folder in kenney/ -> (folder in the Kenney zip, models subfolder)
 KITS = {
-    'mini-characters': ('kenney_mini-characters', 'Models/GLB format'),
     'city-kit-commercial': ('kenney_city-kit-commercial_2.1', 'Models/GLB format'),
     'city-kit-suburban': ('kenney_city-kit-suburban_20', 'Models/GLB format'),
     'city-kit-roads': ('kenney_city-kit-roads', 'Models/GLB format'),
@@ -49,10 +45,6 @@ KITS = {
     'factory-kit': ('kenney_factory-kit_3.0', 'Models/GLB format'),
 }
 
-ANIMATIONS = ['idle', 'walk', 'sprint', 'sit', 'pick-up', 'emote-yes', 'emote-no', 'holding-right', 'holding-left',
-              'holding-both', 'interact-right', 'interact-left', 'crouch', 'jump', 'drive', 'static']
-BONES = ['root', 'leg-left', 'leg-right', 'torso', 'arm-left', 'arm-right', 'head']
-CHARACTERS = [f'character-{s}-{c}' for s in ('male', 'female') for c in 'abcdef']
 
 FURNITURE = """bathroomCabinetDrawer bathroomCabinet bathroomMirror bathroomSink bathroomSinkSquare bathtub bear bedBunk
 bedDouble bedSingle benchCushion benchCushionLow bench bookcaseClosedDoors bookcaseClosed bookcaseClosedWide bookcaseOpen
@@ -105,10 +97,8 @@ PACKS = {
         ('factory-kit', ['scanner-high', 'machine-window']),
     ],
 }
-for _c in CHARACTERS:
-    PACKS[_c] = [('mini-characters', [_c])]
 
-LIMIT = {'character': 350 * 1024, 'pack': 3 * 1024 * 1024}   # base64 bytes
+LIMIT = 3 * 1024 * 1024   # base64 bytes per pack
 
 
 # ---------- sources ----------
@@ -262,27 +252,6 @@ def export_glb(path, objs):
                               export_morph=False, export_extras=False, export_cameras=False, export_lights=False)
 
 
-def build_character(name):
-    objs = import_glb(src('mini-characters', name))
-    arm = next(o for o in objs if o.type == 'ARMATURE')
-    missing = [b for b in BONES if b not in arm.data.bones]
-    if missing:
-        raise SystemExit(f'{name}: bones missing {missing}')
-    for a in list(bpy.data.actions):
-        if a.name.split('.')[0] not in ANIMATIONS:
-            bpy.data.actions.remove(a)
-    have = sorted(a.name for a in bpy.data.actions)
-    if sorted(ANIMATIONS) != have:
-        raise SystemExit(f'{name}: animations {have}, expected {sorted(ANIMATIONS)}')
-    for ob in objs:
-        if ob.type == 'MESH':
-            # the second UV map (TEXCOORD_1) is not used by the material
-            while len(ob.data.uv_layers) > 1:
-                ob.data.uv_layers.remove(ob.data.uv_layers[-1])
-    merge_materials(objs, {})
-    return objs
-
-
 def build_pack(pack):
     objs, tex = [], {}
     for i, (kit, names) in enumerate(PACKS[pack]):
@@ -311,33 +280,23 @@ def check(pack, path):
     problems = []
     if any('uri' in im for im in j.get('images', [])):
         problems.append('external image uri')
-    if pack in CHARACTERS:
-        for b in BONES + ['body-mesh', 'head-mesh']:
-            if b not in names:
-                problems.append(f'node {b} missing')
-        anims = sorted(a.get('name') for a in j.get('animations', []))
-        if anims != sorted(ANIMATIONS):
-            problems.append(f'animations {anims}')
-        if not j.get('images'):
-            problems.append('no texture')
-    else:
-        want = [n for _, ns in PACKS[pack] for n in ns]
-        top = [nodes[i].get('name') for s in j['scenes'] for i in s['nodes']]
-        dup = sorted({n for n in names if names.count(n) > 1})
-        if dup:
-            problems.append(f'duplicate node names {dup}')
-        miss = [n for n in want if n not in top]
-        extra = [n for n in top if n not in want]
-        if miss:
-            problems.append(f'missing {miss}')
-        if extra:
-            problems.append(f'unexpected top nodes {extra}')
-        for i in (i for s in j['scenes'] for i in s['nodes']):
-            n = nodes[i]
-            if any(abs(v) > 1e-6 for v in n.get('translation', [0, 0, 0])) or n.get('rotation', [0, 0, 0, 1]) != [0, 0, 0, 1] and n.get('rotation') is not None:
-                problems.append(f'{n.get("name")} not at the origin')
-        if pack != 'furniture' and not j.get('images'):
-            problems.append('no texture')
+    want = [n for _, ns in PACKS[pack] for n in ns]
+    top = [nodes[i].get('name') for s in j['scenes'] for i in s['nodes']]
+    dup = sorted({n for n in names if names.count(n) > 1})
+    if dup:
+        problems.append(f'duplicate node names {dup}')
+    miss = [n for n in want if n not in top]
+    extra = [n for n in top if n not in want]
+    if miss:
+        problems.append(f'missing {miss}')
+    if extra:
+        problems.append(f'unexpected top nodes {extra}')
+    for i in (i for s in j['scenes'] for i in s['nodes']):
+        n = nodes[i]
+        if any(abs(v) > 1e-6 for v in n.get('translation', [0, 0, 0])) or n.get('rotation', [0, 0, 0, 1]) != [0, 0, 0, 1] and n.get('rotation') is not None:
+            problems.append(f'{n.get("name")} not at the origin')
+    if pack != 'furniture' and not j.get('images'):
+        problems.append('no texture')
     return problems
 
 
@@ -358,7 +317,7 @@ def main():
     for a in argv:
         if a.startswith('--'):
             continue
-        wanted += CHARACTERS if a == 'characters' else [a]
+        wanted.append(a)
     if '--list' in argv:
         for p, parts in PACKS.items():
             print(f'{p:20} {", ".join(k for k, _ in parts):40} {sum(len(n) for _, n in parts)} node(s)')
@@ -375,7 +334,7 @@ def main():
     failed = []
     for pack in packs:
         reset()
-        objs = build_character(pack) if pack in CHARACTERS else build_pack(pack)
+        objs = build_pack(pack)
         path = os.path.join(tmp, pack + '.glb')
         export_glb(path, objs)
         problems = check(pack, path)
@@ -385,9 +344,8 @@ def main():
         with open(os.path.join(OUT, pack + '.js'), 'w') as fh:
             fh.write(f'/* Generated by tools/office-models.py from {kits} (CC0, www.kenney.nl). Do not edit. */\n'
                      f"(window.SO_MODELS = window.SO_MODELS || {{}})['{pack}'] = '{b64}';\n")
-        limit = LIMIT['character' if pack in CHARACTERS else 'pack']
-        if len(b64) > limit:
-            problems.append(f'{len(b64) // 1024} KB base64 is over {limit // 1024} KB')
+        if len(b64) > LIMIT:
+            problems.append(f'{len(b64) // 1024} KB base64 is over {LIMIT // 1024} KB')
         print(f'{pack}: glb {os.path.getsize(path) // 1024} KB, js {len(b64) // 1024} KB'
               + ('' if not problems else '  PROBLEMS: ' + '; '.join(problems)))
         if problems:

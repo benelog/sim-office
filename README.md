@@ -23,14 +23,17 @@ google-chrome "file://$PWD/office/index.html"
 | `office/index.html`, `game.css`, `game.js` | 엔진: 존·인물·대화·TTS·시간·돈·상점·Phrasebook·저장·디버그 API(`SO.debug`) |
 | `office/zones/<zone>.js` | 존 8개의 배치(home, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미 |
 | `office/data/db.js` | DoltHub에서 내려받은 데이터(`window.SO_DB`). **생성물** |
-| `office/models/*.js` | Kenney 모델 팩(base64 .glb). **생성물**, 목록은 `office/models/README.md` |
+| `office/life.js` | 거리의 삶: 걷는 행인·앉은 사람, 달리는 차, 신호등 |
+| `office/models/*.js` | 모델(base64 .glb): Kenney 소품 팩, Quaternius 인물(`man-*`, `woman-*`)과 리그(`rig-*`). **생성물**, 목록은 `office/models/README.md` |
 | `office/PLAN.md` | 설계서: 규칙, 데이터 모양, 장소·인물 id, 존 파일 명세, 엔진 요구사항 |
 | `db/schema.sql`, `db/seed/*.sql` | DoltHub에 넣는 스키마와 시드(대화·인물·물품·달력) |
 | `tools/dolt.mjs` | DoltHub push / query / pull |
 | `tools/db-lint.mjs` | 데이터 검사(참조·턴 순서·정답 판정·오답 보기) |
-| `tools/office-models.py`, `office-models-check.mjs` | Kenney .glb → 모델 팩 만들기와 검사 |
+| `tools/office-models.py`, `office-models-check.mjs` | Kenney .glb → 소품 팩 만들기와 검사 |
+| `tools/office-characters.py`, `office-characters-check.mjs` | Quaternius → 인물·리그 만들기와 검사 |
 | `tools/office-check.sh`, `office-check.mjs` | 헤드리스 Chrome 점검 |
 | `kenney/<kit>/` | Kenney CC0 원본 .glb, 텍스처, 라이선스(쓰는 것만) |
+| `quaternius/<pack>/` | Quaternius CC0 인물 원본(.gltf, .blend), 라이선스(쓰는 것만) |
 | `lib/matcher.js` | 자유 입력 판정(키워드 그룹, 축약형, 오타 1개 허용) |
 | `vendor/three-game.min.js` | three.js r186 + GLTFLoader·SkeletonUtils(MIT) |
 
@@ -50,14 +53,16 @@ node tools/db-lint.mjs                          # 내려받은 데이터 검사
 - 쓰기 API는 **문장 하나에 커밋 하나**라서 시드는 여러 행을 한 `REPLACE INTO`에 넣습니다. URL로 인코딩해 16KB를 넘는 문장은 거부되니 큰 표는 문장을 나눕니다. 문장 구분은 줄 끝의 `;`.
 - 문구를 고칠 때는 `db/seed/*.sql`을 고쳐 push하고 pull합니다. `db.js`는 직접 고치지 않습니다.
 
-## 모델: Kenney CC0
+## 모델: Kenney·Quaternius CC0
 
-인물(Mini Characters 12명, 골격·애니메이션 포함), 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
+인물은 Quaternius의 Ultimate Modular Men과 Animated Women을 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
 
 ```sh
 blender -b --python tools/office-models.py                    # 전부
-blender -b --python tools/office-models.py -- characters city # 이것만
+blender -b --python tools/office-models.py -- city food       # 이것만
 node tools/office-models-check.mjs --sizes furniture          # 조각별 크기
+blender -b --python tools/office-characters.py                # 인물 22명과 리그 2개
+node tools/office-characters-check.mjs                        # 키·발·앞·리그 일치·클립·크기
 ```
 
 ## 점검
@@ -71,13 +76,13 @@ SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office
 
 ## 알려진 한계
 
-- 인물은 걸어 다니지 않고 에피소드 장소로 순간 이동합니다.
 - 실제 휴대폰과 실제 TTS 목소리는 헤드리스에서 확인할 수 없습니다(기기마다 목소리가 다릅니다).
 - 반복 가능한 생활 에피소드(주말 장보기 등)는 한 번만 열립니다.
 
 ## 저작권·출처
 
-- 모델: [Kenney](https://www.kenney.nl) Mini Characters, City Kit (Commercial, Suburban, Roads), Car Kit, Furniture Kit, Food Kit — CC0.
+- 인물: [Quaternius](https://quaternius.com) Ultimate Modular Men, Animated Women — CC0.
+- 소품: [Kenney](https://www.kenney.nl) City Kit (Commercial, Suburban, Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit — CC0.
 - three.js — MIT (`vendor/three.LICENSE`).
 - 대사·표현·인물·회사(Lakeside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
 - 이 저장소는 2026-09-26 어린 왕자 3D 게임으로 시작했다가 같은 날 Sim Office로 바꿨습니다(이전 게임은 커밋 609621f).

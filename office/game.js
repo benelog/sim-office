@@ -1,6 +1,6 @@
 /* Sim Office: the engine. A flat open world made of zones (office/zones/<zone>.js, window.SO_ZONES), people and
-   conversations from the game database (office/data/db.js, window.SO_DB, pulled from DoltHub), and Kenney models
-   packed as base64 .glb (office/models/<pack>.js, window.SO_MODELS). See office/PLAN.md for the rules and the specs.
+   conversations from the game database (office/data/db.js, window.SO_DB, pulled from DoltHub), and models (Kenney
+   props, Quaternius people) packed as base64 .glb (office/models/<pack>.js, window.SO_MODELS). See office/PLAN.md for the rules and the specs.
    Runs from file:// : every file is a plain <script>, nothing is fetched. Missing zone files or model packs fall back
    to generated rooms and boxes, so the engine runs on its own. */
 (function () {
@@ -35,8 +35,15 @@
   const RENT_DAY = +CFG.rent_day || 21;
   const WALK = 1.25, RUN = 2.9, TURN = 2.5, PLAYER_R = 0.2, NPC_R = 0.24, TALK_R = 1.45, PLACE_R = 1.35;
   const PACK_SCALE = { city: 3, roads: 3, cars: 0.6, furniture: 1, food: 0.6 };
-  const CHARACTERS = ['male-a', 'male-b', 'male-c', 'male-d', 'male-e', 'male-f', 'female-a', 'female-b', 'female-c', 'female-d', 'female-e', 'female-f'].map(s => 'character-' + s);
-  const charLabel = (id) => pretty(String(id).replace(/^character-/, ''));
+  // the player's choices (office/models/<id>.js, tools/office-characters.py): people the cast does not wear
+  const CHARACTER_LABELS = {
+    'man-casual-3': 'Blazer ♂', 'man-hoodie-2': 'Hoodie ♂', 'man-suit-2': 'Suit ♂', 'man-adventurer': 'Jacket ♂',
+    'woman-casual': 'Tee ♀', 'woman-dress': 'Dress ♀', 'woman-tanktop': 'Tank top ♀', 'woman-alt': 'Jacket ♀'
+  };
+  const CHARACTERS = Object.keys(CHARACTER_LABELS), DEFAULT_CHARACTER = 'man-casual-3';
+  const charLabel = (id) => CHARACTER_LABELS[id] || pretty(id);
+  // a person (Quaternius, tools/office-characters.py) is about 0.95 tall with the feet at y=0
+  const HEAD_Y = 0.95, BUBBLE_Y = 1.1, MARK_Y = 1.12;
   const INK = 0x1d2433;
 
   // Where things are when the zone files or the places table do not say (PLAN.md §3).
@@ -102,7 +109,7 @@
   let G = null;           // the game in progress (what goes into so.v1.save)
   function newGame(name, model) {
     return {
-      name: (name || CFG.player_name || 'Jun').trim().slice(0, 16) || 'Jun', model: CHARACTERS.includes(model) ? model : 'character-male-a',
+      name: (name || CFG.player_name || 'Jun').trim().slice(0, 16) || 'Jun', model: CHARACTERS.includes(model) ? model : DEFAULT_CHARACTER,
       day: 1, minute: DAY_START, money: +CFG.start_money, energy: E_MAX, zone: 'home', at: null, heading: 0,
       done: {}, inventory: {}, phrases: [], log: []
     };
@@ -245,13 +252,13 @@
     m.customProgramCacheKey = () => 'ink' + key;
     return (inkCache[key] = m);
   }
-  function outline(root) {
+  function outline(root, thin) {        // thin: a factor on the line width (people: 0.5, or their faces get lines)
     const meshes = [];
     root.traverse(o => { if (o.isMesh && !o.userData.ink) meshes.push(o); });
     meshes.forEach(mesh => {
       if (!mesh.geometry.attributes.normal) return;
       if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
-      const w = clamp(mesh.geometry.boundingSphere.radius * 0.022, 0.002, 0.03);
+      const w = clamp(mesh.geometry.boundingSphere.radius * 0.022 * (thin || 1), 0.002, 0.03);
       let o;
       if (mesh.isSkinnedMesh) { o = new T.SkinnedMesh(mesh.geometry, inkMaterial(w)); o.bind(mesh.skeleton, mesh.bindMatrix); }
       else o = new T.Mesh(mesh.geometry, inkMaterial(w));
@@ -316,6 +323,8 @@
       // a person without clips of their own names the pack that has them (glTF extras {"rig": "rig-umc"}): load it too
       g.scene.traverse(o => { if (!p.rig && o.userData && typeof o.userData.rig === 'string' && o.userData.rig !== name) p.rig = o.userData.rig; });
       if (p.rig && !g.animations.length) await loadPack(p.rig);
+      // a person's mesh has smooth normals (small files, a clean ink line); it is lit flat, the look of the low-poly pack
+      if (p.rig) g.scene.traverse(o => { if (o.isMesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.flatShading = true; m.needsUpdate = true; }); });
       g.scene.traverse(o => {           // a rig tells how fast its walk and run cycles move the feet (units per second)
         const u = o.userData || {};
         if (+u.walk_speed) p.walkSpeed = +u.walk_speed;
@@ -355,26 +364,26 @@
     return o;
   }
 
-  // ---------------------------------------------------------------- people: a Kenney character, or a box person
+  // ---------------------------------------------------------------- people: a Quaternius character, or a box person
   const boxGeo = new T.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
   function boxPerson(model) {
     const g = new T.Group();
     const hue = (hash(model) % 360) / 360;
     const body = new T.Mesh(boxGeo, toon('#' + new T.Color().setHSL(hue, 0.45, 0.5).getHexString()));
-    body.scale.set(0.26, 0.34, 0.16);
-    body.position.y = 0.12;
+    body.scale.set(0.28, 0.33, 0.16);          // as tall as a person model (HEAD_Y)
+    body.position.y = 0.45;
     const legs = new T.Mesh(boxGeo, toon('#3b4254'));
-    legs.scale.set(0.2, 0.12, 0.12);
+    legs.scale.set(0.2, 0.45, 0.12);
     const head = new T.Mesh(boxGeo, toon('#e8c4a0'));
-    head.scale.set(0.2, 0.2, 0.2);
-    head.position.y = 0.46;
+    head.scale.set(0.16, HEAD_Y - 0.78, 0.16);
+    head.position.y = 0.78;
     g.add(legs, body, head);
     outline(g);
     shadows(g, true);
     return g;
   }
-  // Animation names: the engine only ever asks for these (the Kenney mini-characters' clip names). A model whose clips
-  // are named otherwise (Quaternius: Idle, Walk, Run, Sitting, Wave…) is mapped by ANIM_ALIASES when the actor is made:
+  // Animation names: the engine only ever asks for these (the names of the rigs' clips, tools/office-characters.py). A model
+  // whose clips are named otherwise (Quaternius' own: Idle, Walk, Run, Sitting, Wave…) is mapped by ANIM_ALIASES when the actor is made:
   // an exact name first, then the same name ignoring case and punctuation, then the patterns in order. A name a
   // model has no clip for plays idle instead (loops) or is skipped (one-shot gestures), see play().
   const ANIMS = ['idle', 'walk', 'sprint', 'sit', 'pick-up', 'emote-yes', 'emote-no', 'interact-right', 'interact-left',
@@ -393,7 +402,7 @@
     return c || null;
   }
   // Bones by pattern (rigs name them differently): the head for a glance, the right hand (or the right arm when a rig
-  // has no hand bone, as Kenney's) for something held. Empty when a model has none: then that detail is left out.
+  // has no hand bone) for something held. Empty when a model has none: then that detail is left out.
   const HEAD_BONE = [/^(mixamorig\d*:?)?head$/i, /^head[\W_]*(bone|jnt|joint)?$/i, /head(?!.*(end|top|mesh))/i];
   const HAND_BONE = [/^(mixamorig\d*:?)?right[\W_]*hand$/i, /^(hand|wrist|fist|palm)[\W_]*r(ight)?$/i, /(hand|wrist|fist|palm)[\W_]*r(ight)?$/i, /right[\W_]*(hand|wrist)/i];
   const ARM_BONE = [/^arm[\W_]*r(ight)?$/i, /(fore|lower)[\W_]*arm[\W_]*r(ight)?$/i, /right[\W_]*(fore)?arm/i, /arm[\W_]*r(ight)?$/i];
@@ -440,7 +449,7 @@
     if (packReady(model)) {
       const g = packs[model].gltf;
       root = T.SkeletonUtils.clone(g.scene);
-      outline(root);
+      outline(root, 0.5);
       shadows(root, true);
       const rig = packs[model].rig, clips = g.animations.length ? g.animations : rig && packReady(rig) ? packs[rig].gltf.animations : [];
       if (clips.length) {
@@ -451,12 +460,12 @@
     } else root = boxPerson(model);
     holder.add(root);
     const shadow = new T.Mesh(shadowGeo, shadowMat);
-    shadow.scale.setScalar(0.24);
+    shadow.scale.setScalar(0.28);
     shadow.position.y = 0.012;
     shadow.renderOrder = 1;
     holder.add(shadow);
     const a = { id, model, holder, root, mixer, actions, current: null, after: null, hold: false, pos: holder.position, heading: 0, want: null,
-      bubbleY: 0.86, name: opts.name || id, row: opts.row || null, place: null, sit: false, mark: null, chatIdx: -1,
+      bubbleY: BUBBLE_Y, name: opts.name || id, row: opts.row || null, place: null, sit: false, mark: null, chatIdx: -1,
       idleAnim: 'idle', headBone: findBone(root, HEAD_BONE), look: 0, lookNow: 0, headQ: null, cup: null,
       walkSpeed: packs[model] && packs[model].walkSpeed || 0, runSpeed: packs[model] && packs[model].runSpeed || 0 };
     if (mixer) mixer.addEventListener('finished', () => { const next = a.after || rest(a); a.after = null; play(a, next, { fade: 0.3 }); });
@@ -1018,7 +1027,7 @@
     if (player) scene.remove(player.holder);
     player = makeActor('player', G.model, { name: G.name });
     player.boxed = !packReady(G.model);
-    player.bubbleY = 0.86;
+    player.bubbleY = BUBBLE_Y;
   }
   // where an npc is now: at the place of its first open episode, otherwise at its own place
   function npcPlaceNow(n) {
@@ -1071,7 +1080,7 @@
           a = npcActors[w.row.id] = makeActor(w.row.id, w.row.model, { name: w.row.name, row: w.row });
           a.mark = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false, toneMapped: false }));
           a.mark.scale.setScalar(0.2);
-          a.mark.position.y = 0.98;
+          a.mark.position.y = MARK_Y;
           a.mark.renderOrder = 5;
           a.mark.visible = false;
           a.holder.add(a.mark);
@@ -1626,7 +1635,7 @@
         a.heading += d * (1 - Math.exp(-dt * (a.walk ? 8 : 5)));
       }
       a.holder.rotation.y = a.heading;
-      if (a.mark) { a.mark.position.y = 0.98 + Math.sin(t * 3 + a.pos.x) * 0.03; a.mark.material.opacity = talking ? 0 : 1; a.mark.material.transparent = true; }
+      if (a.mark) { a.mark.position.y = MARK_Y + Math.sin(t * 3 + a.pos.x) * 0.03; a.mark.material.opacity = talking ? 0 : 1; a.mark.material.transparent = true; }
       // now and then: a gesture when standing (every 20 to 40 s), a glance around when sitting; a seated person looks at you
       if (!a.walk && !talking && a.mixer) {
         if (a.sit) {
@@ -1758,24 +1767,24 @@
       let sx = -dz, sz = dx;
       if (!cam.side) cam.side = sx * (cam.pos.x - p.x) + sz * (cam.pos.z - p.z) < 0 ? -1 : 1;
       sx *= cam.side; sz *= cam.side;
-      const back = portrait ? 1.25 : 0.65, side = portrait ? 1.25 : 1.55;
-      want.set(p.x - dx * back + sx * side, portrait ? 1.15 : 1.0, p.z - dz * back + sz * side);
-      look.set(p.x + dx * l * 0.6, portrait ? -0.12 : 0.18, p.z + dz * l * 0.6);
+      const back = portrait ? 1.7 : 0.9, side = portrait ? 1.7 : 2.1;          // for people HEAD_Y tall
+      want.set(p.x - dx * back + sx * side, portrait ? 1.6 : 1.4, p.z - dz * back + sz * side);
+      look.set(p.x + dx * l * 0.6, portrait ? -0.15 : 0.26, p.z + dz * l * 0.6);
       inRoom(want);
     } else {
       cam.side = 0;
       // behind and above; when a wall or a building is in the way, rise over it rather than zoom into the head
       const sx = Math.sin(player.heading), sz = Math.cos(player.heading);
-      const back = Z.indoor ? 2.6 : 3.3, high = Z.indoor ? 1.6 : 1.85;
+      const back = Z.indoor ? 2.9 : 3.6, high = Z.indoor ? 1.8 : 2.1;
       want.set(p.x - sx * back, high, p.z - sz * back);
       inRoom(want);
       const squeezed = back - Math.hypot(want.x - p.x, want.z - p.z);     // a small room pushed the camera in: look down more
       if (squeezed > 0) want.y += squeezed * 0.75;
-      look.set(p.x + sx * 1.0, 0.4, p.z + sz * 1.0);
+      look.set(p.x + sx * 1.0, HEAD_Y * 0.55, p.z + sz * 1.0);
       const zoom = cam.push ? ease(Math.min(1, (cam.push.t += dt) / cam.push.dur)) * 0.62
         : cam.pull ? (1 - ease(Math.min(1, (cam.pull.t += dt) / cam.pull.dur))) * 0.55 : 0;
       if (cam.pull && cam.pull.t >= cam.pull.dur) cam.pull = null;
-      if (zoom) want.lerp(rayTo.set(p.x + sx * 0.25, 0.6, p.z + sz * 0.25), zoom);
+      if (zoom) want.lerp(rayTo.set(p.x + sx * 0.25, HEAD_Y * 0.85, p.z + sz * 0.25), zoom);
     }
     const k = cam.ready ? 1 - Math.exp(-dt * (cam.push ? 9 : 3.5)) : 1;
     cam.ready = true;
@@ -1786,9 +1795,9 @@
     camera.position.copy(cam.pos);
     camera.lookAt(cam.look);
     const faded = new Set();
-    fadeHits(cam.pos, rayTo.set(p.x, 0.45, p.z), faded);
-    fadeHits(cam.pos, rayTo.set(p.x, 0.75, p.z), faded);
-    if (other) { fadeHits(cam.pos, rayTo.set(other.pos.x, 0.45, other.pos.z), faded); fadeHits(cam.pos, rayTo.set(other.pos.x, 0.75, other.pos.z), faded); }
+    fadeHits(cam.pos, rayTo.set(p.x, HEAD_Y * 0.55, p.z), faded);         // the body and the head
+    fadeHits(cam.pos, rayTo.set(p.x, HEAD_Y * 0.92, p.z), faded);
+    if (other) { fadeHits(cam.pos, rayTo.set(other.pos.x, HEAD_Y * 0.55, other.pos.z), faded); fadeHits(cam.pos, rayTo.set(other.pos.x, HEAD_Y * 0.92, other.pos.z), faded); }
     fadedNow.forEach(h => { if (!faded.has(h)) setFaded(h, false); });
     faded.forEach(h => { if (!fadedNow.has(h)) setFaded(h, true); });
     fadedNow = faded;
@@ -2286,7 +2295,7 @@
 
   // ---------------------------------------------------------------- title: name, character, continue / new game
   let state = 'title';
-  let chosen = settings.model && CHARACTERS.includes(settings.model) ? settings.model : 'character-male-a';
+  let chosen = settings.model && CHARACTERS.includes(settings.model) ? settings.model : DEFAULT_CHARACTER;
   const nameIn = $('name-in');
   nameIn.value = settings.name || CFG.player_name || 'Jun';
   const charBox = $('chars');
@@ -2322,8 +2331,8 @@
         l.position.set(2, 3, 4);
         preview.scene.add(l);
         preview.camera = new T.PerspectiveCamera(30, (c.clientWidth || 150) / (c.clientHeight || 184), 0.05, 20);
-        preview.camera.position.set(0, 0.5, 2.1);
-        preview.camera.lookAt(0, 0.33, 0);
+        preview.camera.position.set(0, 0.62, 2.3);          // a whole person, HEAD_Y tall
+        preview.camera.lookAt(0, HEAD_Y * 0.5, 0);
       } catch (e) { preview.renderer = null; return; }
     }
     if (preview.model === model) return;
@@ -2379,7 +2388,9 @@
   $('continue').addEventListener('click', () => {
     const s = store.get(SAVE_KEY);
     if (!s) return;
-    startGame(Object.assign(newGame(s.name, s.model), s), false);
+    const g = Object.assign(newGame(s.name, s.model), s);
+    if (!CHARACTERS.includes(g.model)) g.model = DEFAULT_CHARACTER;     // a save from before (the Kenney character-male-a …)
+    startGame(g, false);
   });
   window.addEventListener('pagehide', saveGame);
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
@@ -2391,6 +2402,7 @@
     get npcs() { return npcActors; }, get props() { return zoneProps; }, get game() { return G; }, get state() { return state; },
     get day() { return G ? G.day : 0; }, get minute() { return G ? G.minute : 600; }, isDone: (id) => !!(G && G.done[id]),
     solid: (x0, z0, x1, z1) => solids.push({ x0, z0, x1, z1 }),
+    occlude: (obj) => { occluders.push(obj); occluderSet.add(obj); },     // see-through when it hides a person from the camera
     // for office/life.js (and zone files): every placed prop and tile ({ spec, holder, object }), the static solids, people
     // made like the npcs (a.holder to add, api.animate(a, dt) each frame), a way-finder (one search a frame),
     // colliders that move (circles { x, z, r } the player is pushed out of), the light and the graphics setting
@@ -2497,7 +2509,7 @@
       await until(() => ready, 20000);
       if (talk) endTalk();
       $('card').hidden = true; panel.hidden = true;
-      await startGame(newGame(name || CFG.player_name, model || 'character-male-a'), true);
+      await startGame(newGame(name || CFG.player_name, model || DEFAULT_CHARACTER), true);
       return true;
     },
     async goto(zone, placeId) {

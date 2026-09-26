@@ -30,6 +30,7 @@ office/
 db/schema.sql, db/seed/NN-*.sql       # DoltHub에 넣는 SQL (C, D)
 tools/dolt.mjs                        # push / query / pull
 tools/office-models.py                # Kenney .glb → office/models/*.js (B)
+tools/office-characters.py            # Quaternius → office/models/man-*, woman-*, rig-*.js
 tools/office-check.sh, office-check.mjs   # 헤드리스 Chrome 점검 (A1)
 kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 ```
@@ -59,22 +60,22 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 ### 인물 id(고정) — model — 장소
 | id | 이름·역할 | model | place |
 |---|---|---|---|
-| maya | Maya Chen, engineering manager | character-female-a | office_manager |
-| derek | Derek Alvarez, senior developer (팀 동료) | character-male-b | office_desk_team |
-| priya | Priya Nair, product manager | character-female-c | office_meeting |
-| tom | Tom Becker, office manager (프런트) | character-male-c | office_lobby |
-| sam | Sam Reyes, IT helpdesk | character-male-d | office_it |
-| linda | Linda Park, HR | character-female-f | office_hr |
-| rosa | Rosa, diner server | character-female-d | diner_counter |
-| mike | Mike, grocery cashier | character-male-e | market_checkout |
-| nina | Nina, barista (coffee cart) | character-female-e | coffee_cart |
-| carl | Carl, neighbor / landlord | character-male-f | bus_stop |
-| greg | Greg Whitfield, client (Summit Retail의 VP) | character-male-a | client_meeting |
-| amy | Amy, airline agent | character-female-b | airport_checkin |
-| kelly | Kelly, hotel front desk | character-female-c | hotel_desk |
-| lee | Lee, TSA officer | character-male-d | airport_security |
+| maya | Maya Chen, engineering manager | woman-alt-2 | office_manager |
+| derek | Derek Alvarez, senior developer (팀 동료) | man-hoodie | office_desk_team |
+| priya | Priya Nair, product manager | woman-casual-2 | office_meeting |
+| tom | Tom Becker, office manager (프런트) | man-casual | office_lobby |
+| sam | Sam Reyes, IT helpdesk | man-casual-2 | office_it |
+| linda | Linda Park, HR | woman-dress-2 | office_hr |
+| rosa | Rosa, diner server | woman-casual-3 | diner_counter |
+| mike | Mike, grocery cashier | man-worker | market_checkout |
+| nina | Nina, barista (coffee cart) | woman-tanktop-2 | coffee_cart |
+| carl | Carl, neighbor / landlord | man-farmer | bus_stop |
+| greg | Greg Whitfield, client (Summit Retail의 VP) | man-suit | client_meeting |
+| amy | Amy, airline agent | woman-dress-3 | airport_checkin |
+| kelly | Kelly, hotel front desk | woman-alt-3 | hotel_desk |
+| lee | Lee, TSA officer | man-worker-2 | airport_security |
 
-플레이어 기본 모델 character-male-a(선택 가능). 인물 모델은 겹쳐도 됩니다.
+플레이어 기본 모델 man-casual-3. 고를 수 있는 8명(캐스트가 안 쓰는 모습): man-casual-3 man-hoodie-2 man-suit-2 man-adventurer woman-casual woman-dress woman-tanktop woman-alt. 인물 모델은 겹쳐도 됩니다(행인은 캐스트가 안 쓰는 모습을 먼저 씀, `office/life.js`).
 
 ### 에피소드 id 규칙
 `d<날>_<이름>` (예 `d1_badge`, `d3_one_on_one`, `d11_checkin`). 주말·반복은 `w_` (예 `w_market`). 턴은 3~6개. `answers`는 키워드 그룹 `[{all:[…]},{any:[…]}]`(구는 정확히, 5글자 이상 단어는 오타 1개 허용). `distractors`는 3개, 문법은 맞지만 상황에 안 맞는 문장. `hints`는 2개(첫 힌트는 표현 방향, 둘째는 `Key words: …`). `phrases`는 에피소드마다 4~8개, `id`는 `<episode>.<slug>`.
@@ -85,7 +86,7 @@ Kenney CC0 팩(원본 zip은 `/tmp/claude-1000/kenney-packs/`에 있음). Blende
 
 | pack | 원본 | 노드(전부 Kenney 파일 이름) | 게임 기본 배율 |
 |---|---|---|---|
-| `character-male-a` … `character-female-f` (12개 파일) | mini-characters | 스킨 메시+골격, 애니메이션은 idle walk sprint sit pick-up emote-yes emote-no holding-right holding-left holding-both interact-right interact-left crouch jump drive static만 | 1 (키 0.67) |
+| `man-*`, `woman-*` (22개) + `rig-umc`, `rig-women` | Quaternius Ultimate Modular Men, Animated Women (`tools/office-characters.py`) | 인물 파일은 골격+스킨 메시(애니메이션 없음, extras `rig`), 리그 파일에 클립 idle walk sprint sit emote-yes emote-no interact-right | 1 (키 남 0.96, 여 0.94) |
 | `city` | city-kit-commercial 2.1, city-kit-suburban | building-a…h, building-skyscraper-a…c, detail-awning, detail-awning-wide, detail-parasol-a, detail-parasol-b, building-type-a…h, tree-large, tree-small, fence, fence-1x3, planter, driveway-short, path-short | 3 |
 | `roads` | city-kit-roads | road-straight, road-straight-half, road-crossroad, road-crossroad-line, road-intersection, road-intersection-line, road-bend, road-bend-sidewalk, road-curve, road-crossing, road-end, road-side, road-square, tile-low, light-square, light-square-double, light-curved, traffic-light, road-sign-stop, road-sign-street, construction-cone, construction-barrier, dumpster, electricity-pole, sign-highway | 3 |
 | `cars` | car-kit | sedan, sedan-sports, suv, hatchback-sports, taxi, van, delivery, police, truck, ambulance, wheel-default (차 노드는 바퀴가 포함된 완성체로) | 0.6 |
@@ -94,9 +95,9 @@ Kenney CC0 팩(원본 zip은 `/tmp/claude-1000/kenney-packs/`에 있음). Blende
 
 food: apple banana orange lemon grapes strawberry watermelon pear cherries avocado tomato onion carrot broccoli cabbage corn pepper paprika mushroom pumpkin egg bread loaf loaf-baguette croissant muffin donut donut-sprinkles cookie cupcake cake-slicer pancakes waffle burger burger-cheese fries hot-dog pizza pizza-box sandwich sub salad taco sushi-salmon maki-salmon rice-ball chinese bowl-soup bowl-cereal plate plate-dinner glass mug cup-coffee cup-tea frappe soda soda-can soda-bottle bottle-ketchup peanut-butter honey cheese bacon meat-patty sausage turkey fish can carton carton-small bag styrofoam ice-cream popsicle candy-bar chocolate barrel.
 
-크기 목표: 팩 하나 3MB(base64) 이하, 인물 파일 350KB 이하. 팩마다 노드 목록·크기를 `office/models/README.md`에 적습니다. 원본 .glb와 `License.txt`는 `kenney/<pack>/`에 복사(쓴 것만).
+크기 목표: 팩 하나 3MB(base64) 이하, 인물 파일 400KB 이하(지금 75~299KB). 팩마다 노드 목록·크기를 `office/models/README.md`에 적습니다. 원본 .glb와 `License.txt`는 `kenney/<pack>/`에 복사(쓴 것만). 인물 원본은 `quaternius/<pack>/`.
 
-좌표계: glTF Y-up. Kenney 도시 타일은 1×1(배율 3이면 3×3), 인물 키 0.67, 가구 벽 높이 1.29. 세단은 원본 2.5 길이(배율 0.6 → 1.5).
+좌표계: glTF Y-up. Kenney 도시 타일은 1×1(배율 3이면 3×3), 인물 키 약 0.95, 가구 벽 높이 1.29, 의자 좌판 0.24. 세단은 원본 2.5 길이(배율 0.6 → 1.5).
 
 ## 5. 존 파일 명세 (A2 → `office/zones/<zone>.js`, 엔진 A1이 읽음)
 
@@ -144,4 +145,4 @@ SO_ZONES.office = {
 
 ## 7. 저작권·표기
 
-Kenney 에셋은 CC0(표기 권장: "Kenney (www.kenney.nl)"). three.js MIT. 대사·표현은 전부 자체 저작, 실제 회사·인물 이름을 쓰지 않습니다(Lakeside Labs, Summit Retail, Fairview는 가상). 안내는 영어 기본, 한국어는 `_ko`.
+Kenney 에셋은 CC0(표기 권장: "Kenney (www.kenney.nl)"), Quaternius 인물도 CC0(quaternius.com). three.js MIT. 대사·표현은 전부 자체 저작, 실제 회사·인물 이름을 쓰지 않습니다(Lakeside Labs, Summit Retail, Fairview는 가상). 안내는 영어 기본, 한국어는 `_ko`.

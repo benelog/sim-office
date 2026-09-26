@@ -6,7 +6,7 @@
    SO_ZONE_KIT.dress(api, {...}) for what data cannot say (patterned floors, wall trim and colour, the land and the
    town seen outside, signs and pictures drawn on canvases), and its update(api) SO_ZONE_KIT.tick(api) for the night.
 
-   Conventions (lengths in game units: a person is 0.67 tall, a furniture wall 1.29 high and 1 wide):
+   Conventions (lengths in game units: a person is about 0.95 tall, a furniture wall 1.29 high and 1 wide):
    - x to the right, z towards the camera's default side ("south"); size [w, d] is centred on the origin.
    - turn in degrees, counterclockwise seen from above: 0 = the model's front (Kenney +Z) looks towards +z,
      90 = towards +x, 180 = -z, 270 = -x. lift raises a prop off the floor (desk top 0.38, counter 0.42).
@@ -830,7 +830,12 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
       g.add(ring);
       keep.sky = { mat: sm, day: day, night: night };
     }
-    (o.panels || []).forEach(function (p) { if (!p.live) g.add(panel(api, p)); });
+    (o.panels || []).forEach(function (p) {
+      if (p.live) return;
+      var m = panel(api, p);
+      g.add(m);
+      if (p.at && api.occlude) api.occlude(m);     // a free-standing sign fades when it stands between the camera and a person
+    });
     (o.planes || []).forEach(function (p) { g.add(airplane(api, p)); });
     api.group.add(g);
     keep.live = (o.panels || []).filter(function (p) { return p.live; });

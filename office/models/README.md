@@ -1,26 +1,26 @@
 # office/models — Sim Office 모델 팩
 
-`tools/office-models.py`가 Kenney CC0 키트의 .glb로 만드는 **생성물**입니다. 직접 고치지 않습니다.
+`tools/office-models.py`(소품: Kenney CC0 키트)와 `tools/office-characters.py`(인물: Quaternius CC0)가 만드는 **생성물**입니다. 직접 고치지 않습니다.
 파일마다 .glb 하나를 base64로 담아 `(window.SO_MODELS = window.SO_MODELS || {})['<pack>'] = '<base64>';`로 둡니다(`file://`에서 fetch 없이 `<script>`로 읽음). 텍스처(`colormap.png`)는 .glb 안에 들어 있습니다(bufferView, 외부 `uri` 없음).
 
 ## 만들기·점검
 
 ```sh
 blender -b --python tools/office-models.py                               # 전부 (18개 파일, 몇 초)
-blender -b --python tools/office-models.py -- characters city            # 이것만 ('characters' = 인물 12개)
+blender -b --python tools/office-models.py -- city food                 # 이것만
 blender -b --python tools/office-models.py -- --list                     # 팩·원본 키트·노드 수
 blender -b --python tools/office-models.py -- food --keep-glb /tmp/glb   # .glb도 남김(확인용)
 blender -b --python tools/office-models.py -- --copy-from /tmp/claude-1000/kenney-packs   # 원본 zip(풀린 폴더)에서 kenney/<kit>/로 복사한 뒤 만듦
-node tools/office-models-check.mjs            # 크기·노드 수·텍스처 포함·애니메이션 검사 (문제 있으면 exit 1)
+node tools/office-models-check.mjs            # 크기·노드 수·텍스처 포함 검사 (문제 있으면 exit 1; 인물은 아래 office-characters-check)
 node tools/office-models-check.mjs --names cars       # 노드 이름(자식은 {…})
 node tools/office-models-check.mjs --sizes furniture  # 조각마다 크기 [w h d]와 최소 모서리(glTF Y-up, 근사)
 ```
 
 - 원본: `kenney/<kit>/<이름>.glb` + `kenney/<kit>/Textures/colormap.png` + `kenney/<kit>/License.txt`. 쓰는 파일만 복사해 두었습니다.
-  kit 폴더: `mini-characters`, `city-kit-commercial`(2.1), `city-kit-suburban`(2.0), `city-kit-roads`, `car-kit`, `furniture-kit`(GLTF format 폴더의 .glb), `food-kit`, `mini-market`, `mini-arcade`, `factory-kit`(3.0).
+  kit 폴더: `city-kit-commercial`(2.1), `city-kit-suburban`(2.0), `city-kit-roads`, `car-kit`, `furniture-kit`(GLTF format 폴더의 .glb), `food-kit`, `mini-market`, `mini-arcade`, `factory-kit`(3.0).
   원본 zip은 `https://kenney.nl/assets/<slug>` 페이지의 `https://kenney.nl/media/pages/assets/<slug>/<hash>/kenney_<slug>.zip` 링크에서 받습니다(curl에 User-Agent 필요).
-- 빌드 스크립트 안에서도 검사합니다: 노드 이름 중복·누락, 조각이 원점에 있는지, 이미지가 포함됐는지, 인물의 뼈·애니메이션, 크기 한도(팩 3MB, 인물 350KB, base64 기준). 하나라도 어긋나면 실패합니다.
-- 내보내기: glTF Y-up, 탄젠트 없음(원본에 있던 TANGENT를 빼서 작아짐), 인물의 두 번째 UV(TEXCOORD_1)도 뺌.
+- 빌드 스크립트 안에서도 검사합니다: 노드 이름 중복·누락, 조각이 원점에 있는지, 이미지가 포함됐는지, 크기 한도(팩 3MB, base64 기준). 하나라도 어긋나면 실패합니다.
+- 내보내기: glTF Y-up, 탄젠트 없음(원본에 있던 TANGENT를 빼서 작아짐).
 
 ## 공통 규칙
 
@@ -28,11 +28,11 @@ node tools/office-models-check.mjs --sizes furniture  # 조각마다 크기 [w h
   `scene.getObjectByName('<이름>')`으로 골라 `SkeletonUtils.clone`/`clone()`하면 됩니다.
 - 여러 노드로 된 조각은 원본 구조를 자식으로 둡니다. 자식 이름은 `<조각>_<원본 노드 이름>`(`sedan_body`, `desk_drawer`), 같은 이름이 겹치면 `-2`, `-3`(`cheese_wedge-2`). 원본 최상위 노드에 배율·회전이 있으면(가구 `toilet`, `kitchenCoffeeMachine` 등) 빈 노드로 한 번 감쌌습니다(`toilet` > `toilet_toilet` > `toilet_cover`). 자식 하나 없이 배율만 있던 메시(음식 대부분)는 배율을 메시에 구워 넣었습니다.
 - 재질: 텍스처 팩은 재질 하나 `colormap`(도시 팩은 `colormap`(상가)과 `colormap-suburban`(주택) 두 개). 가구는 텍스처 없이 색 재질 15개를 조각들이 공유: `wood woodDark metal metalLight metalMedium metalDark glass(알파 0.5, BLEND) carpet carpetDarker carpetWhite carpetBlue fur plant lamp _defaultMat(흰색: 벽·세면대 등)`.
-- 텍스처 샘플러: 도시(상가)·도로·차는 LINEAR, 주택·음식·인물은 NEAREST(원본 그대로).
+- 텍스처 샘플러: 도시(상가)·도로·차는 LINEAR, 주택·음식은 NEAREST(원본 그대로).
 
 ## 인물 (Quaternius) — `man-*`, `woman-*`, 공유 리그 `rig-umc`, `rig-women`
 
-`tools/office-characters.py`가 Quaternius CC0 팩으로 만듭니다(Kenney 인물 절은 엔진이 새 인물로 바뀐 뒤 지웁니다).
+`tools/office-characters.py`가 Quaternius CC0 팩으로 만듭니다(2026-09-26에 Kenney Mini Characters 12명을 대체). 엔진은 인물을 불러올 때 `userData.rig`의 리그 팩도 읽어 그 클립을 쓰고, 사람 재질은 플랫 셰이딩, 잉크 외곽선은 절반 두께로 그립니다.
 
 ```sh
 blender -b --python tools/office-characters.py                       # 인물 22개 + 리그 2개 (15초)
@@ -86,20 +86,6 @@ node tools/office-characters-check.mjs [--anims]                     # 키·발�
 | woman-alt | 90 | Female_Alternative | 장밋빛 재킷, 청바지, 투톤 짧은 머리 | 플레이어 |
 | woman-alt-2 | 90 | Female_Alternative | 짙은 회색 블레이저, 흰 셔츠, 검은 머리 | maya |
 | woman-alt-3 | 90 | Female_Alternative | 버건디 블레이저(호텔 유니폼), 갈색 머리 | kelly |
-
-## 인물 (mini-characters) — `character-male-a` … `character-male-f`, `character-female-a` … `character-female-f`
-
-| 파일 | KB(js) | 파일 | KB(js) |
-|---|---|---|---|
-| character-male-a | 182 | character-female-a | 204 |
-| character-male-b | 182 | character-female-b | 186 |
-| character-male-c | 196 | character-female-c | 186 |
-| character-male-d | 180 | character-female-d | 192 |
-| character-male-e | 179 | character-female-e | 183 |
-| character-male-f | 184 | character-female-f | 192 |
-
-- 원본 그대로: 최상위 노드 `character-<…>`(골격 오브젝트) 아래 뼈 `root > leg-left, leg-right, torso > arm-left, arm-right, head`와 스킨 메시 `body-mesh`, `head-mesh`(스킨 하나, 재질 `colormap`). 키 0.67, 발밑 y=0, 정면 +Z. 쉬는 자세는 T자.
-- 애니메이션 16개(이름 그대로 `AnimationClip.findByName`): `idle walk sprint sit pick-up emote-yes emote-no holding-right holding-left holding-both interact-right interact-left crouch jump drive static`. 나머지(fall, die, attack-*, wheelchair-*, *-shoot)는 뺐습니다.
 
 ## city — 48개, 2393 KB (city-kit-commercial 2.1 + city-kit-suburban 2.0)
 
@@ -173,4 +159,4 @@ apple banana orange lemon grapes strawberry watermelon pear cherries avocado tom
 
 인물: Quaternius (quaternius.com) — Ultimate Modular Men, Animated Women. CC0 1.0. 라이선스 원문은 `quaternius/<pack>/License.txt`.
 
-Kenney (www.kenney.nl) — Mini Characters, City Kit (Commercial) 2.1, City Kit (Suburban) 2.0, City Kit (Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit 3.0. 모두 CC0 1.0(표기 의무 없음, "Kenney (www.kenney.nl)" 표기 권장). 라이선스 원문은 `kenney/<kit>/License.txt`.
+Kenney (www.kenney.nl) — City Kit (Commercial) 2.1, City Kit (Suburban) 2.0, City Kit (Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit 3.0. 모두 CC0 1.0(표기 의무 없음, "Kenney (www.kenney.nl)" 표기 권장). 라이선스 원문은 `kenney/<kit>/License.txt`.

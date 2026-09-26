@@ -324,17 +324,16 @@
     }
 
     // ------------------------------------------------------------ people: passers-by and sitters
-    // who can be a passer-by: people nobody in the cast is (newest models first: man-*, woman-*), then people from the
-    // cast who are not in this zone, then the old Kenney characters; never the player's own look
+    // who can be a passer-by: people nobody in the cast is (man-*, woman-*), then people from the cast who are not in
+    // this zone; never the player's own look
     const npcRows = ((window.SO_DB || {}).npcs || []);
     function castModels() {
       const inZone = new Set(Object.values(api.npcs || {}).map(a => a.model)), cast = new Set(npcRows.map(n => n.model));
       if (api.player) inZone.add(api.player.model);
       const ready = (m) => api.packReady(m) && !inZone.has(m);
       const fresh = api.models.filter(m => /^(man|woman)-/.test(m) && ready(m));
-      const old = api.characters.filter(m => !/^(man|woman)-/.test(m) && ready(m) && !cast.has(m));
       const shuffle = (l) => { for (let i = l.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [l[i], l[j]] = [l[j], l[i]]; } return l; };
-      return shuffle(fresh.filter(m => !cast.has(m))).concat(shuffle(fresh.filter(m => cast.has(m))), shuffle(old));
+      return shuffle(fresh.filter(m => !cast.has(m))).concat(shuffle(fresh.filter(m => cast.has(m))));
     }
     function person(model, id) {
       const a = api.actor(model, { id });

@@ -1,7 +1,7 @@
 // Drive Sim Office (office/index.html) in headless Chrome over the DevTools protocol. Used by tools/office-check.sh,
 // which starts Chrome (spawning it from node gets it killed in some sandboxes).
 //   node tools/office-check.mjs <port> <outdir> [steps.mjs] [width height]
-// Default run: title → start('Test', 'character-male-a') → home → every zone (goto) → for up to 3 days, every
+// Default run: title → start('Test', 'man-casual-3') → home → every zone (goto) → for up to 3 days, every
 // conversation that opens during the day (the clock is stepped by 30 minutes) is autoplayed, then sleep → panels →
 // a phone-sized (390×844) look at the city and a conversation. Prints `finished: true` and the console errors.
 // SO_DAYS=<n> plays n days instead of 3. SO_DB_JSON=<file.json> replaces office/data/db.js with that data (the shape of window.SO_DB), e.g. to try seeds
@@ -76,7 +76,7 @@ try {
     for (let i = 0; i < 120 && !(await ev('window.SO && SO.debug.ready')); i++) await sleep(250);
     await sleep(2500);
     await shot('title');
-    await ev("SO.debug.start('Test', 'character-male-a')");
+    await ev("SO.debug.start('Test', 'man-casual-3')");
     await sleep(1500);
     await shot('home');
     await ev('SO.keys.ArrowUp = true'); await sleep(1200); await ev('SO.keys.ArrowUp = false');
