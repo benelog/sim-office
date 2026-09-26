@@ -21,7 +21,7 @@ cake-slicer pancakes waffle burger burger-cheese fries hot-dog pizza pizza-box s
 rice-ball chinese bowl-soup bowl-cereal plate plate-dinner glass mug cup-coffee cup-tea frappe soda soda-can soda-bottle
 bottle-ketchup peanut-butter honey cheese bacon meat-patty sausage turkey fish can carton carton-small bag styrofoam ice-cream
 popsicle candy-bar chocolate barrel`.split(/\s+/));
-const MODELS = /^character-(male|female)-[a-f]$/;
+const MODELS = /^(man|woman)-[a-z]+(-\d)?$/;   // a person made by tools/office-characters.py (office/models/<id>.js)
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const ITEM_KINDS = new Set(['grocery', 'meal', 'drink', 'fare', 'ticket', 'rent', 'other']);
 
@@ -41,7 +41,7 @@ for (const p of rows('places')) {
 for (const n of rows('npcs')) {
   const w = `npcs ${n.id}`;
   if (n.place && !places.has(n.place)) bad(w, `place "${n.place}" not in places`);
-  if (!MODELS.test(n.model || '')) bad(w, `model "${n.model}" is not a mini-characters id`);
+  if (!MODELS.test(n.model || '') || !fs.existsSync(path.join(root, 'office', 'models', n.model + '.js'))) bad(w, `model "${n.model}" is not a person in office/models (man-*, woman-*)`);
   if (n.voice_pitch != null && (n.voice_pitch < 0.5 || n.voice_pitch > 1.5)) bad(w, `voice_pitch ${n.voice_pitch} out of range`);
   if (n.voice_rate != null && (n.voice_rate < 0.5 || n.voice_rate > 1.5)) bad(w, `voice_rate ${n.voice_rate} out of range`);
 }

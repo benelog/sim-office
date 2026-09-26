@@ -8,13 +8,17 @@
   var K = SO_ZONE_KIT;
   function f(node, x, z, turn, extra) { return K.prop('furniture', node, x, z, turn, extra); }
   function food(node, x, z, turn, extra) { return K.prop('food', node, x, z, turn, extra); }
+  function c(node, x, z, turn, extra) { return K.prop('city', node, x, z, turn, extra); }
+  function r(node, x, z, turn, extra) { return K.prop('roads', node, x, z, turn, extra); }
+  function car(node, x, z, turn, extra) { return K.prop('cars', node, x, z, turn, extra); }
 
   SO_ZONES.home = {
     name: 'Your apartment', name_ko: '내 아파트',
     indoor: true,
     size: [7, 5],
-    floor: '#cdb79a',
-    tiles: K.floor(-3.5, -2.5, 3.5, 2.5),
+    floor: '#c89a6a',
+    outside: '#80ad5f',
+    background: '#bcd9ee',
     props: [].concat(
       K.walls(7, 5, { n: 'wWwWwww', s: 'wwWwwwD', w: 'wwWww', e: 'wwWww' }),
       [
@@ -61,6 +65,15 @@
         f('coatRackStanding', 2.1, 2.2, 0, { solid: 'fit' }),
         f('rugDoormat', 3.0, 1.6, 0),
         f('pottedPlant', 0.4, 2.25, 0, { solid: 'fit' })
+      ],
+      // ----- outside: Maple Street in front (south), backyards behind, the neighbours' houses
+      [
+        c('building-type-c', -6.5, 13.4, 180), c('building-type-e', 0.5, 13.6, 180), c('building-type-b', 7.5, 13.5, 180),
+        c('building-type-d', -9.8, -9.6, 0), c('building-type-g', 1.5, -9.8, 0), c('building-type-h', 9.5, -9.6, 0),
+        c('tree-large', -5.2, -4.8, 0), c('tree-small', 4.8, -4.6, 0), c('tree-large', 6.5, 3.4, 0),
+        c('tree-small', -6.2, 3.2, 0), c('tree-large', -2.5, 10.8, 0), c('tree-small', 4.0, 11.0, 0),
+        c('fence-1x3', -1.4, -5.2, 0, { scale: 0.8 }), c('fence-1x3', 1.8, -5.2, 0, { scale: 0.8 }),
+        r('light-square', 1.0, 4.2, 0), car('sedan', -3.0, 5.6, 90), car('suv', 6.0, 9.6, 270)
       ]),
     places: {
       home_bed: { at: [-2.42, -1.55], face: [-1.4, -1.55], sit: true },
@@ -76,6 +89,24 @@
       { at: [0, 0], height: 1.2, color: '#ffe8c8', intensity: 1.2 },
       { at: [-0.3, -2.1], height: 0.9, color: '#ffd9a0', intensity: 0.6 }
     ],
-    ambient: 0.9
+    ambient: 0.9,
+    setup: function (api) {
+      K.dress(api, {
+        floor: { pattern: 'wood', a: '#c79866' },
+        floors: [{ pattern: 'tile', a: '#e9e4da', b: '#b9b2a4', rect: [1.1, -2.5, 3.5, -1.55] }],
+        walls: { color: '#f1e6d2', trim: '#fbf7ee', base: '#a57b52' },
+        ground: { pattern: 'grass', strips: [
+          { pattern: 'sidewalk', rect: [-80, 2.55, 80, 4.4] }, { pattern: 'road', rect: [-80, 4.4, 80, 8.4] },
+          { pattern: 'sidewalk', rect: [-80, 8.4, 80, 10.2] }, { pattern: 'sidewalk', rect: [2.6, 2.5, 3.4, 2.56] }] },
+        skyline: { kind: 'suburb', seed: 3 },
+        panels: [
+          { kind: 'photo', wall: 'n', along: -3.05, y: 0.82, w: 0.42, h: 0.3, frame: '#6b4a2f' },
+          { kind: 'art', wall: 'w', along: 1.2, y: 0.85, w: 0.72, h: 0.42, frame: '#2e2e33', seed: 4 },
+          { kind: 'poster', wall: 'e', along: 1.0, y: 0.78, w: 0.36, h: 0.5, frame: '#ffffff', text: 'Farmers Market', lines: ['Saturdays 8-1', 'Oak Ave & Main'], band: '#2a9d8f' },
+          { kind: 'tv', at: [-1.667, 1.2], turn: 270, y: 0.585, w: 0.6, h: 0.33, depth: 0, text: 'Fairview: sunny, high of 72' }
+        ]
+      });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

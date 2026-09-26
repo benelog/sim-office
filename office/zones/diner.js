@@ -7,6 +7,9 @@
   var K = SO_ZONE_KIT;
   function f(node, x, z, turn, extra) { return K.prop('furniture', node, x, z, turn, extra); }
   function food(node, x, z, turn, extra) { return K.prop('food', node, x, z, turn, extra); }
+  function c(node, x, z, turn, extra) { return K.prop('city', node, x, z, turn, extra); }
+  function r(node, x, z, turn, extra) { return K.prop('roads', node, x, z, turn, extra); }
+  function car(node, x, z, turn, extra) { return K.prop('cars', node, x, z, turn, extra); }
   var BAR = 0.42, TABLE = 0.33;
   var props = [];
   function add(list) { props = props.concat(list); }
@@ -66,7 +69,22 @@
     f('pottedPlant', -5.6, 3.6, 0, { solid: 'fit' }),
     f('pottedPlant', 5.6, 3.6, 0, { solid: 'fit' }),
     f('coatRackStanding', -3.6, 3.55, 0, { solid: 'fit' }),
-    f('rugDoormat', -4.5, 3.3, 0)
+    f('rugDoormat', -4.5, 3.3, 0),
+    // plants by the front windows and on two tables
+    f('pottedPlant', -1.6, 3.72, 0, { solid: 'fit' }),
+    f('pottedPlant', 2.3, 3.72, 0, { solid: 'fit' }),
+    f('plantSmall2', -2.95, -2.25, 0, { lift: TABLE }),
+    f('plantSmall3', 0.75, 2.45, 0, { lift: TABLE })
+  ]);
+
+  // ----- outside: Main Street in front (south), the neighbours on both sides, the alley behind
+  add([
+    c('building-c', 8.3, 0.3, 0), c('building-f', -8.4, 0.2, 0),
+    c('building-d', -7.0, 13.6, 180), c('building-h', -1.5, 13.6, 180), c('building-b', 4.0, 13.6, 180), c('low-detail-building-wide-a', 9.5, 13.8, 180),
+    c('low-detail-building-g', -2.5, -9.5, 0), c('low-detail-building-wide-b', 4.5, -9.8, 0),
+    r('dumpster', 1.2, -5.6, 0), r('light-square', -2.5, 5.9, 0), r('light-square', 4.5, 5.9, 0),
+    car('sedan', -0.6, 7.3, 90), car('taxi', 6.6, 7.3, 90), car('hatchback-sports', -6.2, 9.7, 270),
+    c('tree-small', 1.8, 11.6, 0), c('tree-small', -4.4, 11.6, 0)
   ]);
 
   SO_ZONES.diner = {
@@ -89,6 +107,27 @@
       { at: [-2.5, 1], height: 1.2, color: '#ffe0b0', intensity: 1.0 },
       { at: [2.5, 2.5], height: 1.2, color: '#ffe0b0', intensity: 0.9 }
     ],
-    ambient: 0.9
+    ambient: 0.9,
+    background: '#bcd7ec',
+    outside: '#c9c6bf',
+    setup: function (api) {
+      K.dress(api, {
+        floor: { pattern: 'check', a: '#f2ecdd', b: '#b8433a' },
+        floors: [{ pattern: 'tile', a: '#dcdcd6', b: '#a9a79f', rect: [-1, -4, 6, -2.6] }],
+        walls: { color: '#f6e6bd', trim: '#c0392b', base: '#7e2a23' },
+        ground: { pattern: 'asphalt', strips: [
+          { pattern: 'sidewalk', rect: [-80, 4.02, 80, 6.4] }, { pattern: 'road', rect: [-80, 6.4, 80, 10.6] },
+          { pattern: 'sidewalk', rect: [-80, 10.6, 80, 12.4] }, { pattern: 'sidewalk', rect: [-80, -80, -6.02, 6.4] }, { pattern: 'sidewalk', rect: [6.02, -80, 80, 6.4] }] },
+        skyline: { kind: 'city', seed: 11 },
+        panels: [
+          { kind: 'sign', wall: 'w', along: -3.0, y: 0.95, w: 1.6, h: 0.42, text: 'Sunny Side Diner', sub: 'Breakfast all day', bg: '#c0392b', fg: '#fff6d8', border: '#ffd166', frame: '#7e2a23' },
+          { kind: 'menu', at: [2.1, -2.55], turn: 0, y: 1.0, w: 1.7, h: 0.5, frame: '#6b4a2f', text: 'TODAY', items: [['Pancake stack', '$7.50'], ['Club sandwich', '$9.25'], ['Burger & fries', '$11.00']] },
+          { kind: 'tv', at: [5.853, -1.5], turn: 270, y: 0.885, w: 0.6, h: 0.33, depth: 0, game: true, a: '#6fb1e0', b: '#9fd0f0', text: 'FVW 2 - 1 RDG' },
+          { kind: 'poster', wall: 'e', along: 1.0, y: 0.85, w: 0.45, h: 0.6, frame: '#ffffff', text: 'Pie of the Day', lines: ['Apple, a la mode', '$4.50 a slice'], band: '#e76f51' },
+          { kind: 'photo', wall: 'e', along: 3.0, y: 0.85, w: 0.6, h: 0.42, frame: '#6b4a2f', sky: '#f0b27a' }
+        ]
+      });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

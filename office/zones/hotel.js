@@ -24,8 +24,7 @@
     f('bookcaseClosedWide', -1.47, -4.85, 0, { solid: 'fit' }),
     f('pottedPlant', -2.6, -4.6, 0, { solid: 'fit' }),
     f('pottedPlant', -0.3, -4.6, 0, { solid: 'fit' }),
-    { pack: 'box', size: [0.9, 1.05, 0.05], at: [-5.5, -4.95], color: '#a7b0bd' },      // lift doors
-    { pack: 'box', size: [0.9, 1.05, 0.05], at: [-4.3, -4.95], color: '#a7b0bd' },
+    { pack: 'box', size: [0.08, 0.14, 0.03], at: [-4.9, -4.97], lift: 0.5, color: '#3b4250' },   // call button between the lift doors (drawn in setup)
     f('rugRectangle', -5.5, 2.5, 0),
     f('loungeSofa', -5.5, 1.62, 0, { solid: 'fit' }),
     f('loungeSofa', -5.5, 3.4, 180, { solid: 'fit' }),
@@ -82,6 +81,17 @@
     f('pottedPlant', 3.0, 0.4, 0, { solid: 'fit' })
   ]);
 
+  // ----- outside: the harbor behind the hotel (north), the street and Summit Retail's tower in front (south)
+  add([
+    K.prop('city', 'building-skyscraper-a', 0.0, 14.5, 180), K.prop('city', 'building-f', -6.5, 14.0, 180), K.prop('city', 'building-g', 6.5, 14.0, 180),
+    K.prop('city', 'low-detail-building-wide-b', 12.5, 3.0, 270), K.prop('city', 'building-h', -12.0, 2.0, 90),
+    K.prop('roads', 'light-square', -4.0, -6.2, 180), K.prop('roads', 'light-square', 4.0, -6.2, 180),
+    K.prop('roads', 'light-square', -3.0, 6.0, 0), K.prop('roads', 'light-square', 4.0, 6.0, 0),
+    f('bench', -1.0, -6.6, 180), f('bench', 1.6, -6.6, 180),
+    K.prop('city', 'tree-large', -6.5, -6.4, 0), K.prop('city', 'tree-large', 6.5, -6.4, 0),
+    K.prop('cars', 'taxi', 1.5, 7.4, 90), K.prop('cars', 'sedan', -5.0, 9.6, 270)
+  ]);
+
   SO_ZONES.hotel = {
     name: 'Harbor View Hotel', name_ko: '하버 뷰 호텔',
     indoor: true,
@@ -105,6 +115,35 @@
       { at: [6, -2.6], height: 1.1, color: '#ffd9a0', intensity: 0.9 },
       { at: [5.8, 2.6], height: 1.2, color: '#ffe6c0', intensity: 1.0 }
     ],
-    ambient: 0.85
+    ambient: 0.85,
+    background: '#bcd7ec',
+    outside: '#c9c6bf',
+    setup: function (api) {
+      K.dress(api, {
+        floor: { pattern: 'marble', a: '#ece2d0' },
+        floors: [
+          { pattern: 'hotel', a: '#7c2f3a', b: '#c9a25a', rect: [3, -5, 8, -0.5] },        // your room
+          { pattern: 'wood', a: '#a8784c', rect: [3, 0, 8, 5] },                           // restaurant
+          { pattern: 'hotel', a: '#2f4a6b', b: '#c9a25a', rect: [-7, 1.2, -4, 3.8] }        // lobby lounge
+        ],
+        walls: { color: '#efe3d0', trim: '#6b4a2f', base: '#4a3322' },
+        ground: { pattern: 'sidewalk', strips: [
+          { pattern: 'water', rect: [-80, -80, 80, -8.5] },
+          { pattern: 'road', rect: [-80, 6.4, 80, 10.4] }, { pattern: 'road', rect: [9.6, -8.5, 13.6, 6.4], dir: 'z' },
+          { pattern: 'asphalt', rect: [-80, -8.5, -8.02, 6.4] }] },
+        skyline: { kind: 'harbor', seed: 9 },
+        panels: [
+          { kind: 'elevator', wall: 'n', along: -5.5, y: 0.53, w: 0.9, h: 1.05, floor: '3', frame: '#6c7480', rim: 0.08 },
+          { kind: 'elevator', wall: 'n', along: -4.3, y: 0.53, w: 0.9, h: 1.05, floor: '1', frame: '#6c7480', rim: 0.08 },
+          { kind: 'sign', wall: 'n', along: -1.47, y: 1.03, w: 1.9, h: 0.38, text: 'Harbor View Hotel', sub: 'Reception', bg: '#243b55', fg: '#f3e2b3', border: '#c9a25a', frame: '#1a2a3d' },
+          { kind: 'photo', wall: 'w', along: 0.0, y: 0.85, w: 0.8, h: 0.5, frame: '#6b4a2f', sky: '#9cc9e8' },
+          { kind: 'art', at: [3.04, -2.8], turn: 90, y: 0.82, w: 0.7, h: 0.45, frame: '#6b4a2f', seed: 6, palette: ['#264653', '#c9a25a', '#e9d8a6', '#94d2bd'] },
+          { kind: 'tv', at: [6.4, -0.787], turn: 180, y: 0.595, w: 0.6, h: 0.33, depth: 0, text: 'Ridgeport: rain later, high of 64' },
+          { kind: 'poster', wall: 'e', along: 3.6, y: 0.85, w: 0.5, h: 0.66, frame: '#6b4a2f', text: 'Harbor Grill', lines: ['Breakfast 6:30-10', 'Dinner 5-10'], band: '#243b55', bg: '#f7efe0' },
+          { kind: 'map', wall: 's', along: -3.5, y: 0.85, w: 0.8, h: 0.55, frame: '#2e2e33', text: 'Ridgeport' }
+        ]
+      });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

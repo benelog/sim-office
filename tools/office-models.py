@@ -44,6 +44,9 @@ KITS = {
     'car-kit': ('kenney_car-kit', 'Models/GLB format'),
     'furniture-kit': ('kenney_furniture-kit', 'Models/GLTF format'),
     'food-kit': ('kenney_food-kit', 'Models/GLB format'),
+    'mini-market': ('kenney_mini-market', 'Models/GLB format'),
+    'mini-arcade': ('kenney_mini-arcade', 'Models/GLB format'),
+    'factory-kit': ('kenney_factory-kit_3.0', 'Models/GLB format'),
 }
 
 ANIMATIONS = ['idle', 'walk', 'sprint', 'sit', 'pick-up', 'emote-yes', 'emote-no', 'holding-right', 'holding-left',
@@ -80,7 +83,8 @@ styrofoam ice-cream popsicle candy-bar chocolate barrel""".split()
 PACKS = {
     'city': [
         ('city-kit-commercial', [f'building-{c}' for c in 'abcdefgh'] + [f'building-skyscraper-{c}' for c in 'abc']
-         + ['detail-awning', 'detail-awning-wide', 'detail-parasol-a', 'detail-parasol-b']),
+         + ['detail-awning', 'detail-awning-wide', 'detail-parasol-a', 'detail-parasol-b', 'detail-overhang', 'detail-overhang-wide']
+         + [f'low-detail-building-{c}' for c in 'abcdefghijklmn'] + ['low-detail-building-wide-a', 'low-detail-building-wide-b']),
         ('city-kit-suburban', [f'building-type-{c}' for c in 'abcdefgh']
          + ['tree-large', 'tree-small', 'fence', 'fence-1x3', 'planter', 'driveway-short', 'path-short']),
     ],
@@ -92,6 +96,14 @@ PACKS = {
                           'ambulance', 'wheel-default'])],
     'furniture': [('furniture-kit', FURNITURE)],
     'food': [('food-kit', FOOD)],
+    # a pack of odds and ends from other Kenney kits: shop fittings (Mini Market), machines (Mini Arcade),
+    # airport security and screens (Factory Kit)
+    'extras': [
+        ('mini-market', ['cash-register', 'shopping-cart', 'shopping-basket', 'display-fruit', 'display-bread', 'freezer',
+                         'freezers-standing', 'shelf-boxes', 'shelf-bags']),
+        ('mini-arcade', ['vending-machine', 'ticket-machine']),
+        ('factory-kit', ['scanner-high', 'machine-window']),
+    ],
 }
 for _c in CHARACTERS:
     PACKS[_c] = [('mini-characters', [_c])]

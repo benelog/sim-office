@@ -20,7 +20,6 @@
     f('computerScreen', -4.2, 0.5, 180, { lift: D }),
     f('computerKeyboard', -4.2, 0.68, 180, { lift: D }),
     f('plantSmall3', -3.45, 0.6, 0, { lift: D }),
-    { pack: 'box', size: [2.2, 0.4, 0.05], at: [-4.0, -3.95], color: '#1f6f5c', lift: 0.8 },   // "Summit Retail" sign
     f('pottedPlant', -5.6, -3.6, 0, { solid: 'fit' }),
     f('pottedPlant', -2.4, -3.6, 0, { solid: 'fit' }),
     f('loungeDesignSofa', -5.72, 2.4, 90, { solid: 'fit' }),
@@ -66,6 +65,15 @@
     f('pottedPlant', 5.6, 3.6, 0, { solid: 'fit' })
   ]);
 
+  // ----- outside: the street in front (south) with the hotel across it, towers around
+  add([
+    K.prop('city', 'building-skyscraper-c', -1.0, 12.5, 180), K.prop('city', 'building-d', 5.5, 12.0, 180), K.prop('city', 'building-b', -7.0, 12.0, 180),
+    K.prop('city', 'building-skyscraper-a', 10.0, -2.0, 270), K.prop('city', 'low-detail-building-wide-a', -10.0, -1.0, 90),
+    K.prop('city', 'building-g', 2.0, -9.5, 0), K.prop('city', 'low-detail-building-c', -5.0, -9.5, 0),
+    K.prop('roads', 'light-square', -2.0, 5.0, 0), K.prop('roads', 'light-square', 4.0, 5.0, 0),
+    K.prop('city', 'tree-small', 1.0, 4.9, 0), K.prop('cars', 'sedan-sports', 3.0, 6.4, 90), K.prop('cars', 'police', -4.5, 8.6, 270)
+  ]);
+
   SO_ZONES.client = {
     name: 'Summit Retail, head office', name_ko: '서밋 리테일 본사',
     indoor: true,
@@ -86,6 +94,29 @@
       { at: [3, -2.6], height: 1.2, color: '#ffffff', intensity: 1.1 },
       { at: [3.8, 2.8], height: 1.2, color: '#fff4e0', intensity: 0.8 }
     ],
-    ambient: 0.9
+    ambient: 0.9,
+    background: '#bcd7ec',
+    outside: '#c9c6bf',
+    setup: function (api) {
+      K.dress(api, {
+        floor: { pattern: 'concrete', a: '#c9ccca' },
+        floors: [
+          { pattern: 'carpet', a: '#5f6d77', rect: [0, -4, 6, 0.5] },       // meeting room
+          { pattern: 'carpet', a: '#8a9199', rect: [2, 1.6, 6, 4] }         // open corner
+        ],
+        walls: { color: '#e2e8e5', trim: '#1f6f5c', base: '#2f3b3a' },
+        ground: { pattern: 'sidewalk', strips: [
+          { pattern: 'road', rect: [-80, 5.6, 80, 9.6] }, { pattern: 'road', rect: [-12.4, -80, -8.4, 5.6], dir: 'z' }] },
+        skyline: { kind: 'city', seed: 31 },
+        panels: [
+          { kind: 'sign', wall: 'n', along: -4.0, y: 1.0, w: 2.2, h: 0.42, text: 'Summit Retail', sub: 'Head office', bg: '#1f6f5c', fg: '#ffffff', logo: '#f4d35e', frame: '#164f42' },
+          { kind: 'tv', at: [5.774, -2.6], turn: 270, y: 0.595, w: 0.6, h: 0.33, depth: 0, a: '#1f6f5c', b: '#0f3a30', text: 'Summit Retail x Lakeside Labs' },
+          { kind: 'art', wall: 'n', along: 5.5, y: 0.85, w: 0.6, h: 0.45, frame: '#2e2e33', seed: 8, palette: ['#1f6f5c', '#f4d35e', '#ee964b', '#f95738'] },
+          { kind: 'photo', wall: 'w', along: 2.4, y: 0.85, w: 0.8, h: 0.5, frame: '#2e2e33', sky: '#9cc9e8' },
+          { kind: 'poster', wall: 's', along: 4.5, y: 0.85, w: 0.45, h: 0.6, frame: '#ffffff', text: 'Store #120', lines: ['Opening soon', 'Ridgeport Mall'], band: '#1f6f5c' }
+        ]
+      });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

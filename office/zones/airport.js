@@ -29,7 +29,8 @@
     ]);
   });
   add([
-    box([4.6, 0.3, 0.05], -7.0, -4.9, '#2b5d8a', { lift: 0.95 }),        // "Check-in" sign board
+    K.prop('extras', 'ticket-machine', -4.0, -4.6, 0, { solid: 'fit' }),       // self check-in kiosks
+    K.prop('extras', 'ticket-machine', -3.4, -4.6, 0, { solid: 'fit' }),
     f('coatRackStanding', -9.4, -1.5, 0, { solid: 'fit' }),
     f('coatRackStanding', -7.9, -1.5, 0, { solid: 'fit' }),
     f('coatRackStanding', -6.1, -1.5, 0, { solid: 'fit' }),
@@ -51,10 +52,8 @@
     f('cardboardBoxOpen', -0.6, 0.22, 0, { lift: 0.42 }),
     food('bag', -0.1, 0.22, 90, { lift: 0.42, scale: 0.5 }),
     f('cardboardBoxOpen', 0.5, 0.22, 0, { lift: 0.42 }),
-    box([0.7, 0.55, 0.5], 0.35, 0.25, '#9aa3b5'),   // X-ray tunnel over the belt
-    box([0.15, 1.1, 0.15], 1.4, 0.42, '#c8ccd4', { solid: [0.15, 0.15] }),  // scanner frame
-    box([0.15, 1.1, 0.15], 1.4, 1.98, '#c8ccd4', { solid: [0.15, 0.15] }),
-    box([0.15, 0.14, 1.71], 1.4, 1.2, '#c8ccd4', { lift: 1.1 }),
+    K.prop('extras', 'machine-window', 0.35, 0.25, 90, { scale: 0.46 }),      // X-ray tunnel over the belt
+    K.prop('extras', 'scanner-high', 1.4, 1.2, 0, { scale: 0.88 }),           // walk-through scanner (its feet are solid, see setup)
     f('desk', 2.3, -0.9, 90, { solid: 'fit' }),
     f('computerScreen', 2.3, -0.9, 90, { lift: D })
   ]);
@@ -78,15 +77,25 @@
     f('desk', 9.8, 0.3, 270, { solid: 'fit' }),
     f('desk', 9.8, 1.03, 270, { solid: 'fit' }),
     f('computerScreen', 9.85, 0.5, 270, { lift: D }),
-    f('televisionModern', 6.0, -4.92, 0, { lift: 0.6 }),
-    f('televisionModern', 7.2, -4.92, 0, { lift: 0.6 }),
-    box([2.6, 0.25, 0.05], 10.9, -2.5, '#2b5d8a', { lift: 1.0, turn: 90 }),   // "Gate 3" sign over the door
+    box([0.05, 0.68, 0.05], 6.25, -4.45, '#3b3f46'),                          // posts of the departures board
+    box([0.05, 0.68, 0.05], 7.75, -4.45, '#3b3f46'),
+    K.prop('extras', 'vending-machine', 3.9, 3.3, 90, { solid: 'fit', scale: 1.25 }),
     f('pottedPlant', 3.6, -4.5, 0, { solid: 'fit' }),
     f('pottedPlant', 10.5, 4.5, 0, { solid: 'fit' }),
     f('pottedPlant', 3.6, 4.5, 0, { solid: 'fit' }),
     f('trashcan', 8.3, 4.6, 0, { solid: 'fit' }),
     f('coatRackStanding', 9.2, -1.4, 0, { solid: 'fit' }),
     f('coatRackStanding', 9.2, -3.6, 0, { solid: 'fit' })
+  ]);
+
+  // ----- outside: the apron with a plane at the gate (east) and one taxiing (north), the curb and the parking lot (south)
+  add([
+    box([2.3, 0.95, 0.9], 12.5, -2.5, '#c9ced6'),                            // the jet bridge to the plane
+    K.prop('cars', 'van', -3.0, 7.6, 90), K.prop('cars', 'taxi', 2.5, 7.6, 90),
+    K.prop('cars', 'sedan', -8.0, 12.2, 0), K.prop('cars', 'suv', -5.4, 12.2, 180), K.prop('cars', 'hatchback-sports', 4.0, 12.2, 0),
+    K.prop('cars', 'truck', 14.5, 3.5, 0), K.prop('cars', 'delivery', -2.0, -8.5, 90),
+    K.prop('roads', 'light-square', -6.0, 5.9, 0), K.prop('roads', 'light-square', 4.0, 5.9, 0),
+    K.prop('roads', 'construction-cone', 13.0, -5.0, 0), K.prop('roads', 'construction-cone', 13.6, -5.0, 0)
   ]);
 
   SO_ZONES.airport = {
@@ -112,6 +121,43 @@
       { at: [0, 1], height: 1.25, color: '#ffffff', intensity: 1.0 },
       { at: [7, 0.5], height: 1.25, color: '#fff4e0', intensity: 1.0 }
     ],
-    ambient: 1.0
+    ambient: 1.0,
+    background: '#bcd7ec',
+    outside: '#6c7076',
+    setup: function (api) {
+      api.solid(1.25, 0.3, 1.55, 0.55); api.solid(1.25, 1.85, 1.55, 2.1);     // the scanner's feet
+      K.dress(api, {
+        floor: { pattern: 'gloss', a: '#dde0e5' },
+        floors: [{ pattern: 'carpet', a: '#51627c', rect: [3.4, -4.95, 11, 4.95] }],
+        walls: { color: '#e5e9ee', trim: '#8fa0b3', base: '#4a5563' },
+        ground: { pattern: 'grass', a: '#8fb36a', strips: [
+          { pattern: 'concrete', a: '#b9bcbd', rect: [-80, -9, 80, -5.02] }, { pattern: 'concrete', a: '#b9bcbd', rect: [11.02, -9, 80, 5.02] },
+          { pattern: 'taxiway', rect: [-80, -12, 80, -9] }, { pattern: 'runway', rect: [-80, -24, 80, -18] },
+          { pattern: 'sidewalk', rect: [-80, 5.02, 80, 6.4] }, { pattern: 'road', rect: [-80, 6.4, 80, 10.2] }, { pattern: 'lot', rect: [-80, 10.8, 80, 13.8] },
+          { pattern: 'asphalt', rect: [-80, 5.02, -11.02, -9] }] },
+        skyline: { kind: 'airport', seed: 5, r: 26 },
+        planes: [{ at: [17.3, -2.5], turn: 270, scale: 0.9, tail: '#2f6fb3' }, { at: [-6.0, -10.5], turn: 90, scale: 0.8, tail: '#d4513c' }],
+        panels: [
+          { kind: 'sign', wall: 'n', along: -7.0, y: 1.0, w: 4.4, h: 0.32, text: 'Check-in', sub: 'Fairview Air  ·  Bags and boarding passes', bg: '#1d2b3f', fg: '#ffffff', border: '#f2c230', frame: '#101a28' },
+          { kind: 'lightbox', wall: 'e', along: -2.5, y: 1.08, w: 2.2, h: 0.3, mark: 'B12', text: 'Gate B12', sub: 'Flight 482 to Ridgeport', frame: '#101a28' },
+          { kind: 'lightbox', wall: 'n', along: 0.9, y: 1.02, w: 1.8, h: 0.3, mark: '→', text: 'Security', sub: 'Have your ID and boarding pass ready', frame: '#101a28' },
+          { kind: 'lightbox', wall: 'n', along: 2.95, y: 1.02, w: 1.7, h: 0.3, mark: 'B', text: 'Gates B1 - B20', frame: '#101a28' },
+          { kind: 'flights', at: [7.0, -4.47], turn: 0, y: 1.02, w: 1.6, h: 0.62, key: 'departures', rim: 0.05, live: function (api, q) {
+            var d = api.day || 1, home = d >= 12;
+            q.clock = String(Math.floor((api.minute || 600) / 60)).padStart(2, '0') + ':' + String(Math.floor((api.minute || 600) % 60)).padStart(2, '0');
+            q.rows = [
+              ['06:55', 'DENVER', 'FA 210', 'B4', 'DEPARTED'],
+              [home ? '11:40' : '07:30', home ? 'FAIRVIEW' : 'RIDGEPORT', home ? 'FA 483' : 'FA 482', 'B12', home ? 'FULL' : 'DELAYED'],
+              ['08:15', 'CHICAGO', 'FA 318', 'B7', 'BOARDING'],
+              ['09:05', 'SEATTLE', 'FA 144', 'B9', 'ON TIME'],
+              ['10:20', 'AUSTIN', 'FA 527', 'B2', 'ON TIME']
+            ];
+          } },
+          { kind: 'poster', wall: 's', along: -1.0, y: 0.85, w: 0.5, h: 0.7, frame: '#ffffff', text: 'Visit Fairview', lines: ['Lakes, trails', 'and good coffee'], band: '#2a9d8f' },
+          { kind: 'map', wall: 'w', along: -2.0, y: 0.85, w: 0.9, h: 0.6, frame: '#2e2e33', text: 'Downtown shuttle' }
+        ]
+      });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

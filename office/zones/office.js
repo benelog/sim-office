@@ -10,13 +10,16 @@
   var K = SO_ZONE_KIT;
   function f(node, x, z, turn, extra) { return K.prop('furniture', node, x, z, turn, extra); }
   function food(node, x, z, turn, extra) { return K.prop('food', node, x, z, turn, extra); }
-  var D = 0.384;   // desk top
+  function c(node, x, z, turn, extra) { return K.prop('city', node, x, z, turn, extra); }
+  function box(size, x, z, color, extra) { var o = { pack: 'box', size: size, at: [x, z], color: color }; for (var k in extra) o[k] = extra[k]; return o; }
+  var D = 0.384, STREET = -3.1;      // desk top; the street is three floors down   // desk top
   var props = [];
   function add(list) { props = props.concat(list); }
 
   add(K.walls(18, 12, { n: 'wWWwwWWwwWWwwWWwww', s: 'wDwwWWwwWWwwWWwwww', w: 'wWWwwwwwwWWw', e: 'wWWwwWWwwWWw' }));
 
-  // ----- lobby and reception (south-west)
+  // ----- lobby and reception (south-west); a half-height partition behind Tom carries the company sign
+  add(K.wallLine(-7.75, 1.3, 'x', 'wwh', 0, true));
   add([
     f('desk', -6.865, 2.6, 180, { solid: 'fit' }),
     f('desk', -6.135, 2.6, 180, { solid: 'fit' }),
@@ -53,6 +56,11 @@
     f('computerScreen', 2.42, 2.1, 0, { lift: D }),
     f('computerKeyboard', 2.2, 2.28, 0, { lift: D }),
     food('mug', 1.95, 2.3, 0, { lift: D, scale: 0.35 }),
+    food('cup-coffee', 0.62, 2.33, 0, { lift: D, scale: 0.3 }),                   // your desk: coffee and notes
+    box([0.13, 0.006, 0.18], -0.12, 2.3, '#fbfbf6', { lift: D, turn: 12 }),
+    box([0.13, 0.006, 0.18], -1.35, 2.3, '#fbfbf6', { lift: D, turn: -8 }),
+    f('books', -1.9, 2.1, 0, { lift: D }),
+    food('mug', -1.35, 1.78, 0, { lift: D, scale: 0.35 }),
     // row B
     f('computerScreen', -1.6, 1.9, 180, { lift: D }),
     f('computerKeyboard', -1.6, 1.72, 180, { lift: D }),
@@ -73,11 +81,18 @@
       f('chairDesk', x, -2.15, 0),
       f('computerScreen', x - 0.1, -1.3, 0, { lift: D }),
       f('computerKeyboard', x - 0.05, -1.1, 0, { lift: D }),
-      f('laptop', x, -1.65, 180, { lift: D })
+      f('laptop', x, -1.65, 180, { lift: D }),
+      food(x < 0 ? 'mug' : 'cup-coffee', x + 0.25, -1.15, 0, { lift: D, scale: 0.32 })
     ]);
   });
   add([
-    { pack: 'box', size: [0.45, 0.36, 0.36], at: [-3.4, -1.4], color: '#e4e4e0', solid: [0.45, 0.36] },   // printer
+    // the printer: a copier body, scanner lid, control panel and a paper tray towards the desks (east)
+    box([0.4, 0.3, 0.46], -3.4, -1.4, '#e7e7e3', { solid: [0.4, 0.46] }),
+    box([0.41, 0.02, 0.47], -3.4, -1.4, '#b8bec7', { lift: 0.08 }),
+    box([0.41, 0.035, 0.47], -3.4, -1.4, '#5e6570', { lift: 0.3 }),
+    box([0.08, 0.02, 0.16], -3.24, -1.52, '#27303c', { lift: 0.335 }),
+    box([0.2, 0.012, 0.26], -3.14, -1.4, '#f4f4f0', { lift: 0.19 }),
+    box([0.16, 0.01, 0.22], -3.12, -1.4, '#ffffff', { lift: 0.2 }),
     f('cardboardBoxClosed', -3.4, -0.95, 0, { solid: 'fit' }),
     f('pottedPlant', 2.3, -1.4, 0, { solid: 'fit' })
   ]);
@@ -168,7 +183,22 @@
     f('chair', 6.5, 5.0, 270),
     f('trashcan', 8.75, 4.5, 0, { solid: 'fit' }),
     f('pottedPlant', 8.65, 5.6, 0, { solid: 'fit' }),
-    f('pottedPlant', 4.6, 5.6, 0, { solid: 'fit' })
+    f('pottedPlant', 4.6, 5.6, 0, { solid: 'fit' }),
+    K.prop('extras', 'vending-machine', 7.65, 5.62, 180, { solid: 'fit', scale: 1.25 })
+  ]);
+
+  // ----- outside, three floors down: the street, the neighbours' roofs and the towers of downtown
+  add([
+    c('building-skyscraper-a', -4.5, -14.0, 0, { lift: STREET }),
+    c('building-g', 3.5, -13.0, 0, { lift: STREET }),
+    c('building-skyscraper-c', 12.0, -12.5, 0, { lift: STREET }),
+    c('low-detail-building-wide-a', 15.5, -2.5, 270, { lift: STREET }),
+    c('building-b', 15.0, 4.5, 270, { lift: STREET }),
+    c('building-e', -5.0, 12.5, 180, { lift: STREET }),
+    c('low-detail-building-d', 4.5, 13.0, 180, { lift: STREET }),
+    c('building-skyscraper-b', -16.0, -3.0, 90, { lift: STREET }),
+    c('low-detail-building-wide-b', -15.5, 6.0, 90, { lift: STREET }),
+    c('tree-large', -1.0, 8.6, 0, { lift: STREET }), c('tree-large', 6.0, 8.6, 0, { lift: STREET }), c('tree-large', -10.5, 8.6, 0, { lift: STREET })
   ]);
 
   SO_ZONES.office = {
@@ -199,6 +229,36 @@
       { at: [-5, -4], height: 1.25, color: '#fff2dc', intensity: 0.9 },
       { at: [7, 4], height: 1.25, color: '#fff2dc', intensity: 0.9 }
     ],
-    ambient: 0.9
+    ambient: 0.9,
+    background: '#bcd7ec',
+    outside: '#62666d',
+    setup: function (api) {
+      var roofs = '#8e949c';
+      K.dress(api, {
+        floor: { pattern: 'carpet', a: '#8b95a3' },
+        floors: [
+          { pattern: 'tile', a: '#ecebe6', b: '#c3bfb5', rect: [4.4, 1.7, 9, 6] },                  // kitchen
+          { pattern: 'wood', a: '#c9a57c', rect: [-9, 1.3, -4.9, 6] },                              // lobby
+          { pattern: 'carpet', a: '#6f7b8d', rect: [4, -6, 9, -1.5] }                               // meeting room
+        ],
+        walls: { color: '#e9e7e2', trim: '#b9c0c8', base: '#59616c' },
+        tower: { bottom: STREET, color: '#b7c0ca', glass: '#4f6680', edge: roofs },
+        ground: { pattern: 'sidewalk', y: STREET, strips: [
+          { pattern: 'road', rect: [-80, 7.2, 80, 11], dir: 'x' }, { pattern: 'road', rect: [-80, -11.2, 80, -7.4], dir: 'x' },
+          { pattern: 'road', rect: [10.4, -80, 13.4, 80], dir: 'z' }, { pattern: 'road', rect: [-13.4, -80, -10.4, 80], dir: 'z' }] },
+        skyline: { kind: 'downtown', seed: 7, y: STREET, h: 13 },
+        panels: [
+          { kind: 'sign', at: [-6.5, 1.34], turn: 0, y: 0.95, w: 1.7, h: 0.42, text: 'Lakeside Labs', sub: 'Welcome, new hires!', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
+          { kind: 'board', wall: 'n', along: 7.5, y: 0.78, w: 1.5, h: 0.72, text: 'Sprint 14', frame: '#9aa3ad', rim: 0.03 },
+          { kind: 'tv', at: [8.853, -3.8], turn: 270, y: 0.735, w: 0.6, h: 0.33, depth: 0, a: '#2b4c7e', b: '#0f1f3a', text: 'Q3 roadmap: Summit Retail pilot' },
+          { kind: 'art', wall: 'n', along: -4.5, y: 0.85, w: 0.62, h: 0.44, frame: '#2e2e33', seed: 2, palette: ['#264653', '#2a9d8f', '#e9c46a', '#f4a261'] },
+          { kind: 'poster', wall: 'n', along: -0.55, y: 0.85, w: 0.4, h: 0.55, frame: '#ffffff', text: 'Open Enrollment', lines: ['Benefits: Nov 1-15', 'Ask Linda in HR'], band: '#3d6fb4' },
+          { kind: 'poster', wall: 's', along: 7.7, y: 0.85, w: 0.45, h: 0.6, frame: '#ffffff', text: 'Lunch & Learn', lines: ['Thursday 12:00', 'Pizza in the kitchen'], band: '#e07a3f' },
+          { kind: 'photo', wall: 's', along: 3.5, y: 0.85, w: 0.8, h: 0.5, frame: '#2e2e33', sky: '#8cc4e8' },
+          { kind: 'map', wall: 'w', along: -2.5, y: 0.85, w: 0.7, h: 0.5, frame: '#2e2e33', text: 'Fairview' }
+        ]
+      });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

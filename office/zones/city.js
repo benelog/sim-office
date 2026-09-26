@@ -54,7 +54,7 @@
     c('planter', -8.45, -4.85, 0, { solid: 'fit' }),
     // bus stop on Main Street
     { pack: 'box', size: [1.5, 0.9, 0.06], at: [-5.0, -2.85], color: '#8fb3cf', solid: [1.5, 0.1] },
-    { pack: 'box', size: [1.6, 0.06, 0.7], at: [-5.0, -2.55], lift: 1.0, color: '#5f6f7f' },
+    c('detail-overhang-wide', -5.6, -2.55, 0),                                      // the shelter's roof on two posts
     f('bench', -5.23, -2.6, 0),
     f('bench', -4.77, -2.6, 0),
     r('road-sign-street', -6.1, -1.85, 0, { solid: [0.2, 0.2] }),
@@ -198,6 +198,18 @@
       { at: [18.0, -1.9], size: [1.2, 0.6], to: 'airport', arrive: 'airport_door', label: 'Take the airport shuttle', label_ko: '공항 셔틀 타기' }
     ],
     spawn: 'apartment_door',
-    ambient: 1.0
+    ambient: 1.0,
+    setup: function (api) {
+      // signs on the fronts of the buildings you go into, the bus stop's timetable and Nina's cart
+      K.dress(api, { panels: [
+        { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Lakeside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
+        { kind: 'sign', at: [5.4, 3.47], turn: 180, y: 1.55, w: 2.8, h: 0.5, text: 'Sunny Side Diner', bg: '#c0392b', fg: '#fff6d8', border: '#ffd166', frame: '#7e2a23' },
+        { kind: 'sign', at: [11.0, 3.77], turn: 180, y: 1.75, w: 2.4, h: 0.48, text: 'Fairview Market', bg: '#3f8f5a', logo: '#ffd166', frame: '#2f6b45' },
+        { kind: 'poster', at: [-5.35, -2.81], turn: 0, y: 0.5, w: 0.62, h: 0.8, frame: '#5f6f7f', text: 'Route 5', lines: ['Maple St - Downtown', 'Every 15 min, 6am-11pm', 'Fare $2.00'], band: '#2b5d8a', depth: 0.01 },
+        { kind: 'sign', at: [-4.1, -2.26], turn: 0, y: 1.3, w: 0.5, h: 0.22, text: 'BUS', sub: 'Route 5', bg: '#2b5d8a', frame: '#1c3d5c', depth: 0.02 },
+        { kind: 'sign', at: [3.73, -3.89], turn: 0, y: 0.24, w: 1.15, h: 0.28, text: "Nina's Coffee", bg: '#5b3a29', fg: '#ffe8c7', border: '#d9a066', depth: 0.005, frame: false }
+      ] });
+    },
+    update: function (api) { K.tick(api); }
   };
 })();

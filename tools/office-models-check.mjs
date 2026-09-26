@@ -16,7 +16,7 @@ const DIR = path.join(ROOT, 'office', 'models');
 const ANIMATIONS = ['idle', 'walk', 'sprint', 'sit', 'pick-up', 'emote-yes', 'emote-no', 'holding-right', 'holding-left',
   'holding-both', 'interact-right', 'interact-left', 'crouch', 'jump', 'drive', 'static'];
 const BONES = ['root', 'leg-left', 'leg-right', 'torso', 'arm-left', 'arm-right', 'head'];
-const COUNTS = { city: 30, roads: 25, cars: 11, furniture: 140, food: 78 };   // top-level nodes per pack
+const COUNTS = { city: 48, roads: 25, cars: 11, furniture: 140, food: 78, extras: 13 };   // top-level nodes per pack
 const LIMIT = { character: 350 * 1024, pack: 3 * 1024 * 1024 };               // base64 bytes
 
 const args = process.argv.slice(2);
@@ -66,7 +66,7 @@ function bounds(j, i, M = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1], box 
 const r2 = v => Math.round(v * 100) / 100;
 
 let failed = 0;
-const files = fs.readdirSync(DIR).filter(f => f.endsWith('.js')).sort()
+const files = fs.readdirSync(DIR).filter(f => f.endsWith('.js') && !/^(man|woman|rig)-/.test(f)).sort()   // people: tools/office-characters-check.mjs
   .filter(f => !only.length || only.includes(f.slice(0, -3)) || (only.includes('characters') && f.startsWith('character-')));
 for (const f of files) {
   const pack = f.slice(0, -3);
