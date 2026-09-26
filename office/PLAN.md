@@ -84,6 +84,8 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 
 Kenney CC0 팩(원본 zip은 `/tmp/claude-1000/kenney-packs/`에 있음). Blender 5.2(`blender -b --python tools/office-models.py -- <pack…>`)로 .glb들을 팩 하나로 합쳐 base64 js로 씁니다: `(window.SO_MODELS = window.SO_MODELS || {})['<pack>'] = '<base64>'`. 팩 안의 조각은 **Kenney 파일 이름 그대로인 노드**(`building-a`, `desk`, `cup-coffee`)로 두고, 노드는 원점에 둡니다. 텍스처(`colormap.png`)는 **glb 안에 포함**(외부 파일 참조 금지: `file://`에서 못 읽음).
 
+엔진 라이브러리: three.js r186(`vendor/three-game.min.js`, MIT)과 Yuka 0.7.8(`vendor/yuka.min.js`, MIT — `office/life.js`의 자동차·행인이 Vehicle+FollowPathBehavior로 움직이고, 행인은 SeparationBehavior·ObstacleAvoidanceBehavior로 서로와 주인공을 피함). 길찾기는 `game.js`의 격자 A*(0.25 칸)이며, three-pathfinding(내비메시)은 2026-09-27에 시험했으나 구역마다 메시 생성이 1.3~2.7초라 쓰지 않음.
+
 | pack | 원본 | 노드(Kenney는 파일 이름 그대로, Quaternius는 게임 이름) | 게임 기본 배율 |
 |---|---|---|---|
 | `man-*`, `woman-*` (22개) + `rig-umc`, `rig-women` | Quaternius Ultimate Modular Men·Women (`tools/office-characters.py`) | 인물 파일은 골격+스킨 메시(애니메이션 없음, extras `rig`), 리그 파일에 클립 idle walk sprint sit emote-yes emote-no interact-right | 1 (키 남 0.96, 여 0.94) |

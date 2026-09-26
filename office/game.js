@@ -1178,7 +1178,9 @@
 
   // ---------------------------------------------------------------- finding a way: A* on a grid of 0.25 over the zone, solids blocked
   // Requests wait in a queue and one is served per frame. Paths are smoothed (straight runs where nothing is in the
-  // way) and end at the exact goal, even when the goal itself is next to a desk.
+  // way) and end at the exact goal, even when the goal itself is next to a desk. (three-pathfinding was tried on
+  // 2026-09-27: a navigation mesh of the free cells took 1.3-2.7 s to build per zone, a hitch on every first search,
+  // so the grid stays.)
   const NAV_CELL = 0.25;
   let nav = null;
   const pathQueue = [];
@@ -2855,7 +2857,20 @@
     const pid = isPhone(ep) ? ep.place : npcPlaceNow(npcRow(ep.npc)) || ep.place;
     return { zone: zoneOfPlace(pid), pid };
   }
+  function debugPath(from, to, opts) {          // the way between two points and whether it crosses anything solid
+    const p = findPath(from, to, opts || {}), g = navGrid(), bad = [];
+    if (p) for (let i = 1; i < p.length; i++) {
+      const a = p[i - 1], b = p[i], n = Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / (NAV_CELL * 0.5));
+      for (let j = 0; j < n; j++) {
+        const x = a[0] + (b[0] - a[0]) * j / n, z = a[1] + (b[1] - a[1]) * j / n;
+        const ci = Math.floor((x - g.x0) / NAV_CELL), ck = Math.floor((z - g.z0) / NAV_CELL);
+        if (ci >= 0 && ck >= 0 && ci < g.nx && ck < g.nz && g.block[ck * g.nx + ci]) bad.push([+x.toFixed(2), +z.toFixed(2)]);
+      }
+    }
+    return { path: p && p.map(q => [+q[0].toFixed(2), +q[1].toFixed(2)]), crosses: bad.slice(0, 5) };
+  }
   const debug = {
+    path: debugPath,
     get ready() { return ready; }, get state() { return state; }, get busy() { return busy; },
     get day() { return G ? G.day : null; }, get time() { return G ? hhmm(G.minute) : null; }, get minute() { return G ? G.minute : null; },
     get money() { return G ? G.money : null; }, get energy() { return G ? Math.round(G.energy * 10) / 10 : null; }, get zone() { return zoneId; },

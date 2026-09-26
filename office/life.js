@@ -4,12 +4,14 @@
    - Traffic lights (roads traffic-light): the lamp faces are found in the model by their colour in the colormap and
      covered with lamps of their own (emissive when lit). They change every 15 s: 12 s green and 3 s amber for one
      axis, then the other (a 30 s cycle); a light controls the traffic its lamps face.
-   - Cars (cars pack, Quaternius, scale 0.5): the road tiles (tiles with node road-*) make a grid of cells; a car keeps to the right
+   - Cars (cars pack, Quaternius, scale 0.5), each a Yuka Vehicle (vendor/yuka.min.js, MIT: steering behaviours) following
+     the lane: the road tiles (tiles with node road-*) make a grid of cells; a car keeps to the right
      lane through each cell, picks a way at every junction, turns round at a dead end, rolls its wheels, slows
      and stops for people, cars and red lights in front, and pushes you out of its way (it never runs you over).
      Lanes blocked by a parked car (a solid on the lane) are never entered. Headlights and tail lights after 19:30.
    - Passers-by: people not in the zone's cast walk round the blocks on the sidewalks (A* legs between the
-     corners, one search a frame through the engine) and wave when you come close. You cannot talk to them.
+     corners, one search a frame through the engine), as Yuka Vehicles that keep apart and step round you
+     (Separation, ObstacleAvoidance), and wave when you come close. You cannot talk to them.
    - Somebody sits on a park bench or a diner chair.
    Low graphics: 2 cars, 2 passers-by, 1 sitter. */
 (function () {
@@ -40,6 +42,8 @@
 
   function create(api) {
     const T = api.T, Z = api.spec, zone = api.zone, high = api.gfx === 'high';
+    const Y = window.YUKA;               // steering for cars and passers-by; without it (vendor/yuka.min.js missing) the streets stay empty
+    if (!Y) console.warn('Sim Office: vendor/yuka.min.js not loaded: no cars or passers-by');
     const root = new T.Group();
     api.group.add(root);
     const own = [], undo = [];
@@ -191,11 +195,40 @@
     }
 
     // ------------------------------------------------------------ cars
+    // Each car is a Yuka Vehicle following the lane through its cell and the next one (FollowPathBehavior); life.js
+    // works out how far it may still go (a red light, people or a car in front) and sets the vehicle's maxSpeed from
+    // that, so it brakes and stops like before. Where it is on the lane (s) and when it enters the next cell are read
+    // back from its position every frame.
     const tmp = { x: 0, z: 0, dx: 0, dz: 1 }, tmp2 = { x: 0, z: 0, dx: 0, dz: 1 };
     const headMat = mat(new T.SpriteMaterial({ map: whiteGlow(T), color: new T.Color('#fff4d6'), blending: T.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false }));
     const tailMat = mat(new T.SpriteMaterial({ map: whiteGlow(T), color: new T.Color('#ff2a1a'), blending: T.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false, opacity: 0.85 }));
     const beamGeo = geo(new T.PlaneGeometry(1.1, 1.7).rotateX(-Math.PI / 2));
     const beamMat = mat(new T.MeshBasicMaterial({ map: whiteGlow(T), color: new T.Color('#fff0c8'), blending: T.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false, opacity: 0.35 }));
+    const carsEM = Y ? new Y.EntityManager() : null, dirTmp = Y ? new Y.Vector3() : null;
+    function yPath(pts) { const p = new Y.Path(); pts.forEach(q => p.add(new Y.Vector3(q[0], 0, q[1]))); return p; }
+    function nextState(cell, dout) {          // where the lane goes after this cell (back the way it came at a dead end)
+      const n = nbr(cell, dout), c = n || cell, din = n ? dout : opp(dout), out = chooseExit(c, din);
+      return { cell: c, din, dout: out, path: cellPath(c, din, out) };
+    }
+    function progress(path, x, z) {          // how far along the lane the point nearest to (x, z) is, and whether (x, z) is past its end
+      const { pts, cum } = path;
+      let best = 0, bd = Infinity;
+      for (let j = 1; j < pts.length; j++) {
+        const a = pts[j - 1], b = pts[j], vx = b[0] - a[0], vz = b[1] - a[1], L2 = vx * vx + vz * vz || 1e-9;
+        const u = Math.max(0, Math.min(1, ((x - a[0]) * vx + (z - a[1]) * vz) / L2));
+        const d = (x - a[0] - vx * u) ** 2 + (z - a[1] - vz * u) ** 2;
+        if (d < bd) { bd = d; best = cum[j - 1] + Math.sqrt(L2) * u; }
+      }
+      const e = pts[pts.length - 1], f = pts[pts.length - 2];
+      return { s: best, past: (x - e[0]) * (e[0] - f[0]) + (z - e[1]) * (e[1] - f[1]) > 0 };
+    }
+    function lane(car) {                     // the waypoints ahead: the rest of this cell's lane and the whole of the next
+      const pts = [];
+      car.path.pts.forEach((q, j) => { if (car.path.cum[j] > car.s + 0.2) pts.push(q); });
+      car.next.path.pts.forEach((q, j) => { if (j > 0) pts.push(q); });
+      if (pts.length < 2) pts.unshift(car.path.pts[car.path.pts.length - 1]);
+      car.follow.path = yPath(pts);
+    }
     function makeCar(type, tint, cell, din, s0) {
       const obj = api.packNode('cars', type);
       if (!obj) return null;
@@ -240,31 +273,37 @@
       lights.push(beam);
       root.add(g);
       const half = (box[3] - box[2]) * k / 2;
-      const car = { type, g, wheels, lights, lamps, cell, din, dout: 0, path: null, s: s0, v: 0, half, ghost: 0, stuck: 0, steer: 0,
+      const veh = new Y.Vehicle();
+      veh.maxSpeed = CRUISE; veh.maxForce = 4; veh.mass = 1; veh.boundingRadius = half; veh.updateOrientation = true;
+      const follow = new Y.FollowPathBehavior(yPath([[cell.x, cell.z], [cell.x, cell.z + 1]]), 0.45);
+      veh.steering.add(follow);
+      veh.setRenderComponent(g, (e, r) => { r.position.set(e.position.x, 0, e.position.z); r.quaternion.copy(e.rotation); });
+      carsEM.add(veh);
+      const car = { type, g, veh, follow, wheels, lights, lamps, cell, din, dout: 0, path: null, next: null, s: s0, v: 0, half, ghost: 0, stuck: 0, steer: 0,
         m1: { x: 0, z: 0, r: 0.5 }, m2: { x: 0, z: 0, r: 0.5 }, x: 0, z: 0, dx: 0, dz: 1 };
       car.dout = chooseExit(cell, din);
       car.path = cellPath(cell, din, car.dout);
       car.s = Math.min(s0, car.path.len * 0.9);
+      car.next = nextState(cell, car.dout);
+      sample(car.path, car.s, tmp);
+      veh.position.set(tmp.x, 0, tmp.z);
+      veh.lookAt(new Y.Vector3(tmp.x + tmp.dx, 0, tmp.z + tmp.dz));
+      car.dx = tmp.dx; car.dz = tmp.dz;
+      lane(car);
       api.movers.push(car.m1, car.m2);
       pose(car);
       return car;
     }
-    function pose(car) {
-      sample(car.path, car.s, tmp);
-      car.x = tmp.x; car.z = tmp.z; car.dx = tmp.dx; car.dz = tmp.dz;
-      car.g.position.set(tmp.x, 0, tmp.z);
-      car.g.rotation.y = Math.atan2(tmp.dx, tmp.dz);
+    function pose(car) {                     // the car's place, heading and movers (two circles along it) from its vehicle
+      const p = car.veh.position, vel = car.veh.velocity, sp = car.veh.getSpeed();
+      car.x = p.x; car.z = p.z; car.v = sp;
+      if (sp > 0.02) { car.dx = vel.x / sp; car.dz = vel.z / sp; }
+      else { const d = car.veh.getDirection(dirTmp); if (Math.hypot(d.x, d.z) > 0.5) { car.dx = d.x; car.dz = d.z; } }
+      car.g.position.set(p.x, 0, p.z);
+      car.g.quaternion.copy(car.veh.rotation);
       const off = car.half * 0.5;
-      car.m1.x = tmp.x + tmp.dx * off; car.m1.z = tmp.z + tmp.dz * off;
-      car.m2.x = tmp.x - tmp.dx * off; car.m2.z = tmp.z - tmp.dz * off;
-    }
-    function nextCell(car) {
-      const n = nbr(car.cell, car.dout);
-      car.din = n ? car.dout : opp(car.dout);         // (no cell there: back the way it came)
-      if (n) car.cell = n;
-      const c = car.cell;
-      car.dout = chooseExit(c, car.din);
-      car.path = cellPath(c, car.din, car.dout);
+      car.m1.x = p.x + car.dx * off; car.m1.z = p.z + car.dz * off;
+      car.m2.x = p.x - car.dx * off; car.m2.z = p.z - car.dz * off;
     }
     // how far the car may still go before the stop line of a red light ahead (Infinity if it may go on)
     function signalRoom(car) {
@@ -280,7 +319,7 @@
       if (st === 'amber' && room < 1.0) return Infinity;
       return Math.max(0, room);
     }
-    function carTick(car, dt, people, night) {
+    function carTick(car, dt, people, night) {     // before the vehicles move: how fast this car may go
       if (car.ghost > 0) car.ghost -= dt;
       let room = signalRoom(car), byCar = false;
       const fx = car.dx, fz = car.dz;
@@ -296,15 +335,23 @@
         });
       });
       const target = car.path.turn ? TURNING : CRUISE;
-      const vmax = room <= 0 ? 0 : Math.min(target, Math.sqrt(2 * 3.5 * room));
-      car.v += Math.max(-7 * dt, Math.min(1.6 * dt, vmax - car.v));
-      if (room <= 0) car.v = Math.max(0, car.v - 10 * dt);
+      car.veh.maxSpeed = room <= 0 ? 0 : Math.min(target, Math.sqrt(2 * 3.5 * room));
       if (car.v < 0.05 && byCar) { if ((car.stuck += dt) > 5) { car.ghost = 2.5; car.stuck = 0; } } else car.stuck = 0;
-      car.s += car.v * dt;
+    }
+    function carAfter(car, dt, night) {           // after the vehicles moved: the cell it is in, the wheels, the lights
+      const at = progress(car.path, car.veh.position.x, car.veh.position.z);
+      car.s = at.s;
       let guard = 0;
-      while (car.s >= car.path.len && guard++ < 4) { car.s -= car.path.len; nextCell(car); }
+      while ((at.past || car.s >= car.path.len - 0.05) && guard++ < 4) {
+        const n = car.next;
+        car.cell = n.cell; car.din = n.din; car.dout = n.dout; car.path = n.path;
+        car.next = nextState(car.cell, car.dout);
+        const again = progress(car.path, car.veh.position.x, car.veh.position.z);
+        car.s = again.s; at.past = again.past;
+        lane(car);
+      }
       pose(car);
-      sample(car.path, Math.min(car.path.len, car.s + 0.7), tmp2);        // steer towards where the lane goes
+      sample(car.path, Math.min(car.path.len, car.s + 0.7), tmp2);        // the front wheels turn towards where the lane goes
       const want = Math.atan2(tmp2.dx * car.dz - tmp2.dz * car.dx, tmp2.dx * car.dx + tmp2.dz * car.dz);
       car.steer += (Math.max(-0.5, Math.min(0.5, want * 1.6)) - car.steer) * Math.min(1, dt * 6);
       car.wheels.forEach(w => { w.o.rotation.x += car.v * dt / w.r; if (w.front) w.o.rotation.y = car.steer; });
@@ -313,7 +360,7 @@
       car.lamps.forEach(m => { m.emissiveIntensity = on ? 1.2 : 0; });
     }
     function startCars() {
-      if (dead || !cells.size) return;
+      if (dead || !cells.size || !Y) return;
       const n = high ? 4 : 2;
       const starts = [];
       cells.forEach(c => {
@@ -383,9 +430,14 @@
       }
       return out;
     }
+    // Passers-by are Yuka Vehicles too: they follow the way round the block (three-pathfinding's paths, FollowPathBehavior),
+    // keep apart from one another (SeparationBehavior) and step round the player (ObstacleAvoidanceBehavior on a
+    // stand-in entity that follows the player); life.js still stops them when somebody is right in their way.
+    const peopleEM = Y ? new Y.EntityManager() : null, playerObs = Y ? new Y.GameEntity() : null;
+    if (playerObs) { playerObs.boundingRadius = 0.32; playerObs.position.set(1e6, 0, 1e6); }
     function startWalkers(models) {
       const rs = rings();
-      if (!rs.length) return;
+      if (!rs.length || !Y) return;
       const n = Math.min(high ? 4 : 2, models.length);
       for (let j = 0; j < n; j++) {
         const ring = rs[j % rs.length], dir = j < rs.length ? 1 : -1;
@@ -394,7 +446,16 @@
         const a = person(models.shift(), 'walker' + j);
         a.pos.set(A[0] + (B[0] - A[0]) * u, 0, A[1] + (B[1] - A[1]) * u);
         a.heading = Math.atan2(B[0] - A[0], B[1] - A[1]);
-        const w = { a, ring, dir, leg: (leg + dir + 4) % 4, path: null, i: 0, v: rnd(0.85, 1.1), wait: 0, waveAt: 0, waving: 0, blocked: 0, req: null };
+        const veh = new Y.Vehicle();
+        veh.maxSpeed = 0; veh.maxForce = 5; veh.mass = 1; veh.boundingRadius = 0.22; veh.updateOrientation = false;
+        veh.updateNeighborhood = true; veh.neighborhoodRadius = 1.4;
+        veh.position.set(a.pos.x, 0, a.pos.z);
+        const follow = new Y.FollowPathBehavior(yPath([[B[0], B[1]]]), 0.3);
+        const apart = new Y.SeparationBehavior(); apart.weight = 0.5;
+        const round = new Y.ObstacleAvoidanceBehavior([playerObs]); round.weight = 1.2;
+        veh.steering.add(follow); veh.steering.add(apart); veh.steering.add(round);
+        peopleEM.add(veh);
+        const w = { a, veh, follow, ring, dir, leg: (leg + dir + 4) % 4, path: null, v: rnd(0.85, 1.1), wait: 0, waveAt: 0, waving: 0, blocked: 0, req: null, face: null };
         L.walkers.push(w);
         route(w, true);
       }
@@ -402,58 +463,61 @@
     function route(w, fromHere) {            // the way to the next corner: from the ring's cache, or one search
       const c = w.ring.corners, to = c[w.leg], from = [w.a.pos.x, w.a.pos.z];
       const lk = ((w.leg - w.dir + 4) % 4) + '>' + w.leg;
-      if (!fromHere && w.ring.legs[lk]) { w.path = w.ring.legs[lk]; w.i = 0; return; }
+      const take = (p) => { w.path = p; w.follow.path = yPath(p); };
+      if (!fromHere && w.ring.legs[lk]) { take(w.ring.legs[lk]); return; }
       w.path = null;
       w.req = api.findPath(from, to, {}, (p) => {
         if (dead) return;
         w.req = null;
         if (!fromHere && p) w.ring.legs[lk] = p;
-        w.path = p || [to];
-        w.i = 0;
+        take(p || [to]);
       });
     }
-    function walkerTick(w, dt, pl, others) {
-      const a = w.a;
-      let speed = 0, face = null;
+    function walkerTick(w, dt, pl, others) {   // before the vehicles move: may this one walk on?
+      const a = w.a, veh = w.veh;
+      let go = false;
+      w.face = null;
       const toP = pl ? Math.hypot(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z) : 99;
       if (w.waving > 0) {
         w.waving -= dt;
-        face = Math.atan2(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z);
+        w.face = Math.atan2(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z);
       } else if (pl && toP < 1.6 && api.elapsed > w.waveAt && api.state === 'play') {
         w.waveAt = api.elapsed + rnd(22, 35);
         w.waving = 1.6;
         api.play(a, a.actions['interact-right'] ? 'interact-right' : 'emote-yes', { once: true, fade: 0.2 });
       } else if (w.path) {
-        const p = w.path[w.i];
-        let dx = p[0] - a.pos.x, dz = p[1] - a.pos.z;
-        const d = Math.hypot(dx, dz);
-        if (d < 0.05) {
-          w.i++;
-          if (w.i >= w.path.length) { w.leg = (w.leg + w.dir + 4) % 4; route(w, false); }
-        } else {
-          dx /= d; dz /= d;
-          let stop = false;
-          if (pl && toP < 0.8 && ((pl.pos.x - a.pos.x) * dx + (pl.pos.z - a.pos.z) * dz) / toP > 0.3) stop = true;
-          others.forEach(o => {
-            if (o === a || stop) return;
-            const rx = o.pos.x - a.pos.x, rz = o.pos.z - a.pos.z, od = Math.hypot(rx, rz);
-            if (od < 0.62 && (rx * dx + rz * dz) / (od || 1) > 0.5) stop = true;
-          });
-          if (stop && (w.blocked += dt) > 2.2) {       // somebody stays in the way: step round them for a moment
-            stop = false;
-            if (w.blocked > 3.4) w.blocked = 0;
-          } else if (!stop) w.blocked = 0;
-          if (!stop) {
-            const st = Math.min(d, w.v * dt);
-            a.pos.x += dx * st; a.pos.z += dz * st;
-            speed = w.v;
-          }
-          face = stop && toP < 1 ? Math.atan2(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z) : Math.atan2(dx, dz);
-        }
+        const p = w.follow.path.current();
+        let dx = p.x - a.pos.x, dz = p.z - a.pos.z;
+        const d = Math.hypot(dx, dz) || 1;
+        dx /= d; dz /= d;
+        let stop = false;
+        if (pl && toP < 0.8 && ((pl.pos.x - a.pos.x) * dx + (pl.pos.z - a.pos.z) * dz) / toP > 0.3) stop = true;
+        others.forEach(o => {
+          if (o === a || stop) return;
+          const rx = o.pos.x - a.pos.x, rz = o.pos.z - a.pos.z, od = Math.hypot(rx, rz);
+          if (od < 0.62 && (rx * dx + rz * dz) / (od || 1) > 0.5) stop = true;
+        });
+        if (stop && (w.blocked += dt) > 2.2) {       // somebody stays in the way: step round them for a moment
+          stop = false;
+          if (w.blocked > 3.4) w.blocked = 0;
+        } else if (!stop) w.blocked = 0;
+        go = !stop;
+        if (stop && toP < 1) w.face = Math.atan2(pl.pos.x - a.pos.x, pl.pos.z - a.pos.z);
       }
+      veh.maxSpeed = go ? w.v : 0;
+      if (!go) veh.velocity.set(0, 0, 0);
+    }
+    function walkerAfter(w, dt) {              // after the vehicles moved: the person follows, turns and animates
+      const a = w.a, veh = w.veh, vel = veh.velocity, sp = veh.getSpeed();
+      a.pos.x = veh.position.x; a.pos.z = veh.position.z;
+      if (w.path && w.follow.path.finished()) {
+        const e = w.follow.path.current();
+        if (Math.hypot(e.x - a.pos.x, e.z - a.pos.z) < 0.12) { w.leg = (w.leg + w.dir + 4) % 4; route(w, false); }
+      }
+      const face = w.face != null ? w.face : sp > 0.05 ? Math.atan2(vel.x, vel.z) : null;
       if (face != null) { let d = face - a.heading; d = Math.atan2(Math.sin(d), Math.cos(d)); a.heading += d * (1 - Math.exp(-dt * 7)); }
       a.holder.rotation.y = a.heading;
-      if (w.waving <= 0) api.locomotion(a, speed);
+      if (w.waving <= 0) api.locomotion(a, sp > 0.05 ? sp : 0);
       api.animate(a, dt);
       a.mover.x = a.pos.x; a.mover.z = a.pos.z;
     }
@@ -523,9 +587,17 @@
       if (pl && api.state !== 'title') people.push(pl.pos);
       Object.values(api.npcs || {}).forEach(a => people.push(a.pos));
       L.walkers.forEach(w => people.push(w.a.pos));
-      L.cars.forEach(c => carTick(c, dt, people, !!night));
-      const others = Object.values(api.npcs || {}).concat(L.walkers.map(w => w.a));
-      L.walkers.forEach(w => walkerTick(w, dt, pl && api.state !== 'title' ? pl : null, others));
+      if (Y) {
+        const who = pl && api.state !== 'title' ? pl : null;
+        if (who) playerObs.position.set(who.pos.x, 0, who.pos.z); else playerObs.position.set(1e6, 0, 1e6);
+        L.cars.forEach(c => carTick(c, dt, people, !!night));
+        carsEM.update(dt);
+        L.cars.forEach(c => carAfter(c, dt, !!night));
+        const others = Object.values(api.npcs || {}).concat(L.walkers.map(w => w.a));
+        L.walkers.forEach(w => walkerTick(w, dt, who, others));
+        peopleEM.update(dt);
+        L.walkers.forEach(w => walkerAfter(w, dt));
+      }
       L.sitters.forEach(s => sitterTick(s, dt, pl));
     }
     function dispose() {

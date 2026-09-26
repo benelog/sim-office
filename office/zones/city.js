@@ -1,15 +1,15 @@
 /* City: downtown Fairview, 39 x 39, outdoors. Three streets each way (every road tile is 3 x 3) make four
    blocks around the crossroads at the origin; Maple Street runs east-west through z = 0 and Lake Avenue
    north-south through x = 0, and both carry on to the edge of town (Lake Avenue crosses the river on a bridge
-   to the south). North-west: the homes, with the apartment building (apartment_door) and the bus stop on the
+   to the north). North-west: the homes, with the apartment building (apartment_door) and the bus stop on the
    Maple Street sidewalk. North-east: the office towers; Lakeside Labs is the tall one (office_door) with a plaza
    and Nina's coffee cart on the corner. South-west: Riverside Park with trees, flower beds, a monument and benches
    (park_bench). South-east: the diner (diner_door) and the grocery store (market_door) face Maple Street, with a
    small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
-   (airport_shuttle). The Fairview River runs along the south edge of town, the sea lies beyond it (a beach at
-   z 31) and a range of mountains rises north of town (from z -48, low enough for the camera, which looks
-   down, to see the ridge; both are SO_ZONE_KIT.dress, which also scatters the woods of the plains around town,
-   pack 'wild', where nobody can walk). Roads and sidewalks are walkable;
+   (airport_shuttle). The Fairview River runs along the north edge of town with the mountains rising beyond it
+   (from z -48, low enough for the camera, which looks down, to see the ridge); south of town the plain runs down
+   to a beach and the sea (from z 31; the range and the sea are SO_ZONE_KIT.dress, which also scatters the woods
+   of the plains around town, pack 'wild', where nobody can walk). Roads and sidewalks are walkable;
    buildings, parked cars, trees, water and street furniture block.
    Trees, bushes, flowers, rocks and the park's paths are Quaternius's Stylized Nature MegaKit (pack 'nature', scale 0.4),
    the park's signs, lilies and ornaments Kenney's Nature Kit (pack 'park'); six buildings (the apartment house, two
@@ -59,7 +59,7 @@
     }
   }
   tile('tile-low', 6, -1, 0);           // airport shuttle stop, east end of Maple Street
-  [21, 24].forEach(function (z) { tiles.push(r('road-straight', 0, z, 90, { lift: 0.05 })); });    // the Lake Avenue bridge over the river
+  [-21, -24].forEach(function (z) { tiles.push(r('road-straight', 0, z, 90, { lift: 0.05 })); });    // the Lake Avenue bridge over the river
   // garden paths
   [-5.0, -4.6].forEach(function (z) { tiles.push(c('path-short', -9.88, z, 0)); });
   // the park's entrance path, from the gate to the plaza
@@ -220,20 +220,20 @@
     f('bench', 17.0, -3.8, 0),
     f('bench', 17.45, -3.8, 0),
 
-    // ----- the Fairview River along the south edge, Lake Avenue crossing it on a bridge
-    { pack: 'box', size: [98.5, 0.02, 5.6], at: [-50.75, 22.4], color: '#4f97d6', solid: [98.5, 5.6] },
-    { pack: 'box', size: [98.5, 0.02, 5.6], at: [50.75, 22.4], color: '#4f97d6', solid: [98.5, 5.6] },
-    { pack: 'box', size: [3.0, 0.02, 5.6], at: [0, 22.4], color: '#4f97d6' },
-    { pack: 'box', size: [0.12, 0.42, 6.0], at: [-1.42, 22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },   // the bridge's railings
-    { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, 22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
+    // ----- the Fairview River along the north edge, Lake Avenue crossing it on a bridge
+    { pack: 'box', size: [98.5, 0.02, 5.6], at: [-50.75, -22.4], color: '#4f97d6', solid: [98.5, 5.6] },
+    { pack: 'box', size: [98.5, 0.02, 5.6], at: [50.75, -22.4], color: '#4f97d6', solid: [98.5, 5.6] },
+    { pack: 'box', size: [3.0, 0.02, 5.6], at: [0, -22.4], color: '#4f97d6' },
+    { pack: 'box', size: [0.12, 0.42, 6.0], at: [-1.42, -22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },   // the bridge's railings
+    { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, -22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
     // the bank: reeds, rocks, a canoe pulled up on the grass, lilies in the water
-    n('canoe', -13.6, 18.9, 15, { solid: 'fit' }),
-    bit('grass-tall', -11.0, 19.3, 0, 0.6), bit('grass-tall', -3.3, 19.2, 30, 0.6), bit('grass-tall', 5.5, 19.3, 0, 0.6),
-    bit('grass-tall', 12.5, 19.2, 60, 0.6), bit('grass-short', -16.2, 19.0, 0, 0.6), bit('grass-short', 8.6, 19.1, 0, 0.6), bit('grass-wispy-short', -7.8, 19.3, 0, 0.6),
-    bit('rock-2', -16.0, 19.3, 0, 0.9), n('rock-1', -6.4, 19.1, 10, { solid: 'fit', scale: 0.5 }), bit('rock-1', 3.6, 19.3, 0, 0.9),
-    n('rock-3', 15.2, 19.0, 50, { solid: 'fit', scale: 0.55 }),
-    bit('lily_large', -8.0, 20.4, 0, 0.8), bit('lily_small', -7.3, 20.8, 0, 0.8), bit('lily_large', 4.2, 20.5, 40, 0.8), bit('lily_small', 10.6, 20.3, 0, 0.8),
-    bit('lily_small', -14.6, 20.6, 0, 0.8), bit('lily_large', 16.4, 20.7, 0, 0.8),
+    n('canoe', -13.6, -18.9, 15, { solid: 'fit' }),
+    bit('grass-tall', -11.0, -19.3, 0, 0.6), bit('grass-tall', -3.3, -19.2, 30, 0.6), bit('grass-tall', 5.5, -19.3, 0, 0.6),
+    bit('grass-tall', 12.5, -19.2, 60, 0.6), bit('grass-short', -16.2, -19, 0, 0.6), bit('grass-short', 8.6, -19.1, 0, 0.6), bit('grass-wispy-short', -7.8, -19.3, 0, 0.6),
+    bit('rock-2', -16.0, -19.3, 0, 0.9), n('rock-1', -6.4, -19.1, 10, { solid: 'fit', scale: 0.5 }), bit('rock-1', 3.6, -19.3, 0, 0.9),
+    n('rock-3', 15.2, -19, 50, { solid: 'fit', scale: 0.55 }),
+    bit('lily_large', -8.0, -20.4, 0, 0.8), bit('lily_small', -7.3, -20.8, 0, 0.8), bit('lily_large', 4.2, -20.5, 40, 0.8), bit('lily_small', 10.6, -20.3, 0, 0.8),
+    bit('lily_small', -14.6, -20.6, 0, 0.8), bit('lily_large', 16.4, -20.7, 0, 0.8),
 
     // ----- scenery at the edge of town
     tree('tree-pine-4', -18.0, -18.0),
@@ -292,20 +292,21 @@
     map: {
       streets: [
         { name: 'Maple Street', along: 'x', at: 0 }, { name: 'Lake Avenue', along: 'z', at: 0 },
-        { name: 'Birch Street', along: 'x', at: -15 }, { name: 'River Road', along: 'x', at: 15 },
+        { name: 'River Road', along: 'x', at: -15 }, { name: 'Birch Street', along: 'x', at: 15 },
         { name: 'Elm Street', along: 'z', at: -15 }, { name: 'Cedar Street', along: 'z', at: 15 }
       ],
       areas: [
         { name: 'Riverside Park', name_ko: '리버사이드 공원', at: [-11.5, 11.5] },
-        { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, 22.4], water: true },
+        { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, -22.4], water: true },
         { name: 'Lakeside Labs', name_ko: '레이크사이드 랩스', at: [8.2, -8.6] }
       ]
     },
     setup: function (api) {
       // signs on the fronts of the buildings you go into, the bus stop's timetable, Nina's cart and the park gate
       K.dress(api, { mountains: { side: 'n', from: 48, depth: 44, width: 380, height: 7.5, seed: 3 }, sea: { side: 's', from: 31, beach: 3, width: 340, depth: 140 },
-        // the plains beyond the edge of town (out of reach): woods west, east and north up to the foothills, the far bank of the river
-        wild: { seed: 11, rects: [[-90, -46, -21.5, 19.5], [21.5, -46, 90, 19.5], [-21.5, -46, 21.5, -21.5], [-90, 25.6, 90, 27.6]],
+        // the plains beyond the edge of town (out of reach): woods west and east of town on both banks of the river, north
+        // of the river up to the foothills, and south of town down to the beach
+        wild: { seed: 11, rects: [[-90, -46, -21.5, -26], [-90, -19, -21.5, 19.5], [21.5, -46, 90, -26], [21.5, -19, 90, 19.5], [-21.5, -46, 21.5, -26], [-90, 21, 90, 27.5]],
           avoid: [[-90, -3, 90, 3], [-3, -46, 3, 19.5]] },
         panels: [
         { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Lakeside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
