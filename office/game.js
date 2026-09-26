@@ -189,7 +189,7 @@
     if (b) b.textContent = 'Graphics: ' + (high ? 'High' : 'Low');
     resize();
     shadowMat.opacity = high ? 0.6 : 1;
-    if (zoneGroup) { setupLights(); lampTimer = 0; applyEnvironment(); }
+    if (zoneGroup) { setupLights(); lampTimer = 0; applyEnvironment(); if (life) startLife(); }
     scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.needsUpdate = true; }); });
   }
   // what casts and what takes shadows: people, furniture, buildings, cars and trees cast; floors, tiles and food only take
@@ -313,6 +313,15 @@
       });
       g.scene.children.forEach(c => { p.nodes[c.name] = c; });
       g.scene.traverse(o => { if (o.name && !p.nodes[o.name]) p.nodes[o.name] = o; });
+      // a person without clips of their own names the pack that has them (glTF extras {"rig": "rig-umc"}): load it too
+      g.scene.traverse(o => { if (!p.rig && o.userData && typeof o.userData.rig === 'string' && o.userData.rig !== name) p.rig = o.userData.rig; });
+      if (p.rig && !g.animations.length) await loadPack(p.rig);
+      g.scene.traverse(o => {           // a rig tells how fast its walk and run cycles move the feet (units per second)
+        const u = o.userData || {};
+        if (+u.walk_speed) p.walkSpeed = +u.walk_speed;
+        if (+u.run_speed) p.runSpeed = +u.run_speed;
+      });
+      if (p.rig && packs[p.rig]) { p.walkSpeed = p.walkSpeed || packs[p.rig].walkSpeed; p.runSpeed = p.runSpeed || packs[p.rig].runSpeed; }
       p.gltf = g;
       p.status = 'ok';
       return g;
@@ -364,6 +373,65 @@
     shadows(g, true);
     return g;
   }
+  // Animation names: the engine only ever asks for these (the Kenney mini-characters' clip names). A model whose clips
+  // are named otherwise (Quaternius: Idle, Walk, Run, Sitting, Wave…) is mapped by ANIM_ALIASES when the actor is made:
+  // an exact name first, then the same name ignoring case and punctuation, then the patterns in order. A name a
+  // model has no clip for plays idle instead (loops) or is skipped (one-shot gestures), see play().
+  const ANIMS = ['idle', 'walk', 'sprint', 'sit', 'pick-up', 'emote-yes', 'emote-no', 'interact-right', 'interact-left',
+    'holding-right', 'holding-left', 'holding-both', 'crouch', 'jump', 'drive', 'static'];
+  const ANIM_ALIASES = {
+    idle: [/^idle$/i, /idle/i, /^(stand|standing)$/i], walk: [/^walk(ing)?$/i, /walk/i], sprint: [/^(sprint|run|running)$/i, /sprint|run/i],
+    sit: [/^sit(ting)?$/i, /sit/i], 'pick-up': [/pick.?up/i, /gather|interact/i], 'emote-yes': [/yes|nod|agree/i, /wave/i],
+    'emote-no': [/^no$|shake|disagree|refuse/i], 'interact-right': [/interact.?r|wave|hello/i, /interact|punch.?r/i],
+    'interact-left': [/interact.?l/i, /interact/i], 'holding-right': [/hold.*r(ight)?$|carry/i, /hold/i], 'holding-left': [/hold.*l(eft)?$/i],
+    'holding-both': [/hold.*both|carry/i], crouch: [/crouch/i], jump: [/^jump$/i, /jump/i], drive: [/drive|driving/i], static: [/static|t.?pose/i]
+  };
+  const squash = (s) => String(s).toLowerCase().replace(/[^a-z0-9]/g, '');
+  function clipFor(clips, name) {
+    let c = clips.find(x => x.name === name) || clips.find(x => squash(x.name) === squash(name));
+    for (const re of (ANIM_ALIASES[name] || [])) { if (c) break; c = clips.find(x => re.test(x.name)); }
+    return c || null;
+  }
+  // Bones by pattern (rigs name them differently): the head for a glance, the right hand (or the right arm when a rig
+  // has no hand bone, as Kenney's) for something held. Empty when a model has none: then that detail is left out.
+  const HEAD_BONE = [/^(mixamorig\d*:?)?head$/i, /^head[\W_]*(bone|jnt|joint)?$/i, /head(?!.*(end|top|mesh))/i];
+  const HAND_BONE = [/^(mixamorig\d*:?)?right[\W_]*hand$/i, /^(hand|wrist|fist|palm)[\W_]*r(ight)?$/i, /(hand|wrist|fist|palm)[\W_]*r(ight)?$/i, /right[\W_]*(hand|wrist)/i];
+  const ARM_BONE = [/^arm[\W_]*r(ight)?$/i, /(fore|lower)[\W_]*arm[\W_]*r(ight)?$/i, /right[\W_]*(fore)?arm/i, /arm[\W_]*r(ight)?$/i];
+  function findBone(root, patterns) {
+    const bones = [];
+    root.traverse(o => { if (o.isBone) bones.push(o); });
+    for (const re of patterns) { const b = bones.find(o => re.test(o.name)); if (b) return b; }
+    return null;
+  }
+  // where on a bone the hand is, in the bone's own space: the middle of the skin it moves (a hand bone), or near
+  // the far end of it (an arm bone). Measured once per model from the skin weights.
+  const gripCache = {};
+  function gripPoint(root, bone, isHand, key) {
+    if (gripCache[key]) return gripCache[key];
+    const v = new T.Vector3(), best = new T.Vector3(), sum = new T.Vector3();
+    let far = -1, n = 0;
+    root.traverse(o => {
+      if (!o.isSkinnedMesh) return;
+      const bi = o.skeleton.bones.findIndex(b => b.name === bone.name);
+      if (bi < 0) return;
+      const pos = o.geometry.attributes.position, si = o.geometry.attributes.skinIndex, sw = o.geometry.attributes.skinWeight;
+      if (!si || !sw) return;
+      const set = new Set();              // the hand with its fingers
+      o.skeleton.bones[bi].traverse(c => { const j = o.skeleton.bones.indexOf(c); if (j >= 0) set.add(j); });
+      const m = new T.Matrix4().multiplyMatrices(o.skeleton.boneInverses[bi], o.bindMatrix);
+      for (let i = 0; i < pos.count; i++) {
+        let w = 0;
+        for (let k = 0; k < 4; k++) if (set.has(si.getComponent(i, k))) w += sw.getComponent(i, k);
+        if (w < 0.5) continue;
+        v.fromBufferAttribute(pos, i).applyMatrix4(m);
+        sum.add(v); n++;
+        const d = v.lengthSq();
+        if (d > far) { far = d; best.copy(v); }
+      }
+    });
+    const out = !n ? new T.Vector3() : isHand ? sum.divideScalar(n) : best.multiplyScalar(0.88);
+    return (gripCache[key] = out);
+  }
   function makeActor(id, model, opts) {
     opts = opts || {};
     const holder = new T.Group();
@@ -374,9 +442,11 @@
       root = T.SkeletonUtils.clone(g.scene);
       outline(root);
       shadows(root, true);
-      if (g.animations.length) {
+      const rig = packs[model].rig, clips = g.animations.length ? g.animations : rig && packReady(rig) ? packs[rig].gltf.animations : [];
+      if (clips.length) {
         mixer = new T.AnimationMixer(root);
-        g.animations.forEach(c => { actions[c.name] = mixer.clipAction(c); });
+        ANIMS.forEach(name => { const c = clipFor(clips, name); if (c) actions[name] = mixer.clipAction(c); });
+        clips.forEach(c => { if (!actions[c.name]) actions[c.name] = mixer.clipAction(c); });
       }
     } else root = boxPerson(model);
     holder.add(root);
@@ -386,14 +456,71 @@
     shadow.renderOrder = 1;
     holder.add(shadow);
     const a = { id, model, holder, root, mixer, actions, current: null, after: null, hold: false, pos: holder.position, heading: 0, want: null,
-      bubbleY: 0.86, name: opts.name || id, row: opts.row || null, place: null, sit: false, mark: null, chatIdx: -1 };
-    if (mixer) mixer.addEventListener('finished', () => { const next = a.after || (a.sit ? 'sit' : 'idle'); a.after = null; play(a, next, { fade: 0.3 }); });
+      bubbleY: 0.86, name: opts.name || id, row: opts.row || null, place: null, sit: false, mark: null, chatIdx: -1,
+      idleAnim: 'idle', headBone: findBone(root, HEAD_BONE), look: 0, lookNow: 0, headQ: null, cup: null,
+      walkSpeed: packs[model] && packs[model].walkSpeed || 0, runSpeed: packs[model] && packs[model].runSpeed || 0 };
+    if (mixer) mixer.addEventListener('finished', () => { const next = a.after || rest(a); a.after = null; play(a, next, { fade: 0.3 }); });
     play(a, 'idle', { fade: 0 });
     return a;
   }
+  const rest = (a) => a.sit ? 'sit' : (a.idleAnim || 'idle');
+  // a cup in the right hand (holding-right pose); kept upright whatever the arm does. Left out when the model has
+  // no holding-right clip or no hand/arm bone, or the food pack is missing.
+  function holdCup(a, on) {
+    if (!on) {
+      if (a.cup) { a.cup.parent && a.cup.parent.remove(a.cup); a.cup = null; }
+      a.idleAnim = 'idle';
+      return;
+    }
+    if (a.cup || !a.mixer) return;
+    if (!packReady('food')) { loadPack('food').then(() => { if (a.wantCup) holdCup(a, true); }); return; }
+    let bone = findBone(a.root, HAND_BONE), isHand = !!bone;
+    if (!bone) bone = findBone(a.root, ARM_BONE);
+    const cup = bone && packNode('food', 'cup-coffee');
+    if (!cup) return;
+    const grip = gripPoint(a.root, bone, isHand, a.model + ':' + bone.name);
+    const g = new T.Group();
+    cup.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    const cb = new T.Box3().setFromObject(cup);
+    if (!cb.isEmpty()) cup.position.y = -(cb.min.y + cb.max.y) / 2;       // the hand holds it round the middle
+    g.add(cup);
+    a.root.updateMatrixWorld(true);
+    const s = new T.Vector3();
+    bone.getWorldScale(s);
+    g.scale.setScalar((PACK_SCALE.food || 0.6) * 0.5 / (s.x || 1));
+    g.position.copy(grip);
+    bone.add(g);
+    a.cup = g;
+    a.idleAnim = a.actions['holding-right'] ? 'holding-right' : 'idle';     // no holding clip: the cup in the hand at the side
+    if (!a.sit && !a.walk && !gesturing(a)) play(a, a.idleAnim, { fade: 0.3 });
+  }
+  // after the mixer: turn the head by a.lookNow (radians about the world's up, whatever the rig's axes), keep a cup level
+  const upV = new T.Vector3(0, 1, 0), qA = new T.Quaternion(), qB = new T.Quaternion(), axisV = new T.Vector3();
+  function animate(a, dt) {
+    const b = a.headBone;
+    if (b && a.headQ) { b.quaternion.multiply(qA.copy(a.headQ).invert()); a.headQ = null; }
+    if (a.mixer) a.mixer.update(dt);
+    a.lookNow += (a.look - a.lookNow) * (1 - Math.exp(-dt * 3));
+    if (b && Math.abs(a.lookNow) > 0.002) {
+      b.getWorldQuaternion(qA);
+      axisV.copy(upV).applyQuaternion(qA.invert());
+      a.headQ = new T.Quaternion().setFromAxisAngle(axisV, a.lookNow);
+      b.quaternion.multiply(a.headQ);
+    }
+    if (a.cup && a.cup.parent) {           // level: the cup's world rotation = the person's facing
+      a.cup.parent.getWorldQuaternion(qA);
+      a.holder.getWorldQuaternion(qB);
+      a.cup.quaternion.copy(qA.invert().multiply(qB));
+    }
+  }
+  // what plays when a model lacks a clip: a gesture becomes interact-right (once); anything else looping becomes idle (or sit)
+  const ANIM_FALLBACK = { 'interact-left': 'interact-right', 'pick-up': 'interact-right', 'holding-right': 'interact-right',
+    'holding-left': 'interact-right', 'holding-both': 'interact-right', 'emote-no': 'emote-yes' };
   function play(a, name, opts) {
     opts = opts || {};
-    const act = a && a.actions[name];
+    let act = a && a.actions[name];
+    if (!act && a && opts.once && ANIM_FALLBACK[name]) act = a.actions[ANIM_FALLBACK[name]];
+    if (!act && a && !opts.once) act = a.actions[a.sit && a.actions.sit ? 'sit' : 'idle'];
     if (!act) return null;
     if (a.current === act && !opts.once) return act;
     act.reset();
@@ -411,9 +538,13 @@
   const gesturing = (a) => a.current && a.current.loop === T.LoopOnce && a.current.isRunning();
   function locomotion(a, speed) {
     if (!a.mixer || gesturing(a)) return;
-    if (!speed) { play(a, a.sit ? 'sit' : 'idle'); return; }
-    if (Math.abs(speed) > WALK + 0.1 && a.actions.sprint) play(a, 'sprint');
-    else { play(a, 'walk'); if (a.current) a.current.timeScale = Math.sign(speed) * Math.max(0.6, Math.abs(speed) / WALK) * 1.1; }
+    if (!speed) { play(a, rest(a)); return; }
+    // the clip's speed follows the ground speed: by the rig's walk_speed / run_speed (feet do not slide) when it says
+    if (Math.abs(speed) > WALK + 0.1 && a.actions.sprint) { play(a, 'sprint'); if (a.current && a.runSpeed) a.current.timeScale = Math.abs(speed) / a.runSpeed; }
+    else {
+      play(a, 'walk');
+      if (a.current) a.current.timeScale = Math.sign(speed) * (a.walkSpeed ? Math.abs(speed) / a.walkSpeed : Math.max(0.6, Math.abs(speed) / WALK) * 1.1);
+    }
   }
 
   // ---------------------------------------------------------------- zones
@@ -497,7 +628,7 @@
 
   // ---------------------------------------------------------------- building a zone
   let zoneId = null, Z = null, zoneGroup = null, buildToken = 0, busy = false, portalArmed = false;
-  let solids = [], zoneProps = {}, npcActors = {}, tags = [], disposables = [];
+  let solids = [], zoneProps = {}, zoneAll = [], npcActors = {}, tags = [], disposables = [];
   function propSize(p) {
     const s = (p.pack === 'box' ? 1 : (PACK_SCALE[p.pack] || 1)) * (p.scale || 1);
     if (p.pack === 'box') return p.size || [1, 1, 1];
@@ -561,6 +692,7 @@
     if (!isTile && !(p.pack === 'food') && !/^(floor|rug)/i.test(p.node || '')) { occluders.push(holder); occluderSet.add(holder); }
     const rec = { spec: p, holder, object: obj };
     if (p.id) zoneProps[p.id] = rec;
+    zoneAll.push(rec);
     return rec;
   }
   function zonePacks(spec) {
@@ -580,6 +712,10 @@
     reportMissing();
     if (token !== buildToken) return false;
     if (talk) endTalk();
+    endLife();
+    pathQueue.length = 0;
+    nav = null;
+    movers.length = 0;
     if (zoneGroup) scene.remove(zoneGroup);
     disposables.forEach(d => d.dispose());
     disposables = [];
@@ -587,7 +723,7 @@
     scene.add(zoneGroup);
     Z = spec;
     zoneId = z;
-    solids = []; zoneProps = {}; npcActors = {}; occluders = []; occluderSet = new Set(); fadedNow = new Set();
+    solids = []; zoneProps = {}; zoneAll = []; npcActors = {}; occluders = []; occluderSet = new Set(); fadedNow = new Set();
     tags.forEach(t => t.el.remove());
     tags = [];
     Object.keys(bubbles).forEach(k => { bubbles[k].remove(); delete bubbles[k]; });
@@ -651,6 +787,7 @@
     portalArmed = false;
     cam.ready = false;
     if (spec.setup) { try { spec.setup(api); } catch (e) { console.error(`zones/${z}.js setup:`, e); } }
+    startLife();
     busy = false;
     setTimeout(() => $('fade').classList.remove('on'), 60);
     if (G) { G.zone = z; saveGame(); }
@@ -916,7 +1053,16 @@
     if (!force && sig === npcSig) return;
     npcSig = sig;
     const keep = new Set(want.map(w => w.row.id));
-    Object.keys(npcActors).forEach(id => { if (!keep.has(id)) { zoneGroup.remove(npcActors[id].holder); delete npcActors[id]; if (bubbles[id]) { bubbles[id].remove(); delete bubbles[id]; } } });
+    // someone whose place moved while you are here walks there (or out through the nearest door); on entering a zone,
+    // at the start of a day or when the debug API sets the clock (force), everyone is simply where they belong
+    const live = !force && G && state === 'play' && !busy;
+    Object.keys(npcActors).forEach(id => {
+      if (keep.has(id)) return;
+      const a = npcActors[id];
+      if (live && !a.leaving && leaveZone(a)) return;
+      if (a.leaving && live) return;
+      dropNpc(id);
+    });
     want.forEach(w => {
       const put = () => {
         if (!zoneId || !keep.has(w.row.id)) return;
@@ -931,19 +1077,203 @@
           a.holder.add(a.mark);
           zoneGroup.add(a.holder);
         }
+        a.leaving = false;
+        const home = w.face ? Math.atan2(w.face[0] - w.at[0], w.face[1] - w.at[1])
+          : player ? Math.atan2(player.pos.x - w.at[0], player.pos.z - w.at[1]) : Math.atan2(-w.at[0], -w.at[1]);
         if (a.place !== w.place) {
+          const was = a.place;
           a.place = w.place;
-          a.pos.set(w.at[0], 0, w.at[1]);
-          a.home = w.face ? Math.atan2(w.face[0] - w.at[0], w.face[1] - w.at[1]) : Math.atan2(-w.at[0], -w.at[1]);
-          if (player && !w.face) a.home = Math.atan2(player.pos.x - w.at[0], player.pos.z - w.at[1]);
-          a.heading = a.home;
-          a.sit = w.sit;
-          play(a, a.sit ? 'sit' : 'idle', { fade: 0 });
-        }
+          a.goal = { at: w.at, home, sit: w.sit, place: w.place };
+          if (live && was) walkTo(a, w.at);
+          else arrive(a);
+        } else if (force && a.walk) arrive(a);
       };
       if (packs[w.row.model] && packs[w.row.model].status !== 'loading') put();
       else loadPack(w.row.model).then(() => { reportMissing(); put(); });
     });
+  }
+  function dropNpc(id) {
+    const a = npcActors[id];
+    if (!a) return;
+    if (a.walk && a.walk.req) a.walk.req.cancelled = true;
+    zoneGroup.remove(a.holder);
+    delete npcActors[id];
+    if (bubbles[id]) { bubbles[id].remove(); delete bubbles[id]; }
+  }
+  // standing at the goal: facing the way the place says, sitting if it is a seat, a cup in hand in a kitchen or at the coffee cart
+  function arrive(a) {
+    const g = a.goal;
+    if (a.walk && a.walk.req) a.walk.req.cancelled = true;
+    a.walk = null;
+    if (!g) return;
+    if (a.leaving) { dropNpc(a.id); return; }
+    a.pos.set(g.at[0], 0, g.at[1]);
+    a.home = g.home;
+    a.heading = g.home;
+    a.sit = !!g.sit;
+    a.wantCup = !a.sit && /kitchen|coffee/.test(g.place || '');
+    holdCup(a, a.wantCup);
+    play(a, rest(a), { fade: 0.25 });
+    a.gestureAt = elapsed + 12 + Math.random() * 25;
+  }
+  function walkTo(a, at) {
+    if (a.walk && a.walk.req) a.walk.req.cancelled = true;
+    a.wantCup = false;
+    holdCup(a, false);
+    a.sit = false;
+    if (gesturing(a) || a.current !== a.actions.walk) play(a, 'idle', { fade: 0.25 });
+    const w = a.walk = { path: null, i: 0, blocked: 0, req: null, to: at };
+    w.req = requestPath([a.pos.x, a.pos.z], at, {}, (path) => {
+      if (a.walk !== w) return;
+      w.req = null;
+      if (!path) arrive(a);           // no way there: just be there
+      else { w.path = path; w.i = 0; }
+    });
+  }
+  function leaveZone(a) {             // out through the nearest door; gone when there
+    let best = null, bd = Infinity;
+    (Z.portals || []).forEach(p => { const d = Math.hypot(p.at[0] - a.pos.x, p.at[1] - a.pos.z); if (d < bd) { bd = d; best = p; } });
+    if (!best || bd > 40) return false;
+    a.leaving = true;
+    a.place = null;
+    a.goal = { at: best.at, home: a.heading, sit: false, place: null };
+    walkTo(a, best.at);
+    return true;
+  }
+
+  // ---------------------------------------------------------------- finding a way: A* on a grid of 0.25 over the zone, solids blocked
+  // Requests wait in a queue and one is served per frame. Paths are smoothed (straight runs where nothing is in the
+  // way) and end at the exact goal, even when the goal itself is next to a desk.
+  const NAV_CELL = 0.25;
+  let nav = null;
+  const pathQueue = [];
+  function navGrid() {
+    const key = zoneId + ':' + solids.length;
+    if (nav && nav.key === key) return nav;
+    const [w, d] = Z.size, nx = Math.max(1, Math.ceil(w / NAV_CELL)), nz = Math.max(1, Math.ceil(d / NAV_CELL));
+    const g = { key, nx, nz, x0: -w / 2, z0: -d / 2, block: new Uint8Array(nx * nz) };
+    const r = NPC_R * 0.8, m = Math.ceil(r / NAV_CELL);
+    for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) if (i < m || k < m || i >= nx - m || k >= nz - m) g.block[k * nx + i] = 1;
+    solids.forEach(s => {
+      const i0 = Math.max(0, Math.floor((s.x0 - r - g.x0) / NAV_CELL)), i1 = Math.min(nx - 1, Math.floor((s.x1 + r - g.x0) / NAV_CELL));
+      const k0 = Math.max(0, Math.floor((s.z0 - r - g.z0) / NAV_CELL)), k1 = Math.min(nz - 1, Math.floor((s.z1 + r - g.z0) / NAV_CELL));
+      for (let k = k0; k <= k1; k++) for (let i = i0; i <= i1; i++) {
+        const cx = g.x0 + (i + 0.5) * NAV_CELL, cz = g.z0 + (k + 0.5) * NAV_CELL;
+        if (cx > s.x0 - r && cx < s.x1 + r && cz > s.z0 - r && cz < s.z1 + r) g.block[k * nx + i] = 1;
+      }
+    });
+    return (nav = g);
+  }
+  function requestPath(from, to, opts, cb) {
+    const req = { from, to, opts: opts || {}, cb, zone: zoneId, cancelled: false };
+    pathQueue.push(req);
+    return req;
+  }
+  function pathTick() {
+    while (pathQueue.length) {
+      const r = pathQueue.shift();
+      if (r.cancelled || r.zone !== zoneId || !Z) continue;
+      let p = null;
+      try { p = findPath(r.from, r.to, r.opts); } catch (e) { console.error('Sim Office path:', e); }
+      r.cb(p);
+      return;                          // one search a frame
+    }
+  }
+  function findPath(from, to, opts) {
+    const g = navGrid(), nx = g.nx, nz = g.nz;
+    let block = g.block;
+    if (opts.avoid && opts.avoid.length) {            // e.g. the player standing in the way: blocked for this search only
+      block = block.slice();
+      opts.avoid.forEach(c => {
+        for (let k = Math.floor((c.z - c.r - g.z0) / NAV_CELL); k <= Math.floor((c.z + c.r - g.z0) / NAV_CELL); k++)
+          for (let i = Math.floor((c.x - c.r - g.x0) / NAV_CELL); i <= Math.floor((c.x + c.r - g.x0) / NAV_CELL); i++)
+            if (i >= 0 && k >= 0 && i < nx && k < nz) block[k * nx + i] = 1;
+      });
+    }
+    const cellOf = (x, z) => [clamp(Math.floor((x - g.x0) / NAV_CELL), 0, nx - 1), clamp(Math.floor((z - g.z0) / NAV_CELL), 0, nz - 1)];
+    const free = (i, k) => i >= 0 && k >= 0 && i < nx && k < nz && !block[k * nx + i];
+    function nearestFree(c) {
+      if (free(c[0], c[1])) return c;
+      for (let r = 1; r < 14; r++) {
+        let best = null, bd = Infinity;
+        for (let dk = -r; dk <= r; dk++) for (let di = -r; di <= r; di++) {
+          if (Math.max(Math.abs(di), Math.abs(dk)) !== r || !free(c[0] + di, c[1] + dk)) continue;
+          const dd = di * di + dk * dk;
+          if (dd < bd) { bd = dd; best = [c[0] + di, c[1] + dk]; }
+        }
+        if (best) return best;
+      }
+      return null;
+    }
+    const s = nearestFree(cellOf(from[0], from[1])), e = nearestFree(cellOf(to[0], to[1]));
+    if (!s || !e) return null;
+    const N = nx * nz, sI = s[1] * nx + s[0], eI = e[1] * nx + e[0];
+    const gs = new Float32Array(N).fill(Infinity), came = new Int32Array(N).fill(-1), closed = new Uint8Array(N);
+    const heap = [], hf = [];
+    const h = (i) => { const dx = Math.abs(i % nx - e[0]), dz = Math.abs(Math.floor(i / nx) - e[1]); return Math.max(dx, dz) + 0.4142 * Math.min(dx, dz); };
+    const push = (i, f) => {
+      heap.push(i); hf.push(f);
+      let c = heap.length - 1;
+      while (c > 0) { const p = (c - 1) >> 1; if (hf[p] <= hf[c]) break; [heap[p], heap[c]] = [heap[c], heap[p]]; [hf[p], hf[c]] = [hf[c], hf[p]]; c = p; }
+    };
+    const pop = () => {
+      const top = heap[0], li = heap.pop(), lf = hf.pop();
+      if (heap.length) {
+        heap[0] = li; hf[0] = lf;
+        let c = 0;
+        for (;;) {
+          const l = c * 2 + 1, r = l + 1;
+          let m = c;
+          if (l < heap.length && hf[l] < hf[m]) m = l;
+          if (r < heap.length && hf[r] < hf[m]) m = r;
+          if (m === c) break;
+          [heap[m], heap[c]] = [heap[c], heap[m]]; [hf[m], hf[c]] = [hf[c], hf[m]]; c = m;
+        }
+      }
+      return top;
+    };
+    gs[sI] = 0;
+    push(sI, h(sI));
+    let found = sI === eI, steps = 0;
+    while (heap.length && !found && steps++ < 60000) {
+      const cur = pop();
+      if (closed[cur]) continue;
+      closed[cur] = 1;
+      const ci = cur % nx, ck = (cur - ci) / nx;
+      for (let dk = -1; dk <= 1; dk++) for (let di = -1; di <= 1; di++) {
+        if (!di && !dk) continue;
+        const ni = ci + di, nk = ck + dk;
+        if (!free(ni, nk)) continue;
+        if (di && dk && (!free(ci + di, ck) || !free(ci, ck + dk))) continue;      // no cutting corners
+        const n = nk * nx + ni, cost = gs[cur] + (di && dk ? 1.4142 : 1);
+        if (cost >= gs[n]) continue;
+        gs[n] = cost;
+        came[n] = cur;
+        if (n === eI) { found = true; break; }
+        push(n, cost + h(n));
+      }
+    }
+    if (!found) return null;
+    const cells = [];
+    for (let c = eI; c !== -1; c = came[c]) { cells.push(c); if (c === sI) break; }
+    cells.reverse();
+    const pts = cells.map(c => [g.x0 + (c % nx + 0.5) * NAV_CELL, g.z0 + (Math.floor(c / nx) + 0.5) * NAV_CELL]);
+    // straighten: from each point, jump to the farthest one in plain sight
+    const sight = (a, b) => {
+      const d = Math.hypot(b[0] - a[0], b[1] - a[1]), n = Math.ceil(d / (NAV_CELL * 0.5));
+      for (let j = 1; j < n; j++) { const c = cellOf(a[0] + (b[0] - a[0]) * j / n, a[1] + (b[1] - a[1]) * j / n); if (!free(c[0], c[1])) return false; }
+      return true;
+    };
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1;) {
+      let j = pts.length - 1;
+      while (j > i + 1 && !sight(pts[i], pts[j])) j--;
+      out.push(pts[j]);
+      i = j;
+    }
+    out.push([to[0], to[1]]);
+    if (Math.hypot(out[0][0] - from[0], out[0][1] - from[1]) < NAV_CELL) out.shift();
+    return out;
   }
 
   // ---------------------------------------------------------------- the clock, money and energy
@@ -1052,7 +1382,7 @@
     phoneMarks(open.filter(e => isPhone(e) && Z.places[e.place] && placeIn(e.place, zoneId) && !(talk && talk.ep.id === e.id)));
     // people with nothing to discuss make small talk as you pass (a bubble; Chat also says it aloud)
     if (state === 'play' && player) Object.values(npcActors).forEach(a => {
-      if (open.some(e => e.npc === a.id) || !(CHATTER[a.id] || []).length) return;
+      if (a.leaving || open.some(e => e.npc === a.id) || !(CHATTER[a.id] || []).length) return;
       if (Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z) > 2.0 || elapsed - (a.chatAt || -99) < 40) return;
       a.chatAt = elapsed;
       a.chatIdx = (a.chatIdx + 1) % CHATTER[a.id].length;
@@ -1245,6 +1575,10 @@
         const dx = p.x - a.pos.x, dz = p.z - a.pos.z, d = Math.hypot(dx, dz), min = PLAYER_R + NPC_R;
         if (d < min && d > 1e-6) { p.x = a.pos.x + dx / d * min; p.z = a.pos.z + dz / d * min; }
       });
+      if (!noPeople) movers.forEach(m => {          // things that move (cars, passers-by): circles set by life.js each frame
+        const dx = p.x - m.x, dz = p.z - m.z, d = Math.hypot(dx, dz), min = PLAYER_R + m.r;
+        if (d < min && d > 1e-6) { p.x = m.x + dx / d * min; p.z = m.z + dz / d * min; }
+      });
     }
     if (Z) {
       const hw = Z.size[0] / 2 - PLAYER_R, hd = Z.size[1] / 2 - PLAYER_R;
@@ -1252,6 +1586,7 @@
       p.z = clamp(p.z, -hd, hd);
     }
   }
+  const movers = [];
   const nextPos = new T.Vector3();
   function playerTick(dt) {
     if (!player) return;
@@ -1276,20 +1611,76 @@
     player.holder.rotation.y = player.heading;
     if (player.mixer) player.mixer.update(dt);
   }
+  const NPC_WALK = 1.0, GESTURES = ['emote-yes', 'interact-right', 'pick-up'];
   function npcTick(dt, t) {
     Object.values(npcActors).forEach(a => {
       let want = a.home;
       const talking = talk && talk.actor === a;
-      if (player && (talking || (Math.hypot(player.pos.x - a.pos.x, player.pos.z - a.pos.z) < 2.4 && !a.sit))) want = Math.atan2(player.pos.x - a.pos.x, player.pos.z - a.pos.z);
+      const toP = player ? Math.hypot(player.pos.x - a.pos.x, player.pos.z - a.pos.z) : 99;
+      const faceP = player ? Math.atan2(player.pos.x - a.pos.x, player.pos.z - a.pos.z) : 0;
+      if (a.walk) want = walkStep(a, dt, talking, toP, faceP);
+      else if (player && (talking || (toP < 2.4 && !a.sit))) want = faceP;
       if (want != null) {
         let d = want - a.heading;
         d = Math.atan2(Math.sin(d), Math.cos(d));
-        a.heading += d * (1 - Math.exp(-dt * 5));
+        a.heading += d * (1 - Math.exp(-dt * (a.walk ? 8 : 5)));
       }
       a.holder.rotation.y = a.heading;
       if (a.mark) { a.mark.position.y = 0.98 + Math.sin(t * 3 + a.pos.x) * 0.03; a.mark.material.opacity = talking ? 0 : 1; a.mark.material.transparent = true; }
-      if (a.mixer) a.mixer.update(dt);
+      // now and then: a gesture when standing (every 20 to 40 s), a glance around when sitting; a seated person looks at you
+      if (!a.walk && !talking && a.mixer) {
+        if (a.sit) {
+          if (toP < 2.4) { let d = faceP - a.heading; d = Math.atan2(Math.sin(d), Math.cos(d)); a.look = clamp(d, -0.9, 0.9); a.lookAt = t + 3; }
+          else if (t > (a.lookAt || 0)) { a.look = Math.random() < 0.4 ? 0 : (Math.random() - 0.5) * 1.1; a.lookAt = t + 5 + Math.random() * 9; }
+        } else {
+          a.look = 0;
+          if (t > (a.gestureAt || (a.gestureAt = t + 10 + Math.random() * 25)) && state !== 'talk') {
+            a.gestureAt = t + 20 + Math.random() * 20;
+            const list = (a.cup ? ['emote-yes'] : GESTURES).filter(n => a.actions[n]);
+            if (list.length && !gesturing(a)) play(a, list[Math.floor(Math.random() * list.length)], { once: true, fade: 0.3 });
+          }
+        }
+      } else a.look = 0;
+      animate(a, dt);
     });
+  }
+  // one step along the way; stops for the player in front (and after a while looks for a way around)
+  function walkStep(a, dt, talking, toP, faceP) {
+    const w = a.walk;
+    if (!w.path || talking) { locomotion(a, 0); return talking ? faceP : null; }
+    const p = w.path[w.i];
+    let dx = p[0] - a.pos.x, dz = p[1] - a.pos.z, d = Math.hypot(dx, dz);
+    if (d < 0.03) {
+      w.i++;
+      if (w.i >= w.path.length) { arrive(a); return a.home; }
+      return null;
+    }
+    dx /= d; dz /= d;
+    let stop = false;
+    if (player && toP < PLAYER_R + NPC_R + 0.35) {
+      const ahead = ((player.pos.x - a.pos.x) * dx + (player.pos.z - a.pos.z) * dz) / (toP || 1);
+      stop = ahead > 0.2;
+    }
+    if (stop) {
+      w.blocked += dt;
+      locomotion(a, 0);
+      if (w.blocked > 2.5 && !w.req) {            // still in the way: go round
+        w.blocked = 0;
+        const goal = w.to;
+        w.req = requestPath([a.pos.x, a.pos.z], goal, { avoid: [{ x: player.pos.x, z: player.pos.z, r: 0.45 }] }, (path) => {
+          if (a.walk !== w) return;
+          w.req = null;
+          if (path) { w.path = path; w.i = 0; }
+        });
+      }
+      return faceP;
+    }
+    w.blocked = Math.max(0, w.blocked - dt);
+    const step = Math.min(d, NPC_WALK * dt);
+    a.pos.x += dx * step;
+    a.pos.z += dz * step;
+    locomotion(a, NPC_WALK);
+    return Math.atan2(dx, dz);
   }
   function portalTick() {
     if (!Z || !player || busy || state !== 'play') return;
@@ -1322,14 +1713,21 @@
     if (!z) return;
     if (minutes) advanceMinutes(minutes);
     if (state !== 'play') return;
-    await enterZone(z, arrive, at);
+    // through a door: the camera leans in on you as the screen darkens, and pulls back out in the new place
+    busy = true;
+    cam.push = { t: 0, dur: 0.34 };
+    $('fade').classList.add('on');
+    if (!fastMode) await new Promise(r => setTimeout(r, 300));
+    cam.push = null;
+    if (await enterZone(z, arrive, at)) cam.pull = { t: 0, dur: 0.75 };
     const zn = zoneName(z);
     if (minutes) toast(`After a ${minutes / 60}-hour flight: ${zn[0]}`, `${minutes / 60}시간 비행 후: ${zn[1] || zn[0]}`, null, 3);
     else toast(zn[0], zn[1], null, 2.2);
   }
 
   // ---------------------------------------------------------------- camera: behind and above the player; from the side in a conversation
-  const cam = { pos: new T.Vector3(), look: new T.Vector3(), ready: false, orbit: 0 };
+  const cam = { pos: new T.Vector3(), look: new T.Vector3(), ready: false, orbit: 0, push: null, pull: null };
+  const ease = (x) => x * x * (3 - 2 * x);
   const want = new T.Vector3(), look = new T.Vector3(), rayFrom = new T.Vector3(), rayDir = new T.Vector3();
   const ray = new T.Raycaster();
   let occluders = [];
@@ -1374,8 +1772,12 @@
       const squeezed = back - Math.hypot(want.x - p.x, want.z - p.z);     // a small room pushed the camera in: look down more
       if (squeezed > 0) want.y += squeezed * 0.75;
       look.set(p.x + sx * 1.0, 0.4, p.z + sz * 1.0);
+      const zoom = cam.push ? ease(Math.min(1, (cam.push.t += dt) / cam.push.dur)) * 0.62
+        : cam.pull ? (1 - ease(Math.min(1, (cam.pull.t += dt) / cam.pull.dur))) * 0.55 : 0;
+      if (cam.pull && cam.pull.t >= cam.pull.dur) cam.pull = null;
+      if (zoom) want.lerp(rayTo.set(p.x + sx * 0.25, 0.6, p.z + sz * 0.25), zoom);
     }
-    const k = cam.ready ? 1 - Math.exp(-dt * 3.5) : 1;
+    const k = cam.ready ? 1 - Math.exp(-dt * (cam.push ? 9 : 3.5)) : 1;
     cam.ready = true;
     cam.pos.lerp(want, k);
     cam.look.lerp(look, k);
@@ -1453,7 +1855,7 @@
     const open = openEpisodes();
     Object.values(npcActors).forEach(a => {
       const d = Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z);
-      if (d > TALK_R) return;
+      if (d > TALK_R || a.leaving) return;
       const ep = open.find(e => e.npc === a.id && !isPhone(e));
       if (ep) list.push({ d: d - 1, key: 'ep:' + ep.id, label: `Talk to ${a.name.split(' ')[0]}: ${ep.title}${+ep.reward < 0 ? ` (${usd2(-ep.reward)})` : ''}`, run: () => beginEpisode(ep, a) });
       else list.push({ d: d + 0.3, key: 'chat:' + a.id, label: `Chat with ${a.name.split(' ')[0]}`, run: () => chatter(a) });
@@ -1984,12 +2386,41 @@
 
   // ---------------------------------------------------------------- the api a zone file's setup/update sees
   const api = {
-    T, scene, camera, renderer, toon, shadows, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
+    T, scene, camera, renderer, toon, litMaterial, shadows, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
     get zone() { return zoneId; }, get spec() { return Z; }, get group() { return zoneGroup; }, get player() { return player; },
     get npcs() { return npcActors; }, get props() { return zoneProps; }, get game() { return G; }, get state() { return state; },
-    get day() { return G ? G.day : 0; }, get minute() { return G ? G.minute : 0; }, isDone: (id) => !!(G && G.done[id]),
-    solid: (x0, z0, x1, z1) => solids.push({ x0, z0, x1, z1 })
+    get day() { return G ? G.day : 0; }, get minute() { return G ? G.minute : 600; }, isDone: (id) => !!(G && G.done[id]),
+    solid: (x0, z0, x1, z1) => solids.push({ x0, z0, x1, z1 }),
+    // for office/life.js (and zone files): every placed prop and tile ({ spec, holder, object }), the static solids, people
+    // made like the npcs (a.holder to add, api.animate(a, dt) each frame), a way-finder (one search a frame),
+    // colliders that move (circles { x, z, r } the player is pushed out of), the light and the graphics setting
+    get propList() { return zoneAll; }, get solids() { return solids; }, get movers() { return movers; },
+    get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
+    get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
+    actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
+    loadPack, packReady, findPath: (from, to, opts, cb) => requestPath(from, to, opts, cb),
+    blocked: (x, z, r) => solids.some(s => x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r)
   };
+
+  // ---------------------------------------------------------------- the life of a zone (office/life.js): cars, passers-by, traffic lights, trees
+  let life = null, lifePaused = false, lifeBroken = false, lifeMs = 0;
+  function startLife() {
+    endLife();
+    if (!window.SO_LIFE || !Z || lifeBroken) return;
+    try { life = window.SO_LIFE.create(api); } catch (e) { console.error('Sim Office life:', e); life = null; }
+  }
+  function endLife() {
+    if (!life) return;
+    try { life.dispose(); } catch (e) { console.error('Sim Office life:', e); }
+    life = null;
+    movers.length = 0;
+  }
+  function lifeTick(dt) {
+    if (!life || lifePaused) return;
+    const t0 = performance.now();
+    try { life.update(dt); } catch (e) { console.error('Sim Office life:', e); lifeBroken = true; endLife(); }
+    lifeMs += (performance.now() - t0 - lifeMs) * 0.05;
+  }
 
   // ---------------------------------------------------------------- frame loop
   const timer = new T.Timer();
@@ -1999,8 +2430,10 @@
     const dt = Math.min(timer.getDelta(), 0.1);
     elapsed += dt;
     if (state === 'play' && !busy && G) tickClock(dt);
+    pathTick();
     playerTick(dt);
     npcTick(dt, elapsed);
+    lifeTick(dt);
     portalTick();
     if (Z && Z.update) { try { Z.update(api, dt); } catch (e) { console.error(`zones/${zoneId}.js update:`, e); Z.update = null; } }
     if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) refreshNpcs(false); updateGoal(); }
@@ -2055,7 +2488,8 @@
     get day() { return G ? G.day : null; }, get time() { return G ? hhmm(G.minute) : null; }, get minute() { return G ? G.minute : null; },
     get money() { return G ? G.money : null; }, get energy() { return G ? Math.round(G.energy * 10) / 10 : null; }, get zone() { return zoneId; },
     get zones() { return ZONE_ORDER.slice(); }, get save() { return G ? JSON.parse(JSON.stringify(G)) : store.get(SAVE_KEY); },
-    get actions() { return actions.map(a => a.label); }, get npcs() { return Object.keys(npcActors); },
+    get actions() { return actions.map(a => a.label); }, get npcs() { return Object.keys(npcActors).filter(id => !npcActors[id].leaving); },
+    get walking() { return Object.keys(npcActors).filter(id => npcActors[id].walk); },
     get models() { const o = {}; Object.keys(packs).forEach(k => { o[k] = packs[k].status; }); return o; },
     set speed(v) { debugSpeed = +v || 1; }, set fast(v) { fastMode = !!v; },
     get gfx() { return gfxHigh() ? 'high' : 'low'; }, set gfx(v) { settings.gfx = v === 'low' ? 'low' : 'high'; applyQuality(); },
@@ -2076,7 +2510,26 @@
       return zoneId;
     },
     episodes() { return openEpisodes().map(e => e.id); },
-    setTime(t) { if (G) { G.minute = typeof t === 'number' ? t : hm(t, G.minute); goalTimer = 0; npcSig = ''; refreshNpcs(true); } return this.time; },
+    // walk: true lets people walk to where the new time puts them (as when the clock runs), instead of placing them there
+    setTime(t, walk) { if (G) { G.minute = typeof t === 'number' ? t : hm(t, G.minute); goalTimer = 0; npcSig = ''; refreshNpcs(!walk); } return this.time; },
+    // send someone in this zone walking to a place (as when an episode moves them); returns the path length or null
+    walk(id, placeId) {
+      const a = npcActors[id], pl = Z && Z.places[placeId];
+      if (!a || !pl) return null;
+      a.place = placeId;
+      a.goal = { at: pl.at, home: pl.face ? Math.atan2(pl.face[0] - pl.at[0], pl.face[1] - pl.at[1]) : a.heading, sit: !!pl.sit, place: placeId };
+      walkTo(a, pl.at);
+      return true;
+    },
+    where(id) { const a = npcActors[id]; return a ? { at: [+a.pos.x.toFixed(2), +a.pos.z.toFixed(2)], walking: !!a.walk, sit: a.sit, anim: a.current ? a.current.getClip().name : null, cup: !!a.cup } : null; },
+    // the zone's background life: counts, and paused (settable) to freeze it for screenshots
+    life: {
+      get paused() { return lifePaused; }, set paused(v) { lifePaused = !!v; },
+      get cars() { return life && life.info ? life.info().cars : 0; }, get walkers() { return life && life.info ? life.info().walkers : 0; },
+      get sitters() { return life && life.info ? life.info().sitters : 0; }, get signal() { return life && life.info ? life.info().signal : null; },
+      get ms() { return +lifeMs.toFixed(3); },          // average time of one update (ms)
+      info() { return life && life.info ? life.info() : null; }
+    },
     setDay(d) { if (G) { G.day = +d; goalTimer = 0; refreshNpcs(true); } return G && G.day; },
     async startEpisode(id) {
       const ep = EPISODES[id];
