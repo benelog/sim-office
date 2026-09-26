@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Book Play">
+  <defs>
+    <radialGradient id="room" cx="50%" cy="10%" r="90%">
+      <stop offset="0" stop-color="#2a3566"/>
+      <stop offset=".6" stop-color="#17203d"/>
+      <stop offset="1" stop-color="#0f1530"/>
+    </radialGradient>
+    <linearGradient id="pageL" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#efe5d0"/>
+      <stop offset="1" stop-color="#f6efe0"/>
+    </linearGradient>
+    <linearGradient id="pageR" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#f6efe0"/>
+      <stop offset="1" stop-color="#efe5d0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#room)"/>
+  <circle cx="92" cy="96" r="3" fill="#fff" opacity=".55"/>
+  <circle cx="404" cy="70" r="2.5" fill="#fff" opacity=".45"/>
+  <circle cx="440" cy="150" r="2" fill="#fff" opacity=".4"/>
+  <circle cx="60" cy="200" r="2" fill="#fff" opacity=".4"/>
+  <!-- cover boards -->
+  <path d="M66 176 L256 214 L446 176 L446 400 L256 438 L66 400 Z" fill="#3b2416"/>
+  <!-- pages -->
+  <path d="M84 186 L252 222 L252 424 L84 388 Z" fill="url(#pageL)"/>
+  <path d="M428 186 L260 222 L260 424 L428 388 Z" fill="url(#pageR)"/>
+  <!-- gutter shadow -->
+  <path d="M244 220 L256 214 L268 220 L268 424 L256 438 L244 424 Z" fill="#000" opacity=".18"/>
+  <!-- text lines -->
+  <g stroke="#9a9282" stroke-width="7" stroke-linecap="round" opacity=".7">
+    <path d="M112 232 L224 254"/><path d="M112 262 L224 284"/><path d="M112 292 L204 310"/><path d="M112 322 L224 344"/><path d="M112 352 L184 366"/>
+    <path d="M400 232 L288 254"/><path d="M400 262 L288 284"/><path d="M400 292 L330 306"/><path d="M400 322 L288 344"/>
+  </g>
+  <!-- ribbon -->
+  <path d="M340 186 L340 300 L358 286 L376 300 L376 178 Z" fill="#b8443b"/>
+  <!-- star -->
+  <path d="M256 60 L271 104 L317 104 L280 131 L294 176 L256 148 L218 176 L232 131 L195 104 L241 104 Z" fill="#d9b45a"/>
+</svg>
