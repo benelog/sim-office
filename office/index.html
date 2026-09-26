@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sim Office</title>
+<meta name="description" content="Commute to a software job in a small American city and learn workplace English, one conversation at a time.">
+<meta name="theme-color" content="#16233b">
+<link rel="stylesheet" href="game.css">
+</head>
+<body>
+<canvas id="view" aria-label="The game world"></canvas>
+<div id="tags" aria-hidden="true"></div>
+<div id="bubbles" aria-live="polite"></div>
+<div id="fade"></div>
+
+<header id="bar">
+  <div class="brand">Sim Office</div>
+  <div class="clock"><span id="hud-day"></span> <b id="hud-time"></b></div>
+  <div class="money" id="hud-money"></div>
+  <div class="energy" title="Energy"><span class="lbl">Energy</span><div class="meter"><div class="fill" id="hud-energy"></div></div></div>
+  <label class="opt"><input type="checkbox" id="voice-on" checked> <span>Voice</span></label>
+  <label class="opt"><input type="checkbox" id="ko-on"> <span class="long">Korean help</span><span class="short">KO</span></label>
+  <button type="button" id="menu-btn" aria-haspopup="true" aria-expanded="false" title="Menu">Menu</button>
+  <nav id="menu" hidden>
+    <button type="button" data-open="phrasebook">Phrasebook</button>
+    <button type="button" data-open="inventory">Inventory</button>
+    <button type="button" data-open="calendar">Calendar</button>
+    <button type="button" data-open="title">Title screen</button>
+    <button type="button" data-open="reset" class="danger">Reset game</button>
+  </nav>
+</header>
+
+<aside id="side">
+  <div id="goal" hidden><div class="en"></div><div class="ko"></div></div>
+  <div id="next" hidden><div class="en"></div><div class="ko"></div></div>
+</aside>
+<div id="toasts" aria-live="polite"></div>
+
+<div id="acts"></div>
+<div id="stick" aria-hidden="true"><div class="knob"></div></div>
+
+<section id="dialog" hidden>
+  <div class="head"><span class="ep"></span><span class="step"></span></div>
+  <p class="situation"></p>
+  <p class="situation-ko ko"></p>
+  <p class="line"><b class="who"></b> <span class="say"></span></p>
+  <p class="line-ko ko"></p>
+  <p class="prompt"></p>
+  <p class="prompt-ko ko"></p>
+  <div class="choices"></div>
+  <form class="typing" autocomplete="off">
+    <input type="text" name="answer" placeholder="Type what you say, in English" spellcheck="false" aria-label="Your answer">
+    <button type="submit">Say</button>
+  </form>
+  <p class="feedback"></p>
+  <div class="foot">
+    <div class="mode" role="group" aria-label="Answer mode">
+      <button type="button" data-mode="type">Type</button><button type="button" data-mode="choose">Choose</button>
+    </div>
+    <button type="button" class="leave">Walk away</button>
+    <button type="button" class="next" hidden>Continue ▸</button>
+  </div>
+</section>
+
+<section id="panel" hidden>
+  <div class="panel-head"><h2></h2><span class="sub"></span><button type="button" class="close" aria-label="Close">Close</button></div>
+  <div class="panel-body"></div>
+  <p class="panel-note"></p>
+</section>
+
+<div id="title">
+  <div class="card">
+    <p class="kicker">Fairview · Lakeside Labs</p>
+    <h1>Sim Office</h1>
+    <p>You just joined Lakeside Labs as a software developer. Take the bus, grab a coffee, meet your team, and get through the week in English.</p>
+    <p class="ko">레이크사이드 랩스에 막 입사한 개발자가 되어 출퇴근하고, 커피를 사고, 팀을 만나며 영어로 한 주를 보내 보세요.</p>
+    <div class="who-row">
+      <canvas id="preview" width="180" height="220" aria-label="Your character"></canvas>
+      <div class="who-form">
+        <label class="name">Your name <input type="text" id="name-in" maxlength="16" spellcheck="false" autocomplete="off"></label>
+        <div id="chars" role="radiogroup" aria-label="Character"></div>
+      </div>
+    </div>
+    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Phrasebook <kbd>P</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd><br>
+      <span class="touch-only">On a phone, drag the circle at the bottom left.</span></p>
+    <div class="buttons">
+      <button type="button" id="continue" hidden>Continue</button>
+      <button type="button" id="new-game" disabled>Loading…</button>
+    </div>
+    <p class="small">Characters and props: Kenney (www.kenney.nl), CC0. three.js (MIT). All places, companies and people are fictional.</p>
+  </div>
+</div>
+
+<div id="card" hidden>
+  <div class="card">
+    <p class="kicker"></p>
+    <h2></h2>
+    <div class="card-body"></div>
+    <div class="buttons"><button type="button" class="ok">Continue</button></div>
+  </div>
+</div>
+
+<script src="../lib/matcher.js"></script>
+<script src="../vendor/three-game.min.js"></script>
+<script src="data/db.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

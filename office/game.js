@@ -1,0 +1,1928 @@
+/* Sim Office: the engine. A flat open world made of zones (office/zones/<zone>.js, window.SO_ZONES), people and
+   conversations from the game database (office/data/db.js, window.SO_DB, pulled from DoltHub), and Kenney models
+   packed as base64 .glb (office/models/<pack>.js, window.SO_MODELS). See office/PLAN.md for the rules and the specs.
+   Runs from file:// : every file is a plain <script>, nothing is fetched. Missing zone files or model packs fall back
+   to generated rooms and boxes, so the engine runs on its own. */
+(function () {
+  'use strict';
+  const T = window.THREE, M = window.LP_MATCHER;
+  const DB = window.SO_DB || {};
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+  const rows = (t) => Array.isArray(DB[t]) ? DB[t] : [];
+  const pretty = (id) => String(id || '').replace(/[-_]+/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const hm = (s, dflt) => { const m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? +m[1] * 60 + +m[2] : dflt; };
+  const hhmm = (min) => { min = Math.floor(min); return String(Math.floor(min / 60) % 24).padStart(2, '0') + ':' + String(min % 60).padStart(2, '0'); };
+  const clock = (min) => { min = Math.floor(min); const h = Math.floor(min / 60) % 24, m = min % 60; return `${(h + 11) % 12 + 1}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+  const usd = (n) => (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: Math.abs(n) % 1 ? 2 : 0, maximumFractionDigits: 2 });
+  const usd2 = (n) => (n < 0 ? '−' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const WEEKDAYS_KO = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+  const weekday = (d) => WEEKDAYS[(d - 1) % 7];
+  const hash = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+  const listOf = (v) => v == null ? [] : Array.isArray(v) ? v : String(v).split(/[,\s]+/).filter(Boolean);
+
+  // ---------------------------------------------------------------- the rules (config table, with defaults)
+  const CFG = Object.assign({
+    player_name: 'Jun', company: 'Lakeside Labs', city: 'Fairview', start_money: 1200, salary_net: 2600, salary_gross: 3654,
+    payday_days: '5,15', rent: 1450, rent_day: 21, bus_fare: 2.5, day_start: '07:00', day_end: '23:00', work_start: '09:00', work_end: '18:00',
+    minutes_per_second: 1, energy_max: 100, energy_per_hour: -6
+  }, DB.config || {});
+  const DAY_START = hm(CFG.day_start, 420), DAY_END = hm(CFG.day_end, 1380);
+  const E_MAX = +CFG.energy_max || 100;
+  const PAYDAYS = listOf(CFG.payday_days).map(Number);
+  const RENT_DAY = +CFG.rent_day || 21;
+  const WALK = 1.25, RUN = 2.9, TURN = 2.5, PLAYER_R = 0.2, NPC_R = 0.24, TALK_R = 1.45, PLACE_R = 1.35;
+  const PACK_SCALE = { city: 3, roads: 3, cars: 0.6, furniture: 1, food: 0.6 };
+  const CHARACTERS = ['male-a', 'male-b', 'male-c', 'male-d', 'male-e', 'male-f', 'female-a', 'female-b', 'female-c', 'female-d', 'female-e', 'female-f'].map(s => 'character-' + s);
+  const charLabel = (id) => pretty(String(id).replace(/^character-/, ''));
+  const INK = 0x1d2433;
+
+  // Where things are when the zone files or the places table do not say (PLAN.md §3).
+  const BUILTIN_PLACES = {
+    home: ['home_bed', 'home_desk', 'home_kitchen', 'home_door'],
+    city: ['apartment_door', 'bus_stop', 'coffee_cart', 'park_bench', 'office_door', 'diner_door', 'market_door', 'parking', 'airport_shuttle'],
+    office: ['office_lobby', 'office_desk', 'office_desk_team', 'office_kitchen', 'office_meeting', 'office_manager', 'office_hr', 'office_it', 'office_door'],
+    diner: ['diner_counter', 'diner_table', 'diner_door'],
+    market: ['market_shelves', 'market_checkout', 'market_door'],
+    airport: ['airport_checkin', 'airport_security', 'airport_gate', 'airport_door', 'airport_arrive'],
+    hotel: ['hotel_desk', 'hotel_room', 'hotel_restaurant', 'hotel_door', 'hotel_shuttle'],
+    client: ['client_lobby', 'client_meeting', 'client_door']
+  };
+  const BUILTIN_KIND = { home_bed: 'sleep', hotel_room: 'sleep', home_kitchen: 'eat', bus_stop: 'transit', office_desk: 'work' };
+  const DOORS = {        // zone:place → [zone, arrive] (only for generated zones; zone files have their own portals)
+    'home:home_door': ['city', 'apartment_door'], 'city:apartment_door': ['home', 'home_door'],
+    'city:office_door': ['office', 'office_door'], 'office:office_door': ['city', 'office_door'],
+    'city:diner_door': ['diner', 'diner_door'], 'diner:diner_door': ['city', 'diner_door'],
+    'city:market_door': ['market', 'market_door'], 'market:market_door': ['city', 'market_door'],
+    'city:airport_shuttle': ['airport', 'airport_door'], 'airport:airport_door': ['city', 'airport_shuttle'],
+    'airport:airport_arrive': ['hotel', 'hotel_shuttle'], 'hotel:hotel_shuttle': ['airport', 'airport_arrive'],
+    'hotel:hotel_door': ['client', 'client_door'], 'client:client_door': ['hotel', 'hotel_door']
+  };
+  const ZONE_NAMES = {
+    home: ['Your apartment', '내 아파트'], city: ['Downtown Fairview', '페어뷰 시내'], office: ['Lakeside Labs', '레이크사이드 랩스'],
+    diner: ['Maple Street Diner', '메이플 스트리트 다이너'], market: ['Fairview Market', '페어뷰 마켓'], airport: ['Fairview Airport', '페어뷰 공항'],
+    hotel: ['Harbor View Hotel', '하버 뷰 호텔'], client: ['Summit Retail HQ', '서밋 리테일 본사']
+  };
+  const TRAVEL_ZONES = ['airport', 'hotel', 'client'];
+
+  // ---------------------------------------------------------------- data access
+  const byId = (t) => { const m = {}; rows(t).forEach(r => { m[r.id] = r; }); return m; };
+  const PLACES = byId('places'), NPCS = byId('npcs'), ITEMS = byId('items'), EPISODES = byId('episodes'), PHRASES = byId('phrases');
+  const TURNS = {};
+  rows('turns').forEach(t => { (TURNS[t.episode] = TURNS[t.episode] || []).push(t); });
+  Object.values(TURNS).forEach(l => l.sort((a, b) => a.seq - b.seq));
+  const CHATTER = {};
+  rows('chatter').slice().sort((a, b) => a.seq - b.seq).forEach(c => { (CHATTER[c.npc] = CHATTER[c.npc] || []).push(c); });
+  const builtinZoneOf = (id) => Object.keys(BUILTIN_PLACES).find(z => BUILTIN_PLACES[z].includes(id)) || null;
+  function place(id) {
+    if (PLACES[id]) return PLACES[id];
+    return { id, name: pretty(id), zone: builtinZoneOf(id) || fileZoneOf(id), kind: BUILTIN_KIND[id] || null };
+  }
+  function fileZoneOf(id) { const zs = window.SO_ZONES || {}; return Object.keys(zs).find(z => zs[z] && zs[z].places && zs[z].places[id]) || null; }
+  const placeKind = (id) => (PLACES[id] && PLACES[id].kind) || BUILTIN_KIND[id] || null;
+  const zoneOfPlace = (id) => place(id).zone;
+  function npcRow(id) {
+    if (NPCS[id]) return NPCS[id];
+    const ep = rows('episodes').find(e => e.npc === id);
+    return { id, name: pretty(id), model: CHARACTERS[hash(id) % CHARACTERS.length], place: ep ? ep.place : null, voice_pitch: 1, voice_rate: 0.95 };
+  }
+  const zoneName = (z) => { const s = zoneSpecs[z] || (window.SO_ZONES || {})[z]; return [(s && s.name) || (ZONE_NAMES[z] || [pretty(z)])[0], (s && s.name_ko) || (ZONE_NAMES[z] || [])[1] || '']; };
+
+  // ---------------------------------------------------------------- storage: settings and the save
+  const SAVE_KEY = 'so.v1.save', SET_KEY = 'so.v1.settings';
+  const store = {
+    get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
+    del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
+  };
+  const settings = Object.assign({ voice: true, ko: false, mode: 'type' }, store.get(SET_KEY) || {});
+  const saveSettings = () => store.set(SET_KEY, settings);
+  let G = null;           // the game in progress (what goes into so.v1.save)
+  function newGame(name, model) {
+    return {
+      name: (name || CFG.player_name || 'Jun').trim().slice(0, 16) || 'Jun', model: CHARACTERS.includes(model) ? model : 'character-male-a',
+      day: 1, minute: DAY_START, money: +CFG.start_money, energy: E_MAX, zone: 'home', at: null, heading: 0,
+      done: {}, inventory: {}, phrases: [], log: []
+    };
+  }
+  function saveGame() {
+    if (!G) return;
+    if (player && zoneId) { G.zone = zoneId; G.at = [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)]; G.heading = +player.heading.toFixed(3); }
+    G.log = G.log.slice(-400);
+    store.set(SAVE_KEY, G);
+  }
+  function logEvent(type, text, amount, extra) { G.log.push(Object.assign({ day: G.day, minute: Math.floor(G.minute), type, text, amount: amount || 0 }, extra || {})); }
+
+  // ---------------------------------------------------------------- page chrome
+  const koBox = $('ko-on'), voiceBox = $('voice-on');
+  koBox.checked = !!settings.ko;
+  voiceBox.checked = settings.voice !== false;
+  const applyKo = () => document.body.classList.toggle('ko-on', koBox.checked);
+  koBox.addEventListener('change', () => { settings.ko = koBox.checked; saveSettings(); applyKo(); });
+  voiceBox.addEventListener('change', () => { settings.voice = voiceBox.checked; saveSettings(); if (!voiceBox.checked && window.speechSynthesis) speechSynthesis.cancel(); });
+  applyKo();
+  const narrow = window.matchMedia ? matchMedia('(max-width: 640px)') : null;
+  function placeSwitches() {
+    const opts = Array.from(document.querySelectorAll('#bar label.opt'));
+    const inMenu = narrow && narrow.matches;
+    opts.forEach(o => { if (inMenu) $('menu').insertBefore(o, $('menu').querySelector('button')); else $('bar').insertBefore(o, $('menu-btn')); });
+  }
+  if (narrow) { placeSwitches(); if (narrow.addEventListener) narrow.addEventListener('change', placeSwitches); }
+  function toast(en, ko, kind, secs) {
+    const d = document.createElement('div');
+    d.className = 'toast' + (kind ? ' ' + kind : '');
+    d.innerHTML = esc(en) + (ko ? `<span class="ko">${esc(ko)}</span>` : '');
+    $('toasts').appendChild(d);
+    while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
+    setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, (secs || 3.2) * 1000);
+  }
+  const loadScript = (src) => new Promise((ok, fail) => {
+    const s = document.createElement('script');
+    s.src = src;
+    s.async = false;
+    s.onload = ok;
+    s.onerror = () => { s.remove(); fail(new Error('missing ' + src)); };
+    document.head.appendChild(s);
+  });
+
+  // ---------------------------------------------------------------- renderer, scene, light
+  const canvas = $('view');
+  const renderer = new T.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const scene = new T.Scene();
+  scene.background = new T.Color('#9fd0f5');
+  const camera = new T.PerspectiveCamera(50, 1, 0.05, 400);
+  function resize() {
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.fov = w < h ? 64 : 50;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+  const hemi = new T.HemisphereLight(0xe6efff, 0x6b6258, 1.1);
+  const sun = new T.DirectionalLight(0xfff2dd, 2.0);
+  scene.add(hemi, sun, sun.target);
+
+  // ---------------------------------------------------------------- toon look: three tones; ink outline on people only
+  const gradient = (function () {
+    const t = new T.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, T.RedFormat);
+    t.minFilter = t.magFilter = T.NearestFilter;
+    t.needsUpdate = true;
+    return t;
+  })();
+  const colorMats = {};
+  const toon = (color) => colorMats[color] || (colorMats[color] = new T.MeshToonMaterial({ color: new T.Color(color), gradientMap: gradient }));
+  const toonCache = new Map();
+  function toonOf(m) {          // keeps the Kenney colormap texture (map), unlike the Little Prince engine
+    if (!m || m.isMeshToonMaterial || m.isShaderMaterial) return m;
+    if (toonCache.has(m)) return toonCache.get(m);
+    const t = new T.MeshToonMaterial({
+      color: m.color ? m.color.clone() : new T.Color(0xffffff), map: m.map || null, gradientMap: gradient,
+      transparent: !!m.transparent, opacity: m.opacity == null ? 1 : m.opacity, alphaTest: m.alphaTest || 0, side: m.side, vertexColors: !!m.vertexColors
+    });
+    if (m.emissive && m.emissive.getHex() && !m.emissiveMap) t.emissive = m.emissive.clone();
+    t.name = m.name;
+    toonCache.set(m, t);
+    return t;
+  }
+  const inkCache = {};
+  function inkMaterial(w) {
+    const key = w.toFixed(4);
+    if (inkCache[key]) return inkCache[key];
+    const m = new T.MeshBasicMaterial({ color: INK, side: T.BackSide });
+    m.onBeforeCompile = (sh) => { sh.vertexShader = sh.vertexShader.replace('#include <begin_vertex>', `vec3 transformed = position + normal * ${key};`); };
+    m.customProgramCacheKey = () => 'ink' + key;
+    return (inkCache[key] = m);
+  }
+  function outline(root) {
+    const meshes = [];
+    root.traverse(o => { if (o.isMesh && !o.userData.ink) meshes.push(o); });
+    meshes.forEach(mesh => {
+      if (!mesh.geometry.attributes.normal) return;
+      if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+      const w = clamp(mesh.geometry.boundingSphere.radius * 0.022, 0.002, 0.03);
+      let o;
+      if (mesh.isSkinnedMesh) { o = new T.SkinnedMesh(mesh.geometry, inkMaterial(w)); o.bind(mesh.skeleton, mesh.bindMatrix); }
+      else o = new T.Mesh(mesh.geometry, inkMaterial(w));
+      o.frustumCulled = false;
+      o.userData.ink = true;
+      mesh.add(o);
+    });
+  }
+  function radialTexture(stops, size) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size || 64;
+    const g = c.getContext('2d'), r = c.width / 2;
+    const grd = g.createRadialGradient(r, r, 0, r, r, r);
+    stops.forEach(([o, col]) => grd.addColorStop(o, col));
+    g.fillStyle = grd;
+    g.fillRect(0, 0, c.width, c.width);
+    const t = new T.CanvasTexture(c);
+    t.colorSpace = T.SRGBColorSpace;
+    return t;
+  }
+  const shadowTex = radialTexture([[0, 'rgba(20,24,40,0.45)'], [0.6, 'rgba(20,24,40,0.2)'], [1, 'rgba(20,24,40,0)']]);
+  const shadowGeo = new T.CircleGeometry(1, 20).rotateX(-Math.PI / 2);
+  const shadowMat = new T.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false });
+  const bangTex = (function () {
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = '#f2b632'; g.strokeStyle = '#1d2433'; g.lineWidth = 5;
+    g.beginPath(); g.arc(32, 32, 27, 0, Math.PI * 2); g.fill(); g.stroke();
+    g.fillStyle = '#1d2433'; g.font = 'bold 40px Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('!', 32, 34);
+    const t = new T.CanvasTexture(c);
+    t.colorSpace = T.SRGBColorSpace;
+    return t;
+  })();
+
+  // ---------------------------------------------------------------- model packs (office/models/<pack>.js → SO_MODELS[pack])
+  const packs = {};
+  const reported = new Set(), pendingMissing = [];
+  function b64(s) {
+    const bin = atob(s), u = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+    return u.buffer;
+  }
+  function loadPack(name) {
+    if (!name || name === 'box') return Promise.resolve(null);
+    if (packs[name]) return packs[name].promise;
+    const p = packs[name] = { status: 'loading', gltf: null, nodes: {} };
+    p.promise = (async () => {
+      const have = () => (window.SO_MODELS || {})[name];
+      if (!have()) { try { await loadScript(`models/${name}.js`); } catch (e) { /* reported below */ } }
+      if (!have()) { p.status = 'missing'; pendingMissing.push(name); return null; }
+      const g = await new Promise((ok, fail) => new T.GLTFLoader().parse(b64(have()), '', ok, fail));
+      g.scene.traverse(o => {
+        if (o.isMesh) {
+          o.material = Array.isArray(o.material) ? o.material.map(toonOf) : toonOf(o.material);
+          if (o.isSkinnedMesh) o.frustumCulled = false;
+        }
+      });
+      g.scene.children.forEach(c => { p.nodes[c.name] = c; });
+      g.scene.traverse(o => { if (o.name && !p.nodes[o.name]) p.nodes[o.name] = o; });
+      p.gltf = g;
+      p.status = 'ok';
+      return g;
+    })().catch(e => { p.status = 'missing'; console.warn(`Sim Office: could not read model ${name}: ${e.message}`); return null; });
+    return p.promise;
+  }
+  function reportMissing() {       // one warning line for every batch of missing packs (not an error: boxes stand in)
+    const list = pendingMissing.splice(0).filter(n => !reported.has(n));
+    list.forEach(n => reported.add(n));
+    if (list.length) console.warn(`Sim Office: model files not found, using boxes: ${list.map(n => `models/${n}.js`).join(', ')}`);
+  }
+  function warnOnce(key, msg) { if (reported.has(key)) return; reported.add(key); console.warn('Sim Office: ' + msg); }
+  const packReady = (name) => packs[name] && packs[name].status === 'ok';
+  const centres = {};
+  function centreOf(pack, node, obj) {      // offset that puts a node's footprint centre at 0 and its lowest point on the floor
+    const k = pack + ':' + node;
+    if (!centres[k]) {
+      obj.updateMatrixWorld(true);
+      const b = new T.Box3().setFromObject(obj);
+      centres[k] = b.isEmpty() ? new T.Vector3() : new T.Vector3(-(b.min.x + b.max.x) / 2, -b.min.y, -(b.min.z + b.max.z) / 2);
+    }
+    return centres[k];
+  }
+  // a copy of one named node of a pack, or null (then the caller builds a box)
+  function packNode(pack, node) {
+    if (!packReady(pack)) return null;
+    const src = node ? packs[pack].nodes[node] : packs[pack].gltf.scene;
+    if (!src) { warnOnce(pack + ':' + node, `no node "${node}" in models/${pack}.js; using a box`); return null; }
+    const o = src.clone(true);
+    o.position.set(0, 0, 0);
+    return o;
+  }
+
+  // ---------------------------------------------------------------- people: a Kenney character, or a box person
+  const boxGeo = new T.BoxGeometry(1, 1, 1).translate(0, 0.5, 0);
+  function boxPerson(model) {
+    const g = new T.Group();
+    const hue = (hash(model) % 360) / 360;
+    const body = new T.Mesh(boxGeo, toon('#' + new T.Color().setHSL(hue, 0.45, 0.5).getHexString()));
+    body.scale.set(0.26, 0.34, 0.16);
+    body.position.y = 0.12;
+    const legs = new T.Mesh(boxGeo, toon('#3b4254'));
+    legs.scale.set(0.2, 0.12, 0.12);
+    const head = new T.Mesh(boxGeo, toon('#e8c4a0'));
+    head.scale.set(0.2, 0.2, 0.2);
+    head.position.y = 0.46;
+    g.add(legs, body, head);
+    outline(g);
+    return g;
+  }
+  function makeActor(id, model, opts) {
+    opts = opts || {};
+    const holder = new T.Group();
+    let root, mixer = null;
+    const actions = {};
+    if (packReady(model)) {
+      const g = packs[model].gltf;
+      root = T.SkeletonUtils.clone(g.scene);
+      outline(root);
+      if (g.animations.length) {
+        mixer = new T.AnimationMixer(root);
+        g.animations.forEach(c => { actions[c.name] = mixer.clipAction(c); });
+      }
+    } else root = boxPerson(model);
+    holder.add(root);
+    const shadow = new T.Mesh(shadowGeo, shadowMat);
+    shadow.scale.setScalar(0.24);
+    shadow.position.y = 0.012;
+    shadow.renderOrder = 1;
+    holder.add(shadow);
+    const a = { id, model, holder, root, mixer, actions, current: null, after: null, hold: false, pos: holder.position, heading: 0, want: null,
+      bubbleY: 0.86, name: opts.name || id, row: opts.row || null, place: null, sit: false, mark: null, chatIdx: -1 };
+    if (mixer) mixer.addEventListener('finished', () => { const next = a.after || (a.sit ? 'sit' : 'idle'); a.after = null; play(a, next, { fade: 0.3 }); });
+    play(a, 'idle', { fade: 0 });
+    return a;
+  }
+  function play(a, name, opts) {
+    opts = opts || {};
+    const act = a && a.actions[name];
+    if (!act) return null;
+    if (a.current === act && !opts.once) return act;
+    act.reset();
+    act.setLoop(opts.once ? T.LoopOnce : T.LoopRepeat, Infinity);
+    act.clampWhenFinished = !!opts.once;
+    act.timeScale = opts.speed || 1;
+    act.enabled = true;
+    act.setEffectiveWeight(1);
+    if (a.current && a.current !== act) act.crossFadeFrom(a.current, opts.fade == null ? 0.25 : opts.fade, false);
+    act.play();
+    a.current = act;
+    a.after = opts.once ? (opts.then || null) : null;
+    return act;
+  }
+  const gesturing = (a) => a.current && a.current.loop === T.LoopOnce && a.current.isRunning();
+  function locomotion(a, speed) {
+    if (!a.mixer || gesturing(a)) return;
+    if (!speed) { play(a, a.sit ? 'sit' : 'idle'); return; }
+    if (Math.abs(speed) > WALK + 0.1 && a.actions.sprint) play(a, 'sprint');
+    else { play(a, 'walk'); if (a.current) a.current.timeScale = Math.sign(speed) * Math.max(0.6, Math.abs(speed) / WALK) * 1.1; }
+  }
+
+  // ---------------------------------------------------------------- zones
+  // A zone spec (PLAN.md §5) from zones/<zone>.js, normalized; or a generated room with every place of the zone in a row.
+  const zoneSpecs = {};
+  let zoneFiles = [];
+  function placesOfZone(z) {
+    const ids = rows('places').filter(p => p.zone === z).map(p => p.id);
+    (BUILTIN_PLACES[z] || []).forEach(id => { if (!ids.includes(id)) ids.push(id); });
+    return ids;
+  }
+  function zoneSpec(z) {
+    if (zoneSpecs[z]) return zoneSpecs[z];
+    const file = (window.SO_ZONES || {})[z];
+    return (zoneSpecs[z] = file ? normalizeZone(z, file) : defaultZone(z));
+  }
+  function normalizeZone(z, f) {
+    const Z = Object.assign({ indoor: false, size: [30, 30], floor: '#b9b4a8', tiles: [], props: [], places: {}, portals: [], lights: [] }, f);
+    Z.id = z;
+    Z.name = Z.name || (ZONE_NAMES[z] || [pretty(z)])[0];
+    Z.name_ko = Z.name_ko || (ZONE_NAMES[z] || [])[1] || '';
+    Z.places = Object.assign({}, Z.places);
+    const missing = placesOfZone(z).filter(id => !Z.places[id] && (PLACES[id] ? PLACES[id].zone === z : true));
+    if (missing.length) {
+      const base = (Z.places[Z.spawn] || Object.values(Z.places)[0] || { at: [0, 0] }).at;
+      missing.forEach((id, i) => { Z.places[id] = { at: [base[0] + (i - (missing.length - 1) / 2) * 1.4, base[1] + 1.2], guessed: true }; });
+      if (rows('places').some(p => p.zone === z && missing.includes(p.id))) warnOnce('places:' + z, `zones/${z}.js has no position for ${missing.filter(id => PLACES[id]).join(', ')}; placed near the spawn`);
+    }
+    if (!Z.spawn || !Z.places[Z.spawn]) Z.spawn = Object.keys(Z.places)[0];
+    return Z;
+  }
+  function defaultZone(z) {
+    const ids = placesOfZone(z);
+    const gap = 3.2, n = Math.max(1, ids.length);
+    const indoor = z !== 'city';
+    const w = n * gap + 3, d = indoor ? 9 : 12;
+    const places = {}, props = [], portals = [];
+    const KIND = {
+      sleep: [[1.1, 0.4, 1.9], '#6d86b8'], eat: [[1.4, 0.9, 0.6], '#b9a27f'], shop: [[1.6, 1.3, 0.5], '#8fb57a'], transit: [[0.2, 2.0, 0.2], '#3f6fb0'],
+      desk: [[1.2, 0.72, 0.7], '#a47d57'], work: [[1.2, 0.72, 0.7], '#a47d57'], counter: [[1.6, 0.95, 0.6], '#9c8a74']
+    };
+    ids.forEach((id, i) => {
+      const x = -((n - 1) * gap) / 2 + i * gap;
+      places[id] = { at: [x, 0.6], face: [x, 3] };
+      const door = DOORS[z + ':' + id];
+      if (door) {
+        props.push({ pack: 'box', size: [1.1, 1.5, 0.12], color: '#7b5a3e', at: [x, -2.3] });
+        portals.push({ at: [x, -1.7], size: [1.2, 0.8], to: door[0], arrive: door[1], label: 'To ' + zoneName(door[0])[0] });
+      } else {
+        const k = KIND[placeKind(id)] || [[1.0, 0.8, 0.6], '#9aa3b5'];
+        props.push({ pack: 'box', size: k[0], color: k[1], at: [x, -1.4], solid: true });
+      }
+    });
+    if (indoor) {
+      const H = 1.4, t = 0.2;
+      props.push({ pack: 'box', size: [w + t * 2, H, t], color: '#e8e2d6', at: [0, -d / 2 - t / 2] }, { pack: 'box', size: [w + t * 2, 0.3, t], color: '#e8e2d6', at: [0, d / 2 + t / 2] },
+        { pack: 'box', size: [t, H, d], color: '#e8e2d6', at: [-w / 2 - t / 2, 0] }, { pack: 'box', size: [t, H, d], color: '#e8e2d6', at: [w / 2 + t / 2, 0] });
+    } else {
+      for (let x = -w / 2 + 2; x < w / 2; x += 4.5) props.push({ pack: 'box', size: [3.6, 3 + (hash(x) % 4), 2.4], color: ['#c9b8a4', '#a9b8c9', '#c4c0b5'][hash(x) % 3], at: [x, -d / 2 + 1.3], solid: true });
+    }
+    const floors = { home: '#d8c9ae', city: '#8e9a7c', office: '#cfd3d6', diner: '#caa98a', market: '#d9d6cc', airport: '#d7d9de', hotel: '#b8a58f', client: '#c9ccd2' };
+    return { id: z, generated: true, name: zoneName(z)[0], name_ko: zoneName(z)[1], indoor, size: [w, d], floor: floors[z] || '#c8c8c8', tiles: [], props, places, portals,
+      spawn: ids.find(id => DOORS[z + ':' + id]) || ids[0], lights: [], ambient: indoor ? 1 : undefined };
+  }
+  // the first portal to take from zone `from` to reach zone `to` (breadth-first over the portals)
+  function routeTo(from, to) {
+    if (from === to) return null;
+    const seen = new Set([from]), queue = [[from, null]];
+    while (queue.length) {
+      const [z, first] = queue.shift();
+      for (const p of (zoneSpec(z).portals || [])) {
+        if (!p.to || seen.has(p.to)) continue;
+        const f = first || p;
+        if (p.to === to) return f;
+        seen.add(p.to);
+        queue.push([p.to, f]);
+      }
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- building a zone
+  let zoneId = null, Z = null, zoneGroup = null, buildToken = 0, busy = false, portalArmed = false;
+  let solids = [], zoneProps = {}, npcActors = {}, tags = [], disposables = [];
+  const zoneLights = [];
+  function propSize(p) {
+    const s = (p.pack === 'box' ? 1 : (PACK_SCALE[p.pack] || 1)) * (p.scale || 1);
+    if (p.pack === 'box') return p.size || [1, 1, 1];
+    if (Array.isArray(p.solid)) return [p.solid[0], 0.8 * s, p.solid[1]];
+    if (p.pack === 'city') return [0.9 * s, 1.4 * s, 0.9 * s];
+    if (p.pack === 'roads') return [0.25 * s, 0.5 * s, 0.25 * s];
+    if (p.pack === 'cars') return [1.1 * s, 1 * s, 2.3 * s];
+    if (p.pack === 'food') return [0.25 * s, 0.25 * s, 0.25 * s];
+    return [0.5 * s, 0.6 * s, 0.5 * s];
+  }
+  function rectOf(x, z, w, d, turn) {       // turn: the box turns with the prop (solid [w, d] is already in world axes)
+    if (turn && Math.abs(Math.sin(turn * Math.PI / 180)) > 0.7) [w, d] = [d, w];
+    return { x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 };
+  }
+  function addProp(p, isTile) {
+    if (!p || !p.at) return null;
+    const holder = new T.Group();
+    let obj = null, fallback = false;
+    if (p.pack === 'box' || !p.pack) {
+      const sz = p.size || [1, 1, 1];
+      obj = new T.Mesh(boxGeo, toon(p.color || '#9aa3b5'));
+      obj.scale.set(sz[0], sz[1], sz[2]);
+    } else {
+      obj = packNode(p.pack, p.node);
+      if (obj) {
+        const s = (PACK_SCALE[p.pack] || 1) * (p.scale || 1);
+        if ((window.SO_ZONE_KIT || {}).ORIGIN === 'center') {      // the zone kit asks for footprint-centred nodes
+          const off = centreOf(p.pack, p.node, obj);
+          const g = new T.Group();
+          obj.position.copy(off);
+          g.add(obj);
+          obj = g;
+        }
+        obj.scale.multiplyScalar(s);
+      }
+      else {
+        fallback = true;
+        const sz = isTile ? [3 * (p.scale || 1), 0.02, 3 * (p.scale || 1)] : propSize(p);
+        obj = new T.Mesh(boxGeo, toon(isTile ? '#7d828c' : '#a7abb3'));
+        obj.scale.set(sz[0], sz[1], sz[2]);
+      }
+    }
+    holder.add(obj);
+    holder.position.set(p.at[0], (p.lift || 0) + (isTile ? 0.001 : 0), p.at[1]);
+    holder.rotation.y = (p.turn || 0) * Math.PI / 180;
+    zoneGroup.add(holder);
+    holder.updateMatrixWorld(true);
+    holder.traverse(o => { o.matrixAutoUpdate = false; });
+    if (p.solid && !isTile) {
+      if (Array.isArray(p.solid)) solids.push(rectOf(p.at[0], p.at[1], p.solid[0], p.solid[1], 0));
+      else if (p.pack === 'box' || fallback) { const sz = p.pack === 'box' ? (p.size || [1, 1, 1]) : propSize(p); solids.push(rectOf(p.at[0], p.at[1], sz[0], sz[2], p.turn)); }
+      else {
+        const b = new T.Box3().setFromObject(holder);
+        if (!b.isEmpty()) solids.push({ x0: b.min.x, x1: b.max.x, z0: b.min.z, z1: b.max.z });
+      }
+    }
+    if (!isTile && !(p.pack === 'food') && !/^(floor|rug)/i.test(p.node || '')) { occluders.push(holder); occluderSet.add(holder); }
+    const rec = { spec: p, holder, object: obj };
+    if (p.id) zoneProps[p.id] = rec;
+    return rec;
+  }
+  function zonePacks(spec) {
+    const need = new Set();
+    (spec.tiles || []).concat(spec.props || []).forEach(p => { if (p && p.pack && p.pack !== 'box') need.add(p.pack); });
+    return need;
+  }
+  async function enterZone(z, arrive, at, heading) {
+    const token = ++buildToken;
+    busy = true;
+    $('fade').classList.add('on');
+    const spec = zoneSpec(z);
+    const need = zonePacks(spec);
+    npcsIn(z).forEach(n => need.add(n.row.model));
+    if (G) need.add(G.model);
+    await Promise.all(Array.from(need).map(loadPack));
+    reportMissing();
+    if (token !== buildToken) return false;
+    if (talk) endTalk();
+    if (zoneGroup) scene.remove(zoneGroup);
+    disposables.forEach(d => d.dispose());
+    disposables = [];
+    zoneLights.length = 0;
+    zoneGroup = new T.Group();
+    scene.add(zoneGroup);
+    Z = spec;
+    zoneId = z;
+    solids = []; zoneProps = {}; npcActors = {}; occluders = []; occluderSet = new Set(); fadedNow = new Set();
+    tags.forEach(t => t.el.remove());
+    tags = [];
+    Object.keys(bubbles).forEach(k => { bubbles[k].remove(); delete bubbles[k]; });
+    // floor: the walkable rectangle indoors, a wide ground outdoors
+    const [w, d] = spec.size;
+    const fw = spec.indoor ? w : w + 160, fd = spec.indoor ? d : d + 160;
+    const fg = new T.PlaneGeometry(fw, fd).rotateX(-Math.PI / 2);
+    disposables.push(fg);
+    const floor = new T.Mesh(fg, toon(spec.floor || '#c8c8c8'));
+    floor.position.y = -0.01;
+    zoneGroup.add(floor);
+    if (spec.indoor) {           // the rest of the building around the room, seen over the walls
+      const og = new T.PlaneGeometry(w + 80, d + 80).rotateX(-Math.PI / 2);
+      disposables.push(og);
+      const outer = new T.Mesh(og, toon('#' + new T.Color(spec.outside || spec.floor || '#c8c8c8').lerp(new T.Color('#8a8f99'), 0.55).getHexString()));
+      outer.position.y = -0.03;
+      zoneGroup.add(outer);
+    }
+    (spec.tiles || []).forEach(t => addProp(t, true));
+    (spec.props || []).forEach(p => addProp(p, false));
+    (spec.lights || []).slice(0, 8).forEach(l => {
+      const pl = new T.PointLight(l.color || '#ffe6c0', l.intensity == null ? 1.5 : l.intensity, l.range || 12, 1.2);
+      pl.position.set(l.at[0], l.height == null ? 1.6 : l.height, l.at[1]);
+      zoneGroup.add(pl);
+      zoneLights.push(pl);
+    });
+    // portal signs and place labels
+    (spec.portals || []).forEach(p => {
+      addTag(p.label || ('To ' + zoneName(p.to)[0]), new T.Vector3(p.at[0], 1.1, p.at[1]), 'portal', 14, p.label_ko || ('→ ' + zoneName(p.to)[1]));
+      const g = new T.PlaneGeometry(p.size ? p.size[0] : 1, p.size ? p.size[1] : 1).rotateX(-Math.PI / 2);
+      disposables.push(g);
+      const m = new T.Mesh(g, portalMat);
+      m.position.set(p.at[0], 0.015, p.at[1]);
+      m.renderOrder = 1;
+      zoneGroup.add(m);
+    });
+    Object.keys(spec.places).forEach(id => {
+      if (placeActions(id).length) addTag(place(id).name, new T.Vector3(spec.places[id].at[0], 0.02, spec.places[id].at[1]), 'place', 5, place(id).name_ko);
+    });
+    zoneGroup.add(marker.group);
+    applyEnvironment(true);
+    // people
+    refreshNpcs(true);
+    if (G) {
+      ensurePlayer();
+      const pl = arrive && spec.places[arrive] ? spec.places[arrive] : null;
+      const spot = at || (pl ? pl.at : (spec.places[spec.spawn] || { at: [0, 0] }).at);
+      player.pos.set(spot[0], 0, spot[1]);
+      if (heading != null) player.heading = heading;
+      else if (pl && pl.face) player.heading = Math.atan2(pl.face[0] - spot[0], pl.face[1] - spot[1]);
+      else player.heading = Math.atan2(-spot[0], -spot[1]);
+      player.sit = false;
+      const onTop = Object.values(npcActors).find(a => Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z) < 0.7);
+      if (onTop) {
+        player.pos.copy(freeSpot(onTop, 1.0));
+        player.heading = Math.atan2(onTop.pos.x - player.pos.x, onTop.pos.z - player.pos.z);
+      }
+      collide(player.pos, true);
+      scene.add(player.holder);
+    }
+    portalArmed = false;
+    cam.ready = false;
+    if (spec.setup) { try { spec.setup(api); } catch (e) { console.error(`zones/${z}.js setup:`, e); } }
+    busy = false;
+    setTimeout(() => $('fade').classList.remove('on'), 60);
+    if (G) { G.zone = z; saveGame(); }
+    goalTimer = 0; actTimer = 0;
+    return true;
+  }
+  const portalMat = new T.MeshBasicMaterial({ color: 0x3fb5ad, transparent: true, opacity: 0.35, depthWrite: false });
+
+  // ---------------------------------------------------------------- environment: sky by the clock outdoors, a plain backdrop indoors
+  const SKY = { day: new T.Color('#9fd0f5'), dusk: new T.Color('#f0b58c'), night: new T.Color('#1a2442') };
+  let envTimer = 0;
+  function applyEnvironment() {
+    if (!Z) return;
+    if (Z.indoor) {
+      const bg = new T.Color(Z.background || '#cdd3dc');
+      scene.background = bg;
+      scene.fog = new T.Fog(bg, Math.max(Z.size[0], Z.size[1]) * 0.9 + 6, Math.max(Z.size[0], Z.size[1]) * 1.6 + 30);
+      sun.position.set(3, 10, 6);
+      sun.intensity = 1.5;
+      sun.color.set('#fff4e6');
+      hemi.intensity = 1.15 * (Z.ambient == null ? 0.9 : Z.ambient);
+      hemi.color.set('#f2f4ff');
+      hemi.groundColor.set('#8a8070');
+      return;
+    }
+    const h = (G ? G.minute : 600) / 60;
+    const e = clamp(Math.sin(Math.PI * (h - 6) / 14), 0, 1);            // 6:00 → 20:00
+    const night = h < 5.5 || h > 20.5;
+    const bg = night ? SKY.night.clone() : e < 0.3 ? SKY.dusk.clone().lerp(SKY.day, e / 0.3) : SKY.day.clone();
+    if (!night && (h < 6.5 || h > 19.5)) bg.lerp(SKY.night, h < 6.5 ? clamp((6.5 - h) / 1, 0, 1) * 0.6 : clamp((h - 19.5) / 1, 0, 1) * 0.8);
+    scene.background = bg;
+    const far = Math.max(Z.size[0], Z.size[1]) * 1.2 + 40;
+    scene.fog = new T.Fog(bg, far * 0.55, far * 1.4);
+    const az = Math.PI * (h - 6) / 14;
+    sun.position.set(Math.cos(az) * 30, 8 + e * 30, 12);
+    sun.color.set(e < 0.35 ? '#ffc796' : '#fff2dd');
+    sun.intensity = night ? 0.25 : 0.6 + 1.7 * e;
+    hemi.intensity = (night ? 0.55 : 0.75 + 0.45 * e) * (Z.ambient == null ? 1 : Z.ambient);
+    hemi.color.set(night ? '#8090c0' : '#e6efff');
+    hemi.groundColor.set(night ? '#303040' : '#6b6258');
+  }
+
+  // ---------------------------------------------------------------- the player and the people around
+  let player = null;
+  function ensurePlayer() {
+    if (player && player.model === G.model && player.boxed === !packReady(G.model)) return;
+    if (player) scene.remove(player.holder);
+    player = makeActor('player', G.model, { name: G.name });
+    player.boxed = !packReady(G.model);
+    player.bubbleY = 0.86;
+  }
+  // where an npc is now: at the place of its first open episode, otherwise at its own place
+  function npcPlaceNow(n) {
+    const ep = G ? openEpisodes().find(e => e.npc === n.id && e.place && !isPhone(e)) : null;
+    return ep ? ep.place : n.place;
+  }
+  function npcsIn(z) {
+    const spec = zoneSpec(z);
+    const out = [];
+    const byPlace = {};
+    rows('npcs').concat(orphanNpcs()).forEach(n => {
+      const pid = npcPlaceNow(n);
+      if (!pid || !placeIn(pid, z)) return;
+      const pl = spec.places[pid];
+      if (!pl) return;
+      const k = byPlace[pid] = (byPlace[pid] || 0) + 1;
+      const off = k === 1 ? [0, 0] : [Math.cos(k * 2.1) * 0.6, Math.sin(k * 2.1) * 0.6];
+      out.push({ row: n, place: pid, at: [pl.at[0] + off[0], pl.at[1] + off[1]], face: pl.face, sit: !!pl.sit && k === 1 });
+    });
+    return out;
+  }
+  function orphanNpcs() {     // people named by episodes but missing from the npcs table
+    const seen = new Set(rows('npcs').map(n => n.id)), out = [];
+    rows('episodes').forEach(e => { if (e.npc && !seen.has(e.npc)) { seen.add(e.npc); out.push(npcRow(e.npc)); } });
+    return out;
+  }
+  let npcSig = '';
+  function refreshNpcs(force) {
+    if (!zoneId) return;
+    const want = npcsIn(zoneId);
+    const sig = want.map(w => w.row.id + '@' + w.place).join('|');
+    if (!force && sig === npcSig) return;
+    npcSig = sig;
+    const keep = new Set(want.map(w => w.row.id));
+    Object.keys(npcActors).forEach(id => { if (!keep.has(id)) { zoneGroup.remove(npcActors[id].holder); delete npcActors[id]; if (bubbles[id]) { bubbles[id].remove(); delete bubbles[id]; } } });
+    want.forEach(w => {
+      const put = () => {
+        if (!zoneId || !keep.has(w.row.id)) return;
+        let a = npcActors[w.row.id];
+        if (!a) {
+          a = npcActors[w.row.id] = makeActor(w.row.id, w.row.model, { name: w.row.name, row: w.row });
+          a.mark = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false }));
+          a.mark.scale.setScalar(0.2);
+          a.mark.position.y = 0.98;
+          a.mark.renderOrder = 5;
+          a.mark.visible = false;
+          a.holder.add(a.mark);
+          zoneGroup.add(a.holder);
+        }
+        if (a.place !== w.place) {
+          a.place = w.place;
+          a.pos.set(w.at[0], 0, w.at[1]);
+          a.home = w.face ? Math.atan2(w.face[0] - w.at[0], w.face[1] - w.at[1]) : Math.atan2(-w.at[0], -w.at[1]);
+          if (player && !w.face) a.home = Math.atan2(player.pos.x - w.at[0], player.pos.z - w.at[1]);
+          a.heading = a.home;
+          a.sit = w.sit;
+          play(a, a.sit ? 'sit' : 'idle', { fade: 0 });
+        }
+      };
+      if (packs[w.row.model] && packs[w.row.model].status !== 'loading') put();
+      else loadPack(w.row.model).then(() => { reportMissing(); put(); });
+    });
+  }
+
+  // ---------------------------------------------------------------- the clock, money and energy
+  const openEpisodes = () => rows('episodes').filter(isOpen).sort(epOrder);
+  function epOrder(a, b) { return ((a.sort || 0) - (b.sort || 0)) || (hm(a.time_from, 0) - hm(b.time_from, 0)) || String(a.id).localeCompare(b.id); }
+  const isPhone = (ep) => /(^|,)\s*phone\s*(,|$)/.test(ep.tags || '');
+  const dayIn = (ep) => (ep.day_from == null || G.day >= ep.day_from) && (ep.day_to == null || G.day <= ep.day_to);
+  // a place id can be in more than one zone (office_door is outside and inside): the zone's own places come first
+  function placeIn(pid, z) { const sp = zoneSpec(z).places[pid]; return (!!sp && !sp.guessed) || zoneOfPlace(pid) === z; }
+  function isOpen(ep) {
+    if (!G || G.done[ep.id]) return false;
+    if (ep.day_from != null && G.day < ep.day_from) return false;
+    if (ep.day_to != null && G.day > ep.day_to) return false;
+    if (G.minute < hm(ep.time_from, 0) || G.minute > hm(ep.time_to, 1439) + 0.999) return false;
+    return listOf(ep.requires).every(id => G.done[id]);
+  }
+  function laterToday(ep) {        // not open yet, but will be later today
+    if (!G || G.done[ep.id] || isOpen(ep)) return false;
+    if (ep.day_from != null && G.day < ep.day_from) return false;
+    if (ep.day_to != null && G.day > ep.day_to) return false;
+    return hm(ep.time_from, 0) > G.minute && listOf(ep.requires).every(id => G.done[id]);
+  }
+  function tickClock(dt) {
+    const mins = dt * (+CFG.minutes_per_second || 1) * debugSpeed;
+    advanceMinutes(mins);
+  }
+  function advanceMinutes(mins) {
+    if (!G) return;
+    G.minute += mins;
+    G.energy = clamp(G.energy + (+CFG.energy_per_hour || -6) * mins / 60, 0, E_MAX);
+    if (G.minute >= DAY_END && state === 'play') { toast("It's late. You fall asleep.", '늦었어요. 잠이 듭니다.'); goToSleep(true); }
+  }
+  function pay(amount, text, type) {
+    G.money = Math.round((G.money + amount) * 100) / 100;
+    logEvent(type || (amount >= 0 ? 'income' : 'spend'), text, amount);
+  }
+
+  // ---------------------------------------------------------------- HUD: clock, money, energy, objective, next event
+  let hudTimer = 0, goalTimer = 0, goalTarget = null;
+  function hud() {
+    if (!G) return;
+    $('hud-day').textContent = `${weekday(G.day).slice(0, 3)} · Day ${G.day}`;
+    $('hud-time').textContent = clock(G.minute);
+    const m = $('hud-money');
+    m.textContent = usd(G.money);
+    m.classList.toggle('neg', G.money < 0);
+    const e = G.energy / E_MAX;
+    $('hud-energy').style.width = (e * 100).toFixed(1) + '%';
+    const box = document.querySelector('#bar .energy');
+    box.classList.toggle('low', G.energy < 30 && G.energy >= 20);
+    box.classList.toggle('empty', G.energy < 20);
+    box.title = `Energy ${Math.round(G.energy)} / ${E_MAX}`;
+  }
+  function setBox(el, en, ko, warn) {
+    if (!en) { el.hidden = true; return; }
+    el.hidden = false;
+    el.querySelector('.en').innerHTML = en;
+    el.querySelector('.ko').textContent = ko || '';
+    el.classList.toggle('warn', !!warn);
+  }
+  function updateGoal() {
+    if (!G || state === 'title' || !Z) { setBox($('goal'), null); setBox($('next'), null); goalTarget = null; return; }
+    const open = openEpisodes();
+    let en = null, ko = null, warn = false;
+    goalTarget = null;
+    if (open.length) {
+      const ep = open.find(e => isPhone(e) ? placeIn(e.place, zoneId) : e.npc && npcActors[e.npc]) || open[0];
+      const n = npcRow(ep.npc), pid = isPhone(ep) ? ep.place : npcPlaceNow(n) || ep.place, pz = placeIn(pid, zoneId) ? zoneId : zoneOfPlace(pid);
+      const pl = place(pid);
+      if (pz === zoneId && isPhone(ep)) {
+        en = `Take the call at ${esc(pl.name)}: <b>${esc(ep.title)}</b>`;
+        ko = `${pl.name_ko || pl.name}에서 전화하세요: ${ep.title_ko || ep.title}`;
+        goalTarget = Z.places[pid] ? { at: Z.places[pid].at } : null;
+      } else if (pz === zoneId) {
+        en = `Talk to ${esc(n.name)}: <b>${esc(ep.title)}</b>`;
+        ko = `${n.name}에게 말을 거세요: ${ep.title_ko || ep.title}`;
+        goalTarget = npcActors[ep.npc] ? { actor: npcActors[ep.npc] } : (Z.places[pid] ? { at: Z.places[pid].at } : null);
+      } else {
+        const zn = zoneName(pz);
+        en = `Go to ${esc(pl.name)} (${esc(zn[0])})`;
+        ko = `${pl.name_ko || pl.name} (${zn[1] || zn[0]})에 가세요 · ${ep.title_ko || ep.title}`;
+        const via = pz && routeTo(zoneId, pz);
+        if (via) goalTarget = { at: via.at, portal: true };
+      }
+    } else {
+      const later = rows('episodes').filter(laterToday).sort(epOrder)[0];
+      if (later) {
+        en = `Free until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
+        ko = `${hhmm(hm(later.time_from, 0))}까지 자유 시간. 다음: ${later.title_ko || later.title}`;
+      } else if (G.minute >= 20 * 60) {
+        const home = TRAVEL_ZONES.includes(zoneId) ? 'hotel' : 'home';
+        const bed = home === 'hotel' ? 'hotel_room' : 'home_bed';
+        if (zoneId === home) { en = 'Time for bed. Go to your bed and sleep.'; ko = '잘 시간이에요. 침대에 가서 주무세요.'; if (Z.places[bed]) goalTarget = { at: Z.places[bed].at }; }
+        else { en = `Head ${home === 'hotel' ? 'back to the hotel' : 'home'} and get some sleep.`; ko = home === 'hotel' ? '호텔로 돌아가 잠을 자세요.' : '집에 가서 잠을 자세요.'; const via = routeTo(zoneId, home); if (via) goalTarget = { at: via.at, portal: true }; }
+      } else {
+        en = 'Free time. Explore, shop, or grab something to eat.';
+        ko = '자유 시간. 둘러보거나 장을 보거나 뭔가 먹어요.';
+      }
+    }
+    if (G.energy < 30) { warn = true; en += `<br><small>Low energy (${Math.round(G.energy)}). Eat something or rest.</small>`; ko += ' · 에너지가 낮아요. 뭔가 드세요.'; }
+    setBox($('goal'), en, ko, warn);
+    const cal = rows('calendar').filter(c => c.day === G.day && hm(c.time, 0) >= G.minute - 30).sort((a, b) => hm(a.time, 0) - hm(b.time, 0))[0];
+    if (cal) setBox($('next'), `Next: <b>${hhmm(hm(cal.time, 0))}</b> ${esc(cal.title)}${cal.place ? ' · ' + esc(place(cal.place).name) : ''}`, `다음 일정: ${cal.time} ${cal.title_ko || cal.title}`);
+    else setBox($('next'), null);
+    Object.values(npcActors).forEach(a => { if (a.mark) a.mark.visible = open.some(e => e.npc === a.id && !isPhone(e)); });
+    phoneMarks(open.filter(e => isPhone(e) && Z.places[e.place] && placeIn(e.place, zoneId) && !(talk && talk.ep.id === e.id)));
+    // people with nothing to discuss make small talk as you pass (a bubble; Chat also says it aloud)
+    if (state === 'play' && player) Object.values(npcActors).forEach(a => {
+      if (open.some(e => e.npc === a.id) || !(CHATTER[a.id] || []).length) return;
+      if (Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z) > 2.0 || elapsed - (a.chatAt || -99) < 40) return;
+      a.chatAt = elapsed;
+      a.chatIdx = (a.chatIdx + 1) % CHATTER[a.id].length;
+      const c = CHATTER[a.id][a.chatIdx];
+      say(a, personal(c.line), c.line_ko, 3.5);
+    });
+  }
+  // a phone episode has nobody to stand there: the ! floats over the place
+  let phones = {};
+  function phoneMarks(list) {
+    const keep = new Set(list.map(e => e.id));
+    Object.keys(phones).forEach(id => { if (!keep.has(id) || phones[id].parent !== zoneGroup) { if (phones[id].parent) phones[id].parent.remove(phones[id]); delete phones[id]; } });
+    list.forEach(e => {
+      if (phones[e.id]) return;
+      const m = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false }));
+      m.scale.setScalar(0.22);
+      const at = Z.places[e.place].at;
+      m.position.set(at[0], 0.95, at[1]);
+      m.renderOrder = 5;
+      zoneGroup.add(m);
+      phones[e.id] = m;
+    });
+  }
+  // the guide on the ground: a ring at the person, a beam at the way out toward them
+  const marker = (function () {
+    const group = new T.Group();
+    const ring = new T.Mesh(new T.RingGeometry(0.34, 0.44, 32).rotateX(-Math.PI / 2), new T.MeshBasicMaterial({ color: 0xf2b632, transparent: true, opacity: 0.85, depthWrite: false }));
+    ring.position.y = 0.02;
+    const beam = new T.Mesh(new T.CylinderGeometry(0.22, 0.32, 3.2, 20, 1, true).translate(0, 1.6, 0),
+      new T.MeshBasicMaterial({ color: 0xf2c75a, transparent: true, opacity: 0.2, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending }));
+    group.add(ring, beam);
+    group.visible = false;
+    return { group, ring, beam };
+  })();
+  function markerTick(t) {
+    const g = goalTarget;
+    const show = !!g && (state === 'play') && !!player;
+    marker.group.visible = show;
+    if (!show) return;
+    if (g.actor) marker.group.position.set(g.actor.pos.x, 0, g.actor.pos.z);
+    else marker.group.position.set(g.at[0], 0, g.at[1]);
+    const near = Math.hypot(marker.group.position.x - player.pos.x, marker.group.position.z - player.pos.z);
+    marker.beam.visible = (!!g.portal || !g.actor) && near > 2.2;
+    marker.beam.material.opacity = clamp((near - 2.2) / 4, 0, 1) * 0.2;
+    marker.ring.scale.setScalar(1 + Math.sin(t * 4) * 0.08);
+  }
+
+  // ---------------------------------------------------------------- bubbles and tags
+  const bubbles = {};
+  const actorOf = (id) => id === 'player' ? player : npcActors[id] || null;
+  function say(who, text, ko, secs) {
+    const a = typeof who === 'string' ? actorOf(who) : who;
+    if (!a || !text) return;
+    let b = bubbles[a.id];
+    if (!b) { b = bubbles[a.id] = document.createElement('div'); b.className = 'bubble' + (a === player ? ' me' : ''); $('bubbles').appendChild(b); }
+    b.innerHTML = esc(text) + (ko ? `<span class="ko">${esc(ko)}</span>` : '');
+    b.classList.remove('hide');
+    clearTimeout(b.timer);
+    b.timer = setTimeout(() => b.classList.add('hide'), (secs || Math.max(2.6, text.length * 0.075)) * 1000);
+  }
+  const hideBubbles = () => Object.values(bubbles).forEach(b => b.classList.add('hide'));
+  const tmpV = new T.Vector3();
+  function project(v) {
+    tmpV.copy(v).project(camera);
+    return { x: (tmpV.x + 1) / 2 * window.innerWidth, y: (1 - tmpV.y) / 2 * window.innerHeight, ok: tmpV.z < 1 && Math.abs(tmpV.x) < 1.15 && Math.abs(tmpV.y) < 1.15 };
+  }
+  function placeBubbles() {
+    Object.keys(bubbles).forEach(id => {
+      const b = bubbles[id], a = actorOf(id);
+      if (!a || b.classList.contains('hide')) return;
+      const p = project(tmpV.set(a.pos.x, a.bubbleY, a.pos.z));
+      b.style.display = p.ok ? '' : 'none';
+      const half = Math.min(b.offsetWidth / 2, window.innerWidth / 2 - 8) + 8;
+      b.style.left = clamp(p.x, half, window.innerWidth - half) + 'px';
+      b.style.top = Math.max(p.y, b.offsetHeight + 52) + 'px';
+    });
+  }
+  function addTag(text, pos, kind, range, ko) {
+    const el = document.createElement('div');
+    el.className = 'tag ' + kind;
+    el.innerHTML = esc(text) + (ko ? ` <span class="ko">${esc(ko)}</span>` : '');
+    $('tags').appendChild(el);
+    tags.push({ el, pos, range });
+  }
+  function placeTags() {
+    const show = state === 'play' && player;
+    tags.forEach(t => {
+      const near = show && Math.hypot(t.pos.x - player.pos.x, t.pos.z - player.pos.z) < t.range;
+      const p = near ? project(t.pos) : null;
+      if (!p || !p.ok) { t.el.style.display = 'none'; return; }
+      t.el.style.display = '';
+      t.el.style.left = p.x + 'px';
+      t.el.style.top = p.y + 'px';
+    });
+  }
+
+  // ---------------------------------------------------------------- voice (speechSynthesis; American English first)
+  let voices = [], usVoices = [];
+  function pickVoices() {
+    if (!window.speechSynthesis) return;
+    voices = speechSynthesis.getVoices().filter(v => /^en/i.test(v.lang));
+    usVoices = voices.filter(v => /^en[-_]US/i.test(v.lang));
+  }
+  if (window.speechSynthesis) { pickVoices(); if (speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', pickVoices); }
+  const voiceOf = (n) => n ? { pitch: n.voice_pitch, rate: n.voice_rate, like: n.voice_like } : {};
+  function speak(text, v) {
+    if (!voiceBox.checked || !window.speechSynthesis || !text) return;
+    const clean = String(text).replace(/[…]/g, ',').replace(/^\(.*\)$/, '').trim();
+    if (!clean) return;
+    v = v || {};
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(clean);
+      let voice = null;
+      if (v.like) { try { const re = new RegExp(v.like, 'i'); voice = voices.find(x => re.test(x.name)); } catch (e) { /* bad pattern */ } }
+      voice = voice || usVoices.find(x => /Google US English/i.test(x.name)) || usVoices[0] || voices[0];
+      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = 'en-US';
+      u.rate = +v.rate || 0.95;
+      u.pitch = +v.pitch || 1;
+      speechSynthesis.speak(u);
+    } catch (e) { /* no speech here */ }
+  }
+
+  // ---------------------------------------------------------------- input
+  const keys = {};
+  const stick = { x: 0, y: 0, id: null };
+  const typing = (e) => e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
+  window.addEventListener('keydown', (e) => {
+    if (typing(e)) return;
+    keys[e.code] = true;
+    if ((e.code === 'KeyE' || e.code === 'Enter') && state === 'play' && actions.length) { e.preventDefault(); actions[0].run(); }
+    if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
+    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar' }[e.code];
+    if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
+    if (/Arrow|Space/.test(e.code)) e.preventDefault();
+  });
+  window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+  window.addEventListener('blur', () => { Object.keys(keys).forEach(k => { keys[k] = false; }); });
+  const stickEl = $('stick'), knob = stickEl.querySelector('.knob');
+  function stickMove(e) {
+    const r = stickEl.getBoundingClientRect();
+    let x = (e.clientX - r.left - r.width / 2) / (r.width / 2), y = (e.clientY - r.top - r.height / 2) / (r.height / 2);
+    const l = Math.hypot(x, y);
+    if (l > 1) { x /= l; y /= l; }
+    stick.x = x; stick.y = y;
+    knob.style.transform = `translate(${x * 34}px, ${y * 34}px)`;
+  }
+  stickEl.addEventListener('pointerdown', (e) => { stick.id = e.pointerId; stickEl.setPointerCapture(e.pointerId); stickMove(e); });
+  stickEl.addEventListener('pointermove', (e) => { if (e.pointerId === stick.id) stickMove(e); });
+  const stickUp = (e) => { if (e.pointerId !== stick.id) return; stick.id = null; stick.x = stick.y = 0; knob.style.transform = ''; };
+  stickEl.addEventListener('pointerup', stickUp);
+  stickEl.addEventListener('pointercancel', stickUp);
+  if (window.matchMedia && matchMedia('(pointer: coarse)').matches) document.body.classList.add('touch');
+  window.addEventListener('touchstart', () => document.body.classList.add('touch'), { once: true, passive: true });
+  function readInput() {
+    let fwd = 0, turn = 0;
+    if (keys.ArrowUp || keys.KeyW) fwd += 1;
+    if (keys.ArrowDown || keys.KeyS) fwd -= 1;
+    if (keys.ArrowLeft || keys.KeyA) turn += 1;
+    if (keys.ArrowRight || keys.KeyD) turn -= 1;
+    if (stick.id !== null) { fwd += -stick.y; turn += -stick.x * 0.9; }
+    const run = keys.ShiftLeft || keys.ShiftRight || (stick.id !== null && Math.hypot(stick.x, stick.y) > 0.95);
+    return { fwd: clamp(fwd, -1, 1), turn: clamp(turn, -1, 1), run };
+  }
+
+  // ---------------------------------------------------------------- movement and collision
+  const insideSolid = (x, z) => solids.some(s => x > s.x0 - PLAYER_R && x < s.x1 + PLAYER_R && z > s.z0 - PLAYER_R && z < s.z1 + PLAYER_R);
+  function freeSpot(a, dist) {     // where to stand to talk to a: in front if free, otherwise to the side or behind
+    const f = a.home == null ? a.heading : a.home;
+    const hw = Z.size[0] / 2 - PLAYER_R, hd = Z.size[1] / 2 - PLAYER_R;
+    for (const r of [dist, dist + 0.25, dist + 0.5]) {
+      for (const turn of [0, 0.6, -0.6, 1.2, -1.2, 1.7, -1.7, 2.4, -2.4, Math.PI]) {
+        const x = a.pos.x + Math.sin(f + turn) * r, z = a.pos.z + Math.cos(f + turn) * r;
+        if (Math.abs(x) > hw || Math.abs(z) > hd || insideSolid(x, z)) continue;
+        if (Object.values(npcActors).some(o => o !== a && Math.hypot(o.pos.x - x, o.pos.z - z) < 0.5)) continue;
+        return new T.Vector3(x, 0, z);
+      }
+    }
+    return new T.Vector3(a.pos.x + Math.sin(f) * dist, 0, a.pos.z + Math.cos(f) * dist);
+  }
+  function collide(p, noPeople) {
+    for (let pass = 0; pass < 2; pass++) {
+      for (const s of solids) {
+        const x0 = s.x0 - PLAYER_R, x1 = s.x1 + PLAYER_R, z0 = s.z0 - PLAYER_R, z1 = s.z1 + PLAYER_R;
+        if (p.x <= x0 || p.x >= x1 || p.z <= z0 || p.z >= z1) continue;
+        const dl = p.x - x0, dr = x1 - p.x, dn = p.z - z0, ds = z1 - p.z, m = Math.min(dl, dr, dn, ds);
+        if (m === dl) p.x = x0; else if (m === dr) p.x = x1; else if (m === dn) p.z = z0; else p.z = z1;
+      }
+      if (!noPeople) Object.values(npcActors).forEach(a => {
+        const dx = p.x - a.pos.x, dz = p.z - a.pos.z, d = Math.hypot(dx, dz), min = PLAYER_R + NPC_R;
+        if (d < min && d > 1e-6) { p.x = a.pos.x + dx / d * min; p.z = a.pos.z + dz / d * min; }
+      });
+    }
+    if (Z) {
+      const hw = Z.size[0] / 2 - PLAYER_R, hd = Z.size[1] / 2 - PLAYER_R;
+      p.x = clamp(p.x, -hw, hw);
+      p.z = clamp(p.z, -hd, hd);
+    }
+  }
+  const nextPos = new T.Vector3();
+  function playerTick(dt) {
+    if (!player) return;
+    const locked = state !== 'play' || busy;
+    const inp = locked ? { fwd: 0, turn: 0, run: false } : readInput();
+    if (inp.fwd) player.sit = false;
+    if (inp.turn) player.heading += inp.turn * TURN * dt;
+    const tired = G && G.energy < 20 ? (G.energy <= 0 ? 0.45 : 0.65) : 1;
+    const speed = inp.fwd * (inp.run && inp.fwd > 0 ? RUN : WALK) * tired;
+    if (speed) {
+      nextPos.set(player.pos.x + Math.sin(player.heading) * speed * dt, 0, player.pos.z + Math.cos(player.heading) * speed * dt);
+      collide(nextPos);
+      player.pos.copy(nextPos);
+    }
+    if (player.want != null) {         // turning to face someone
+      let d = player.want - player.heading;
+      d = Math.atan2(Math.sin(d), Math.cos(d));
+      player.heading += d * (1 - Math.exp(-dt * 8));
+      if (Math.abs(d) < 0.01) player.want = null;
+    }
+    locomotion(player, speed);
+    player.holder.rotation.y = player.heading;
+    if (player.mixer) player.mixer.update(dt);
+  }
+  function npcTick(dt, t) {
+    Object.values(npcActors).forEach(a => {
+      let want = a.home;
+      const talking = talk && talk.actor === a;
+      if (player && (talking || (Math.hypot(player.pos.x - a.pos.x, player.pos.z - a.pos.z) < 2.4 && !a.sit))) want = Math.atan2(player.pos.x - a.pos.x, player.pos.z - a.pos.z);
+      if (want != null) {
+        let d = want - a.heading;
+        d = Math.atan2(Math.sin(d), Math.cos(d));
+        a.heading += d * (1 - Math.exp(-dt * 5));
+      }
+      a.holder.rotation.y = a.heading;
+      if (a.mark) { a.mark.position.y = 0.98 + Math.sin(t * 3 + a.pos.x) * 0.03; a.mark.material.opacity = talking ? 0 : 1; a.mark.material.transparent = true; }
+      if (a.mixer) a.mixer.update(dt);
+    });
+  }
+  function portalTick() {
+    if (!Z || !player || busy || state !== 'play') return;
+    const inside = (Z.portals || []).find(p => {
+      const w = (p.size || [1, 1])[0] / 2, d = (p.size || [1, 1])[1] / 2;
+      return Math.abs(player.pos.x - p.at[0]) <= w && Math.abs(player.pos.z - p.at[1]) <= d;
+    });
+    if (!inside) { portalArmed = true; return; }
+    if (!portalArmed) return;
+    portalArmed = false;
+    if (inside.when && !inside.when(api)) return;
+    if (TRAVEL_ZONES.includes(inside.to) && !TRAVEL_ZONES.includes(zoneId) && !tripToday()) { toast('No trip scheduled.', '예정된 출장이 없어요.'); return; }
+    const pid = portalPlace(inside), fares = pid ? faresAt(pid) : [];
+    const fare = fares.reduce((t, i) => t + +i.price, 0);
+    if (fare && G.money < fare) { toast(`You can't afford the fare (${usd2(fare)}).`, '요금이 부족해요.', 'bad'); return; }
+    fares.forEach(i => pay(-i.price, i.name, 'spend'));
+    if (fare) toast(`Paid ${usd2(fare)}: ${fares.map(i => i.name).join(', ')}`, fares.map(i => i.name_ko).filter(Boolean).join(', '));
+    let flight = 0;
+    if (zoneId === 'airport' && inside.to === 'hotel') { flight = 120; G.trip = true; }
+    if (zoneId === 'airport' && !TRAVEL_ZONES.includes(inside.to) && G.trip) { flight = 120; G.trip = false; }
+    travel(inside.to, inside.arrive, null, flight);
+  }
+  function tripToday() { return rows('episodes').some(e => !G.done[e.id] && dayIn(e) && TRAVEL_ZONES.includes(zoneOfPlace(e.place))); }
+  function portalPlace(p) {        // the place a portal belongs to: the nearest one in this zone
+    let best = null, bd = 3;
+    Object.keys(Z.places).forEach(pid => { const a = Z.places[pid].at; const d = a ? Math.hypot(a[0] - p.at[0], a[1] - p.at[1]) : 9; if (d < bd) { bd = d; best = pid; } });
+    return best;
+  }
+  async function travel(z, arrive, at, minutes) {
+    if (!z) return;
+    if (minutes) advanceMinutes(minutes);
+    if (state !== 'play') return;
+    await enterZone(z, arrive, at);
+    const zn = zoneName(z);
+    if (minutes) toast(`After a ${minutes / 60}-hour flight: ${zn[0]}`, `${minutes / 60}시간 비행 후: ${zn[1] || zn[0]}`, null, 3);
+    else toast(zn[0], zn[1], null, 2.2);
+  }
+
+  // ---------------------------------------------------------------- camera: behind and above the player; from the side in a conversation
+  const cam = { pos: new T.Vector3(), look: new T.Vector3(), ready: false, orbit: 0 };
+  const want = new T.Vector3(), look = new T.Vector3(), rayFrom = new T.Vector3(), rayDir = new T.Vector3();
+  const ray = new T.Raycaster();
+  let occluders = [];
+  // keep the camera in front of walls and buildings between it and the player
+  function inRoom(v) {           // indoors the camera stays inside the room's rectangle
+    if (!Z || !Z.indoor) return;
+    const hw = Z.size[0] / 2 - 0.15, hd = Z.size[1] / 2 - 0.15;
+    v.x = clamp(v.x, -hw, hw);
+    v.z = clamp(v.z, -hd, hd);
+  }
+
+  function cameraTick(dt) {
+    if (!Z) { camera.position.set(0, 3, 8); camera.lookAt(0, 1, 0); return; }
+    if (state === 'title' || !player) {
+      cam.orbit += dt * 0.06;
+      const r = Math.max(Z.size[0], Z.size[1]) * 0.45 + 4;
+      camera.position.set(Math.sin(cam.orbit) * r, Z.indoor ? 3.2 : 7, Math.cos(cam.orbit) * r);
+      camera.lookAt(0, 0.6, 0);
+      return;
+    }
+    const p = player.pos;
+    const other = talk && talk.actor;
+    const portrait = window.innerWidth < window.innerHeight;
+    if (state === 'talk' && other) {            // a three-quarter two-shot from the player's side: the other person's face
+      let dx = other.pos.x - p.x, dz = other.pos.z - p.z;
+      const l = Math.hypot(dx, dz) || 1;
+      dx /= l; dz /= l;
+      let sx = -dz, sz = dx;
+      if (!cam.side) cam.side = sx * (cam.pos.x - p.x) + sz * (cam.pos.z - p.z) < 0 ? -1 : 1;
+      sx *= cam.side; sz *= cam.side;
+      const back = portrait ? 1.25 : 0.65, side = portrait ? 1.25 : 1.55;
+      want.set(p.x - dx * back + sx * side, portrait ? 1.15 : 1.0, p.z - dz * back + sz * side);
+      look.set(p.x + dx * l * 0.6, portrait ? -0.12 : 0.18, p.z + dz * l * 0.6);
+      inRoom(want);
+    } else {
+      cam.side = 0;
+      // behind and above; when a wall or a building is in the way, rise over it rather than zoom into the head
+      const sx = Math.sin(player.heading), sz = Math.cos(player.heading);
+      const back = Z.indoor ? 2.6 : 3.3, high = Z.indoor ? 1.6 : 1.85;
+      want.set(p.x - sx * back, high, p.z - sz * back);
+      inRoom(want);
+      const squeezed = back - Math.hypot(want.x - p.x, want.z - p.z);     // a small room pushed the camera in: look down more
+      if (squeezed > 0) want.y += squeezed * 0.75;
+      look.set(p.x + sx * 1.0, 0.4, p.z + sz * 1.0);
+    }
+    const k = cam.ready ? 1 - Math.exp(-dt * 3.5) : 1;
+    cam.ready = true;
+    cam.pos.lerp(want, k);
+    cam.look.lerp(look, k);
+    if (cam.pos.y < 0.3) cam.pos.y = 0.3;
+    inRoom(cam.pos);
+    camera.position.copy(cam.pos);
+    camera.lookAt(cam.look);
+    const faded = new Set();
+    fadeHits(cam.pos, rayTo.set(p.x, 0.45, p.z), faded);
+    fadeHits(cam.pos, rayTo.set(p.x, 0.75, p.z), faded);
+    if (other) { fadeHits(cam.pos, rayTo.set(other.pos.x, 0.45, other.pos.z), faded); fadeHits(cam.pos, rayTo.set(other.pos.x, 0.75, other.pos.z), faded); }
+    fadedNow.forEach(h => { if (!faded.has(h)) setFaded(h, false); });
+    faded.forEach(h => { if (!fadedNow.has(h)) setFaded(h, true); });
+    fadedNow = faded;
+  }
+  // walls, shelves and lamps between the camera and the people turn see-through
+  const rayTo = new T.Vector3(), fadeMats = new Map();
+  let fadedNow = new Set(), occluderSet = new Set();
+  function fadeHits(from, to, out) {
+    rayDir.subVectors(to, from);
+    const d = rayDir.length();
+    if (d < 1e-3 || !occluders.length) return;
+    rayDir.divideScalar(d);
+    ray.set(from, rayDir);
+    ray.far = d - 0.25;
+    ray.intersectObjects(occluders, true).forEach(h => {
+      let o = h.object;
+      while (o && !occluderSet.has(o)) o = o.parent;
+      if (o) out.add(o);
+    });
+  }
+  function fadedOf(m) {
+    let f = fadeMats.get(m);
+    if (!f) { f = m.clone(); f.transparent = true; f.opacity = 0.22; f.depthWrite = false; fadeMats.set(m, f); }
+    return f;
+  }
+  function setFaded(h, on) {
+    h.traverse(o => {
+      if (!o.isMesh) return;
+      if (on && !o.userData.solidMat) { o.userData.solidMat = o.material; o.material = Array.isArray(o.material) ? o.material.map(fadedOf) : fadedOf(o.material); }
+      else if (!on && o.userData.solidMat) { o.material = o.userData.solidMat; delete o.userData.solidMat; }
+    });
+  }
+
+  // ---------------------------------------------------------------- what you can do here (the action buttons)
+  let actions = [], actSig = '', actTimer = 0;
+  const busItem = (i) => i.kind === 'fare' && /bus/.test(i.id) && !/shuttle|airport/.test(i.id);
+  function itemsAt(pid) {
+    return rows('items').filter(i => i.place === pid && /^(grocery|meal|drink)$/.test(i.kind));
+  }
+  const faresAt = (pid) => rows('items').filter(i => i.place === pid && i.kind === 'fare' && !busItem(i));
+  function isBusStop(pid) { return pid === 'bus_stop' || rows('items').some(i => i.place === pid && busItem(i)); }
+  function placeActions(pid) {
+    const out = [], kind = placeKind(pid), pl = place(pid);
+    if (kind === 'sleep') out.push({ key: 'sleep:' + pid, label: 'Sleep', run: () => trySleep(pid) });
+    if (kind === 'eat') out.push({ key: 'eat:' + pid, label: 'Eat something', run: () => openPanel('inventory') });
+    if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
+    if (isBusStop(pid) && zoneId === 'city') out.push({ key: 'bus:' + pid, label: `Take the bus (${usd2(busFare())})`, run: () => openPanel('bus', pid) });
+    if (kind === 'work' || pid === 'office_desk') out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
+    if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
+    return out;
+  }
+  function shopLabel(pid, pl) {
+    const its = itemsAt(pid);
+    if (its.every(i => i.kind === 'fare')) return 'Pay: ' + its[0].name;
+    if (its.length === 1) return 'Buy: ' + its[0].name;
+    if (/coffee|cafe/.test(pid)) return 'Order a drink';
+    if (/diner|restaurant|kitchen/.test(pid)) return 'Order food';
+    if (/market|shelves/.test(pid)) return 'Shop for groceries';
+    return 'Buy at ' + pl.name;
+  }
+  function computeActions() {
+    if (state !== 'play' || busy || !player || !Z) return [];
+    const list = [];
+    const open = openEpisodes();
+    Object.values(npcActors).forEach(a => {
+      const d = Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z);
+      if (d > TALK_R) return;
+      const ep = open.find(e => e.npc === a.id && !isPhone(e));
+      if (ep) list.push({ d: d - 1, key: 'ep:' + ep.id, label: `Talk to ${a.name.split(' ')[0]}: ${ep.title}${+ep.reward < 0 ? ` (${usd2(-ep.reward)})` : ''}`, run: () => beginEpisode(ep, a) });
+      else list.push({ d: d + 0.3, key: 'chat:' + a.id, label: `Chat with ${a.name.split(' ')[0]}`, run: () => chatter(a) });
+    });
+    Object.keys(Z.places).forEach(pid => {
+      const pl = Z.places[pid];
+      if (!pl || !pl.at) return;
+      const d = Math.hypot(pl.at[0] - player.pos.x, pl.at[1] - player.pos.z);
+      if (d > PLACE_R) return;
+      open.filter(e => isPhone(e) && e.place === pid).forEach(ep => list.push({ d: d - 1, key: 'ep:' + ep.id, label: `Phone ${npcRow(ep.npc).name.split(' ')[0]}: ${ep.title}`, run: () => beginEpisode(ep, null) }));
+      placeActions(pid).forEach((a, i) => list.push(Object.assign({ d: d + 0.1 + i * 0.01 }, a)));
+    });
+    list.sort((a, b) => a.d - b.d);
+    return list.slice(0, 3);
+  }
+  function renderActions() {
+    const sig = actions.map(a => a.key + a.label).join('|');
+    if (sig === actSig) return;
+    actSig = sig;
+    const box = $('acts');
+    box.innerHTML = '';
+    actions.forEach((a, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      if (i) b.className = 'alt';
+      b.innerHTML = esc(a.label) + (i ? '' : ' <kbd>E</kbd>');
+      b.addEventListener('click', () => { if (state === 'play') a.run(); });
+      box.appendChild(b);
+    });
+  }
+  function chatter(a) {
+    a.chatAt = elapsed;
+    const lines = CHATTER[a.id] || [];
+    if (!lines.length) { say(a, 'Hi there!', '안녕하세요!', 2.5); speak('Hi there!', voiceOf(a.row)); return; }
+    a.chatIdx = (a.chatIdx + 1) % lines.length;
+    const c = lines[a.chatIdx];
+    say(a, personal(c.line), c.line_ko, 3.5);
+    speak(personal(c.line), voiceOf(a.row));
+    play(a, 'interact-right', { once: true });
+  }
+  function work() {
+    advanceMinutes(60);
+    toast('You worked for an hour.', '한 시간 일했어요.', null, 2.4);
+    player.sit = true;
+    play(player, 'sit');
+    goalTimer = 0;
+  }
+  const busFare = () => { const f = rows('items').find(i => busItem(i) && !/pass/.test(i.id)); return f ? +f.price : +CFG.bus_fare || 2.5; };
+  const hasPass = () => G && G.pass === G.day;
+
+  // ---------------------------------------------------------------- conversations: an episode's turns
+  const dlg = $('dialog');
+  let talk = null;          // { ep, turns, idx, actor, misses }
+  const personal = (s) => { if (s == null) return ''; s = String(s).replace(/\{name\}/g, G ? G.name : 'Jun'); return G && G.name !== 'Jun' ? s.replace(/\bJun\b/g, G.name) : s; };
+  function speakerOf(id) {
+    if (!id) return talk && talk.actor;
+    if (id === 'player' || id === 'you') return player;
+    return npcActors[id] || (talk && talk.ep.npc === id ? talk.actor : null);
+  }
+  const speakerName = (id) => !id ? (talk ? npcRow(talk.ep.npc).name : '') : (id === 'player' || id === 'you') ? (G ? G.name : 'You') : npcRow(id).name;
+  function beginEpisode(ep, actor) {
+    if (+ep.reward < 0 && G.money + +ep.reward < 0) { toast(`You can't afford this (${usd2(-ep.reward)}).`, '돈이 부족해요.', 'bad'); return; }
+    const turns = TURNS[ep.id] || [];
+    actor = actor || npcActors[ep.npc] || null;
+    talk = { ep, turns, idx: 0, actor, misses: 0 };
+    state = 'talk';
+    goalTarget = null;
+    hideBubbles();
+    if (actor && player) {
+      player.want = Math.atan2(actor.pos.x - player.pos.x, actor.pos.z - player.pos.z);
+      player.sit = false;
+    }
+    if (!turns.length) { completeEpisode(); return; }
+    dlg.hidden = false;
+    $('side').hidden = true;
+    showTurn();
+  }
+  function showTurn() {
+    const t = talk.turns[talk.idx];
+    talk.misses = 0;
+    dlg.classList.remove('answered');
+    dlg.querySelector('.ep').textContent = talk.ep.title;
+    dlg.querySelector('.step').textContent = `${talk.idx + 1} / ${talk.turns.length}`;
+    dlg.querySelector('.situation').textContent = personal(t.situation);
+    dlg.querySelector('.situation-ko').textContent = t.situation_ko || '';
+    dlg.querySelector('.who').textContent = speakerName(t.speaker) + ':';
+    dlg.querySelector('.say').textContent = personal(t.line);
+    dlg.querySelector('.line-ko').textContent = '';
+    dlg.querySelector('.prompt').textContent = personal(t.prompt);
+    dlg.querySelector('.prompt-ko').textContent = t.prompt_ko || '';
+    feedback('', '');
+    const model = personal(t.model);
+    const box = dlg.querySelector('.choices');
+    box.innerHTML = '';
+    shuffle([model].concat((t.distractors || []).slice(0, 3).map(personal))).forEach(text => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = text;
+      b.addEventListener('click', () => {
+        if (dlg.classList.contains('answered')) return;
+        if (text === model) { b.classList.add('right'); answered(text); }
+        else { b.classList.add('wrong'); b.disabled = true; feedback('miss', 'Not quite. Read the situation again.', '상황을 다시 읽어 보세요.'); }
+      });
+      box.appendChild(b);
+    });
+    dlg.querySelector('.typing input').value = '';
+    dlg.querySelector('.leave').hidden = false;
+    dlg.querySelector('.next').hidden = true;
+    setMode(settings.mode === 'choose' ? 'choose' : 'type');
+    const who = speakerOf(t.speaker);
+    if (who && who !== player) { say(who, personal(t.line), null, 4); play(who, 'interact-right', { once: true }); }
+    speak(personal(t.line), voiceOf(npcRow(t.speaker || talk.ep.npc)));
+    if (!model && !(t.answers || []).length) { dlg.classList.add('answered'); showNext(); }
+  }
+  function setMode(mode) {
+    settings.mode = mode;
+    saveSettings();
+    dlg.dataset.mode = mode;
+    dlg.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
+    if (mode === 'type' && !dlg.classList.contains('answered') && !document.body.classList.contains('touch')) setTimeout(() => dlg.querySelector('.typing input').focus(), 0);
+  }
+  function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+  function feedback(kind, en, ko) {
+    const f = dlg.querySelector('.feedback');
+    f.className = 'feedback ' + kind;
+    f.innerHTML = en ? esc(en) + (ko ? `<span class="ko">${esc(ko)}</span>` : '') : '';
+  }
+  dlg.querySelector('.typing').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!talk || dlg.classList.contains('answered')) return;
+    const t = talk.turns[talk.idx];
+    const input = dlg.querySelector('.typing input');
+    const text = input.value.trim();
+    if (!text) return;
+    const same = M.normalize(text) === M.normalize(personal(t.model));
+    if (same || !(t.answers || []).length || M.match(text, t.answers)) { answered(text); return; }
+    talk.misses++;
+    const hints = t.hints || [], hko = t.hints_ko || [];
+    if (talk.misses >= 3) feedback('miss', `Try saying: "${personal(t.model)}"`, '예시 답을 따라 입력해 보세요.');
+    else feedback('miss', 'Hint: ' + (hints[talk.misses - 1] || hints[0] || M.skeleton(t.model)), hko[talk.misses - 1] || hko[0] || '');
+    input.select();
+  });
+  dlg.querySelectorAll('.mode button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+  dlg.querySelector('.leave').addEventListener('click', () => { endTalk(); toast('You can pick up the conversation later.', '나중에 다시 이야기할 수 있어요.', null, 2.4); });
+  function endTalk() {
+    dlg.hidden = true;
+    $('side').hidden = false;
+    talk = null;
+    if (state === 'talk') state = 'play';
+    hideBubbles();
+    goalTimer = 0;
+  }
+  let replyTimer = null;
+  function answered(text) {
+    const t = talk.turns[talk.idx], mine = talk;
+    dlg.classList.add('answered');
+    dlg.querySelector('.leave').hidden = true;
+    say(player, text, null, 3.4);
+    play(player, 'emote-yes', { once: true });
+    feedback('ok', '✓ ' + text);
+    clearTimeout(replyTimer);
+    replyTimer = setTimeout(() => {
+      if (talk !== mine) return;
+      if (t.reply_line) {
+        const rs = t.reply_speaker || t.speaker;
+        dlg.querySelector('.who').textContent = speakerName(rs) + ':';
+        dlg.querySelector('.say').textContent = personal(t.reply_line);
+        dlg.querySelector('.line-ko').textContent = t.reply_ko || '';
+        const who = speakerOf(rs);
+        if (who && who !== player) { say(who, personal(t.reply_line), null, 4.5); play(who, 'interact-left', { once: true }); }
+        speak(personal(t.reply_line), voiceOf(npcRow(rs || talk.ep.npc)));
+      }
+      showNext();
+    }, fastMode ? 250 : 1300);
+  }
+  function showNext() {
+    const next = dlg.querySelector('.next');
+    next.textContent = talk && talk.idx + 1 < talk.turns.length ? 'Continue ▸' : 'Finish ▸';
+    next.hidden = false;
+    next.focus();
+  }
+  dlg.querySelector('.next').addEventListener('click', () => {
+    if (!talk) return;
+    talk.idx++;
+    if (talk.idx < talk.turns.length) showTurn(); else completeEpisode();
+  });
+  function completeEpisode() {
+    const ep = talk.ep;
+    dlg.hidden = true;
+    $('side').hidden = false;
+    talk = null;
+    G.done[ep.id] = true;
+    if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend');
+    if (ep.energy) G.energy = clamp(G.energy + +ep.energy, 0, E_MAX);
+    const learned = rows('phrases').filter(p => p.episode === ep.id && !G.phrases.includes(p.id));
+    learned.forEach(p => G.phrases.push(p.id));
+    logEvent('episode', ep.title, 0, { id: ep.id });
+    saveGame();
+    npcSig = '';
+    const body = [];
+    if (ep.summary) body.push(`<p>${esc(personal(ep.summary))}</p>${ep.summary_ko ? `<p class="ko">${esc(ep.summary_ko)}</p>` : ''}`);
+    if (+ep.reward > 0) body.push(`<p><b>${usd2(+ep.reward)}</b> added to your account.</p>`);
+    if (+ep.reward < 0) body.push(`<p>You paid <b>${usd2(-ep.reward)}</b>. Balance: ${usd2(G.money)}.</p>`);
+    if (learned.length) body.push(`<p><b>New in your Phrasebook</b></p>` + phraseRows(learned));
+    showCard({ kicker: 'Conversation complete', title: ep.title, body: body.join(''), ok: 'Continue', state: 'card' }, () => { goalTimer = 0; });
+  }
+
+  // ---------------------------------------------------------------- panels: shop, bus, inventory, phrasebook, calendar
+  const panel = $('panel');
+  let panelKind = null, panelArg = null, panelBack = 'play';
+  function openPanel(kind, arg) {
+    toggleMenu(false);
+    if (!G) return;
+    if (state === 'talk' || state === 'sleep' || state === 'title') return;
+    panelKind = kind; panelArg = arg;
+    if (state !== 'shop' && state !== 'card') panelBack = state;
+    state = kind === 'shop' || kind === 'bus' ? 'shop' : 'card';
+    panel.hidden = false;
+    panel.querySelector('.panel-note').textContent = '';
+    panel.querySelector('.panel-note').className = 'panel-note';
+    renderPanel();
+  }
+  function closePanel() {
+    panel.hidden = true;
+    panelKind = null;
+    if (state === 'shop' || state === 'card') state = panelBack === 'talk' ? 'play' : (panelBack || 'play');
+    goalTimer = 0;
+  }
+  panel.querySelector('.close').addEventListener('click', closePanel);
+  function note(text, bad) { const n = panel.querySelector('.panel-note'); n.textContent = text; n.className = 'panel-note' + (bad ? ' bad' : ''); }
+  function phraseRows(list) {
+    return list.map(p => `<div class="row"><button type="button" class="play" data-say="${esc(p.text)}" aria-label="Play">▶</button>
+      <div class="main"><div class="t">${esc(personal(p.text))}</div><div class="s">${esc(p.meaning_ko || '')}${p.note ? ' · ' + esc(p.note) : ''}</div>${p.note_ko ? `<div class="s ko">${esc(p.note_ko)}</div>` : ''}</div></div>`).join('');
+  }
+  function renderPanel() {
+    const h = panel.querySelector('h2'), sub = panel.querySelector('.sub'), body = panel.querySelector('.panel-body');
+    sub.textContent = 'Balance ' + usd2(G.money);
+    if (panelKind === 'shop') {
+      h.textContent = place(panelArg).name;
+      body.innerHTML = itemsAt(panelArg).map(i => `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
+        <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
+        <span class="price">${+i.price ? usd2(+i.price) : 'Free'}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? 'Pay' : /meal|drink/.test(i.kind) && !+i.price ? 'Take' : 'Buy'}</button></div>`).join('') || '<p class="empty">Nothing for sale here.</p>';
+    } else if (panelKind === 'bus') {
+      h.textContent = 'Bus';
+      const here = panelArg;
+      const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || (Z.portals || []).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
+      const pass = rows('items').find(i => busItem(i) && /pass/.test(i.id));
+      body.innerHTML = stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')} · about 15 minutes</div></div>
+        <span class="price">${hasPass() ? 'Pass' : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}">Ride</button></div>`).join('') || '<p class="empty">No stops on this line.</p>';
+      if (pass && !hasPass()) body.innerHTML += `<div class="row"><div class="main"><div class="t">${esc(pass.name)}</div><div class="s">${esc(pass.name_ko || '')}${pass.note ? ' · ' + esc(pass.note) : ''}</div></div>
+        <span class="price">${usd2(+pass.price)}</span><button type="button" data-pass="${esc(pass.id)}">Buy</button></div>`;
+    } else if (panelKind === 'inventory') {
+      h.textContent = 'Inventory';
+      const canEat = zoneId === 'home' || zoneId === 'hotel';
+      const list = Object.keys(G.inventory).filter(id => G.inventory[id] > 0);
+      body.innerHTML = list.map(id => { const i = ITEMS[id] || { id, name: pretty(id), energy: 0 }; return `<div class="row"><div class="main"><div class="t">${esc(i.name)} × ${G.inventory[id]}</div>
+        <div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}</div></div>${i.energy ? `<button type="button" data-eat="${esc(id)}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : ''}</div>`; }).join('')
+        || '<p class="empty">Your bag is empty. Groceries you buy at the market go here.</p>';
+    } else if (panelKind === 'phrasebook') {
+      h.textContent = 'Phrasebook';
+      sub.textContent = `${G.phrases.length} phrases`;
+      const got = G.phrases.map(id => PHRASES[id]).filter(Boolean);
+      const byEp = {};
+      got.forEach(p => { (byEp[p.episode] = byEp[p.episode] || []).push(p); });
+      body.innerHTML = Object.keys(byEp).map(eid => `<h3>${esc((EPISODES[eid] || {}).title || pretty(eid))}</h3>` + phraseRows(byEp[eid])).join('')
+        || '<p class="empty">Finish conversations to collect phrases here.</p>';
+    } else if (panelKind === 'calendar') {
+      h.textContent = 'Calendar';
+      sub.textContent = `Week ${Math.floor((G.day - 1) / 7) + 1}`;
+      const d0 = Math.floor((G.day - 1) / 7) * 7 + 1;
+      let html = '';
+      for (let d = d0; d < d0 + 7; d++) {
+        const evs = rows('calendar').filter(c => c.day === d).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
+        const extra = [];
+        if (PAYDAYS.includes(d)) extra.push(`Payday: ${usd(+CFG.salary_net)} direct deposit`);
+        if (isRentDay(d)) extra.push(`Rent due: ${usd(+CFG.rent)}`);
+        if (!evs.length && !extra.length && d !== G.day) continue;
+        html += `<h3>${weekday(d)}, Day ${d}${d === G.day ? ' · today' : ''}</h3>`;
+        html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
+        html += evs.map(c => { const done = c.episode && G.done[c.episode]; const past = d < G.day || (d === G.day && hm(c.time, 0) < G.minute - 60);
+          return `<div class="row${done ? ' done' : ''}${past && !done ? ' past' : ''}"><span class="when">${esc(c.time)}</span><div class="main"><div class="t">${esc(c.title)}</div><div class="s">${c.place ? esc(place(c.place).name) : ''}${c.title_ko ? ' · ' + esc(c.title_ko) : ''}</div></div></div>`; }).join('');
+        if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
+      }
+      body.innerHTML = html;
+    }
+  }
+  panel.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.say) speak(b.dataset.say);
+    if (b.dataset.buy) buy(b.dataset.buy);
+    if (b.dataset.eat) eat(b.dataset.eat);
+    if (b.dataset.ride) ride(b.dataset.ride);
+    if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note("You can't afford that.", true); else { pay(-it.price, it.name, 'spend'); G.pass = G.day; saveGame(); renderPanel(); note('Day pass bought. Ride as much as you like today.'); } }
+  });
+  $('card').addEventListener('click', (e) => { const b = e.target.closest('button[data-say]'); if (b) speak(b.dataset.say); });
+  function buy(id) {
+    const i = ITEMS[id];
+    if (!i || !G) return false;
+    const price = +i.price;
+    if (G.money < price) { if (!panel.hidden) note("You can't afford that.", true); speak("Sorry, you can't afford that."); return false; }
+    pay(-price, i.name, 'spend');
+    speak(i.name);
+    if (i.kind === 'fare') note(`Paid ${usd2(price)}: ${i.name}.`);
+    else if (/^(meal|drink)$/.test(i.kind)) {
+      G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
+      advanceMinutes(i.kind === 'meal' ? 20 : 5);
+      note(`${i.name}: ${usd2(price)}. Energy +${i.energy || 0}.`);
+      if (player) play(player, 'interact-right', { once: true });
+    } else {
+      G.inventory[id] = (G.inventory[id] || 0) + 1;
+      note(`${i.name} is in your bag (${G.inventory[id]}).`);
+    }
+    saveGame();
+    if (!panel.hidden) { const n = panel.querySelector('.panel-note').textContent; renderPanel(); panel.querySelector('.panel-note').textContent = n; }
+    return true;
+  }
+  function eat(id) {
+    if (!G.inventory[id]) return;
+    const i = ITEMS[id] || { energy: 0, name: pretty(id) };
+    G.inventory[id]--;
+    if (!G.inventory[id]) delete G.inventory[id];
+    G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
+    advanceMinutes(10);
+    logEvent('eat', i.name, 0);
+    saveGame();
+    renderPanel();
+    note(`You ate the ${i.name.toLowerCase()}. Energy +${i.energy || 0}.`);
+  }
+  async function ride(pid) {
+    const fare = hasPass() ? 0 : busFare();
+    if (G.money < fare) { note("You can't afford the fare.", true); return; }
+    if (fare) pay(-fare, 'Bus fare', 'spend');
+    closePanel();
+    advanceMinutes(15);
+    await enterZone('city', pid);
+    toast(`You ride the bus to ${place(pid).name}.`, `버스를 타고 ${place(pid).name_ko || place(pid).name}에 왔어요.`);
+  }
+
+  // ---------------------------------------------------------------- sleep: the end of a day
+  const isRentDay = (d) => d >= RENT_DAY && (d - RENT_DAY) % 30 === 0;
+  function trySleep(pid) {
+    if (G.minute < 20 * 60 && G.energy > 25) { toast("It's too early to sleep. Come back after 8 PM.", '아직 잘 시간이 아니에요. 오후 8시 이후에 오세요.'); return; }
+    goToSleep(false, pid);
+  }
+  function goToSleep(late, pid) {
+    if (!G) return;
+    if (talk) endTalk();
+    if (!panel.hidden) closePanel();
+    const day = G.day;
+    const today = G.log.filter(l => l.day === day);
+    const eps = today.filter(l => l.type === 'episode');
+    const spent = -today.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0);
+    const earned = today.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0);
+    const phrasesToday = eps.reduce((n, l) => n + rows('phrases').filter(p => p.episode === l.id).length, 0);
+    const missed = rows('episodes').filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1));
+    const away = TRAVEL_ZONES.includes(zoneId);
+    logEvent('sleep', late ? 'Fell asleep' : 'Slept', 0);
+    G.day += 1;
+    G.minute = DAY_START;
+    G.energy = E_MAX;
+    const morning = [];
+    if (PAYDAYS.includes(G.day)) { pay(+CFG.salary_net, 'Paycheck (direct deposit)', 'income'); morning.push(`Payday: <b>${usd2(+CFG.salary_net)}</b> was deposited to your account (gross ${usd(+CFG.salary_gross)}).`); }
+    if (isRentDay(G.day)) { pay(-CFG.rent, 'Rent', 'spend'); morning.push(`Rent: <b>${usd2(+CFG.rent)}</b> was paid to your landlord.`); }
+    const cal = rows('calendar').filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
+    const body = `<div class="sum"><div><b>${eps.length}</b>conversations</div><div><b>${phrasesToday}</b>new phrases</div><div><b>${usd2(spent)}</b>spent</div><div><b>${usd2(earned)}</b>earned</div></div>
+      ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(l.text)}</li>`).join('') + '</ul>' : ''}
+      ${missed.length ? `<p>Missed: ${missed.map(e => esc(e.title)).join(', ')}</p>` : ''}
+      <h3>${weekday(G.day)}, Day ${G.day}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
+      ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(c.title)}${c.place ? ' · ' + esc(place(c.place).name) : ''}</li>`).join('') + '</ul>' : `<p>${G.day % 7 === 6 || G.day % 7 === 0 ? 'Weekend. No work today.' : 'Nothing on the calendar.'}</p>`}
+      <p>Balance: <b>${usd2(G.money)}</b></p>`;
+    saveGame();
+    state = 'sleep';
+    const wake = pid && zoneId ? [zoneId, pid] : away ? ['hotel', 'hotel_room'] : ['home', 'home_bed'];
+    const p = enterZone(wake[0], wake[1]).then(() => { if (player) player.heading += 0; saveGame(); });
+    showCard({ kicker: late ? 'You fell asleep' : 'Good night', title: `${weekday(day)}, Day ${day} is over`, body, ok: 'Start the day', state: 'sleep' }, () => { goalTimer = 0; });
+    return p;
+  }
+
+  // ---------------------------------------------------------------- cards (conversation complete, day summary)
+  let cardDone = null;
+  function showCard(c, then) {
+    const card = $('card');
+    card.querySelector('.kicker').textContent = c.kicker || '';
+    card.querySelector('h2').textContent = c.title || '';
+    card.querySelector('.card-body').innerHTML = c.body || '';
+    card.querySelector('.ok').textContent = c.ok || 'Continue';
+    card.hidden = false;
+    state = c.state || 'card';
+    cardDone = then || null;
+    setTimeout(() => card.querySelector('.ok').focus(), 50);
+  }
+  function closeCard() {
+    $('card').hidden = true;
+    state = 'play';
+    const f = cardDone;
+    cardDone = null;
+    if (f) f();
+  }
+  $('card').querySelector('.ok').addEventListener('click', closeCard);
+
+  // ---------------------------------------------------------------- menu
+  function toggleMenu(on) {
+    const m = $('menu');
+    m.hidden = on == null ? !m.hidden : !on;
+    $('menu-btn').setAttribute('aria-expanded', String(!m.hidden));
+  }
+  $('menu-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
+  document.addEventListener('click', (e) => { if (!$('menu').hidden && !e.target.closest('#menu')) toggleMenu(false); });
+  $('menu').addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const what = b.dataset.open;
+    toggleMenu(false);
+    if (what === 'title') { saveGame(); showTitle(); }
+    else if (what === 'reset') { if (confirm('Delete your saved game and start over?')) { resetGame(); } }
+    else openPanel(what);
+  });
+  function resetGame() {
+    store.del(SAVE_KEY);
+    G = null;
+    if (talk) endTalk();
+    panel.hidden = true;
+    $('card').hidden = true;
+    showTitle();
+  }
+
+  // ---------------------------------------------------------------- title: name, character, continue / new game
+  let state = 'title';
+  let chosen = settings.model && CHARACTERS.includes(settings.model) ? settings.model : 'character-male-a';
+  const nameIn = $('name-in');
+  nameIn.value = settings.name || CFG.player_name || 'Jun';
+  const charBox = $('chars');
+  CHARACTERS.forEach(id => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'radio');
+    b.dataset.model = id;
+    b.textContent = charLabel(id);
+    b.addEventListener('click', () => { chosen = id; markChosen(); });
+    charBox.appendChild(b);
+  });
+  function markChosen() {
+    charBox.querySelectorAll('button').forEach(b => {
+      b.setAttribute('aria-checked', String(b.dataset.model === chosen));
+      b.classList.toggle('nomodel', packs[b.dataset.model] && packs[b.dataset.model].status === 'missing');
+    });
+    setPreview(chosen);
+  }
+  const preview = { renderer: null, scene: null, camera: null, actor: null, model: null };
+  function setPreview(model) {
+    if (!packReady(model)) { if (preview.actor) { preview.scene.remove(preview.actor.holder); preview.actor = null; } preview.model = null; renderPreview(0); return; }
+    if (!preview.renderer) {
+      try {
+        preview.renderer = new T.WebGLRenderer({ canvas: $('preview'), antialias: true, alpha: true });
+        preview.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        const c = $('preview');
+        preview.renderer.setSize(c.clientWidth || 150, c.clientHeight || 184, false);
+        preview.scene = new T.Scene();
+        preview.scene.add(new T.HemisphereLight(0xffffff, 0x807060, 1.4));
+        const l = new T.DirectionalLight(0xffffff, 2);
+        l.position.set(2, 3, 4);
+        preview.scene.add(l);
+        preview.camera = new T.PerspectiveCamera(30, (c.clientWidth || 150) / (c.clientHeight || 184), 0.05, 20);
+        preview.camera.position.set(0, 0.5, 2.1);
+        preview.camera.lookAt(0, 0.33, 0);
+      } catch (e) { preview.renderer = null; return; }
+    }
+    if (preview.model === model) return;
+    if (preview.actor) preview.scene.remove(preview.actor.holder);
+    preview.actor = makeActor('preview', model);
+    preview.model = model;
+    preview.scene.add(preview.actor.holder);
+  }
+  function renderPreview(dt) {
+    if (!preview.renderer) return;
+    if (preview.actor) {
+      preview.t = (preview.t || 0) + dt;
+      preview.actor.heading = Math.sin(preview.t * 0.7) * 1.1;
+      preview.actor.holder.rotation.y = preview.actor.heading;
+      if (preview.actor.mixer) preview.actor.mixer.update(dt);
+    }
+    preview.renderer.render(preview.scene, preview.camera);
+  }
+  function showTitle() {
+    state = 'title';
+    $('title').hidden = false;
+    $('side').hidden = true;
+    $('acts').innerHTML = '';
+    actSig = '';
+    const s = store.get(SAVE_KEY);
+    const cont = $('continue');
+    cont.hidden = !s;
+    if (s) cont.textContent = `Continue: ${s.name}, ${weekday(s.day).slice(0, 3)} Day ${s.day}, ${clock(s.minute)}`;
+    markChosen();
+  }
+  async function startGame(g, fresh) {
+    G = g;
+    settings.name = G.name; settings.model = G.model;
+    saveSettings();
+    $('title').hidden = true;
+    state = 'play';
+    busy = true;
+    if (G.at && !fresh) await enterZone(G.zone || 'home', null, G.at, G.heading);
+    else await enterZone(G.zone || 'home', 'home_bed');
+    $('side').hidden = false;
+    goalTimer = 0;
+    hud();
+    if (fresh) {
+      toast(`${weekday(G.day)}, Day ${G.day}. Welcome to ${CFG.city}, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
+      logEvent('start', 'New game', 0);
+      saveGame();
+    }
+  }
+  $('new-game').addEventListener('click', () => {
+    if (store.get(SAVE_KEY) && !confirm('Start a new game? Your saved game will be replaced.')) return;
+    startGame(newGame(nameIn.value, chosen), true);
+  });
+  $('continue').addEventListener('click', () => {
+    const s = store.get(SAVE_KEY);
+    if (!s) return;
+    startGame(Object.assign(newGame(s.name, s.model), s), false);
+  });
+  window.addEventListener('pagehide', saveGame);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
+
+  // ---------------------------------------------------------------- the api a zone file's setup/update sees
+  const api = {
+    T, scene, camera, toon, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
+    get zone() { return zoneId; }, get spec() { return Z; }, get group() { return zoneGroup; }, get player() { return player; },
+    get npcs() { return npcActors; }, get props() { return zoneProps; }, get game() { return G; }, get state() { return state; },
+    get day() { return G ? G.day : 0; }, get minute() { return G ? G.minute : 0; }, isDone: (id) => !!(G && G.done[id]),
+    solid: (x0, z0, x1, z1) => solids.push({ x0, z0, x1, z1 })
+  };
+
+  // ---------------------------------------------------------------- frame loop
+  const timer = new T.Timer();
+  let elapsed = 0, debugSpeed = 1, fastMode = false;
+  function frame() {
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1);
+    elapsed += dt;
+    if (state === 'play' && !busy && G) tickClock(dt);
+    playerTick(dt);
+    npcTick(dt, elapsed);
+    portalTick();
+    if (Z && Z.update) { try { Z.update(api, dt); } catch (e) { console.error(`zones/${zoneId}.js update:`, e); Z.update = null; } }
+    if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) refreshNpcs(false); updateGoal(); }
+    if ((actTimer -= dt) <= 0) { actTimer = 0.12; actions = computeActions(); renderActions(); }
+    if ((hudTimer -= dt) <= 0) { hudTimer = 0.25; hud(); }
+    if ((envTimer -= dt) <= 0) { envTimer = 1; applyEnvironment(); }
+    markerTick(elapsed);
+    cameraTick(dt);
+    placeBubbles();
+    placeTags();
+    renderer.render(scene, camera);
+    if (state === 'title') renderPreview(dt);
+  }
+
+  // ---------------------------------------------------------------- start: zone files, character models, title
+  let ready = false;
+  async function boot() {
+    window.SO_ZONES = window.SO_ZONES || {};
+    try { await loadScript('zones/index.js'); } catch (e) { /* no zone files yet */ }
+    window.SO_ZONES = window.SO_ZONES || {};
+    zoneFiles = Array.isArray(window.SO_ZONE_FILES) ? window.SO_ZONE_FILES.slice() : [];
+    const missing = [];
+    await Promise.all(zoneFiles.map(z => loadScript(`zones/${z}.js`).catch(() => missing.push(z))));
+    const all = Array.from(new Set(zoneFiles.concat(Object.keys(BUILTIN_PLACES))));
+    const generated = all.filter(z => !window.SO_ZONES[z]);
+    if (generated.length) console.warn(`Sim Office: no zone file for ${generated.join(', ')}; using generated rooms`);
+    ZONE_ORDER.push(...all);
+    renderer.setAnimationLoop(frame);
+    await Promise.all(CHARACTERS.map(loadPack));
+    reportMissing();
+    markChosen();
+    const btn = $('new-game');
+    btn.disabled = false;
+    btn.textContent = 'New game';
+    showTitle();
+    ready = true;
+    enterZone('city').catch(e => console.error(e));        // the backdrop behind the title
+  }
+  const ZONE_ORDER = [];
+  boot().catch(e => { console.error(e); $('new-game').textContent = 'Could not start'; });
+
+  // ---------------------------------------------------------------- for tests (headless Chrome): SO.debug
+  const wait = (ms) => new Promise(r => setTimeout(r, ms));
+  async function until(cond, ms) { for (let t = 0; t < (ms || 5000); t += 50) { if (cond()) return true; await wait(50); } return false; }
+  function nearSpot(ep) {           // where to stand to talk: in front of the person
+    const pid = isPhone(ep) ? ep.place : npcPlaceNow(npcRow(ep.npc)) || ep.place;
+    return { zone: zoneOfPlace(pid), pid };
+  }
+  const debug = {
+    get ready() { return ready; }, get state() { return state; }, get busy() { return busy; },
+    get day() { return G ? G.day : null; }, get time() { return G ? hhmm(G.minute) : null; }, get minute() { return G ? G.minute : null; },
+    get money() { return G ? G.money : null; }, get energy() { return G ? Math.round(G.energy * 10) / 10 : null; }, get zone() { return zoneId; },
+    get zones() { return ZONE_ORDER.slice(); }, get save() { return G ? JSON.parse(JSON.stringify(G)) : store.get(SAVE_KEY); },
+    get actions() { return actions.map(a => a.label); }, get npcs() { return Object.keys(npcActors); },
+    get models() { const o = {}; Object.keys(packs).forEach(k => { o[k] = packs[k].status; }); return o; },
+    set speed(v) { debugSpeed = +v || 1; }, set fast(v) { fastMode = !!v; },
+    async start(name, model) {
+      await until(() => ready, 20000);
+      if (talk) endTalk();
+      $('card').hidden = true; panel.hidden = true;
+      await startGame(newGame(name || CFG.player_name, model || 'character-male-a'), true);
+      return true;
+    },
+    async goto(zone, placeId) {
+      if (!G) await this.start();
+      if (talk) endTalk();
+      if (!$('card').hidden) closeCard();
+      if (!panel.hidden) closePanel();
+      state = 'play';
+      await enterZone(zone, placeId || null);
+      return zoneId;
+    },
+    episodes() { return openEpisodes().map(e => e.id); },
+    setTime(t) { if (G) { G.minute = typeof t === 'number' ? t : hm(t, G.minute); goalTimer = 0; npcSig = ''; refreshNpcs(true); } return this.time; },
+    setDay(d) { if (G) { G.day = +d; goalTimer = 0; refreshNpcs(true); } return G && G.day; },
+    async startEpisode(id) {
+      const ep = EPISODES[id];
+      if (!ep) throw new Error('no episode ' + id);
+      if (!G) await this.start();
+      if (!$('card').hidden) closeCard();
+      if (!panel.hidden) closePanel();
+      if (talk) endTalk();
+      state = 'play';
+      const s = nearSpot(ep);
+      if (s.zone && !placeIn(s.pid, zoneId)) await enterZone(s.zone, s.pid);
+      npcSig = '';
+      refreshNpcs(true);
+      if (isPhone(ep)) {
+        const at = (Z.places[ep.place] || { at: [0, 0] }).at;
+        player.pos.set(at[0], 0, at[1]);
+        collide(player.pos, true);
+        beginEpisode(ep, null);
+        return state;
+      }
+      await until(() => npcActors[ep.npc] || !npcRow(ep.npc), 3000);
+      const a = npcActors[ep.npc];
+      if (a) {
+        const spot = freeSpot(a, 0.9);
+        collide(spot, true);
+        player.pos.copy(spot);
+        player.heading = Math.atan2(a.pos.x - spot.x, a.pos.z - spot.z);
+        cam.ready = false;
+      }
+      beginEpisode(ep, a || null);
+      return state;
+    },
+    // finish what is on screen now: answer the turn with the model answer, continue, or close a card or panel
+    async advance() {
+      if (state === 'talk' && talk) {
+        const t = talk.turns[talk.idx];
+        if (!dlg.classList.contains('answered')) answered(personal(t.model));
+        await until(() => !dlg.querySelector('.next').hidden, 4000);
+        dlg.querySelector('.next').click();
+        await wait(60);
+        return 'turn';
+      }
+      if (!$('card').hidden) { closeCard(); await wait(60); return 'card'; }
+      if (!panel.hidden) { closePanel(); return 'panel'; }
+      return state;
+    },
+    async autoplayEpisode(id) {
+      if (!(talk && talk.ep.id === id)) await this.startEpisode(id);
+      for (let i = 0; i < 30 && (state === 'talk' || state === 'card'); i++) await this.advance();
+      return !!(G && G.done[id]);
+    },
+    async sleep() {
+      if (!G) return false;
+      if (talk) endTalk();
+      if (!panel.hidden) closePanel();
+      if (!$('card').hidden) closeCard();
+      state = 'play';
+      await goToSleep(false);
+      await until(() => !busy, 8000);
+      return G.day;
+    },
+    buy(itemId) { return buy(itemId); },
+    panel(kind, arg) { openPanel(kind, arg); return state; },
+    closeCard() { if (!$('card').hidden) closeCard(); if (!panel.hidden) closePanel(); return state; },
+    reset() { resetGame(); store.del(SET_KEY); return true; },
+    // what stands between the player and the camera (for tuning zone files)
+    blockers() {
+      if (!player) return [];
+      const from = new T.Vector3(player.pos.x, 0.9, player.pos.z), sx = Math.sin(player.heading), sz = Math.cos(player.heading);
+      return [[2.6, 1.55], [3.3, 1.85]].map(([b, h]) => {
+        const to = new T.Vector3(player.pos.x - sx * b, h, player.pos.z - sz * b);
+        inRoom(to);
+        const d = to.clone().sub(from), l = d.length();
+        ray.set(from, d.normalize()); ray.far = l;
+        const hit = ray.intersectObjects(occluders, true)[0];
+        if (!hit) return null;
+        let o = hit.object, spec = null;
+        while (o && !spec) { const rec = Object.values(zoneProps).find(r => r.holder === o); if (rec) spec = rec.spec; o = o.parent; }
+        const holder = occluders.find(h => { let q = hit.object; while (q) { if (q === h) return true; q = q.parent; } return false; });
+        return { dist: +hit.distance.toFixed(2), mesh: hit.object.name, at: holder ? [+holder.position.x.toFixed(2), +holder.position.z.toFixed(2)] : null };
+      });
+    }
+  };
+  window.SO = { debug, api, keys };
+})();

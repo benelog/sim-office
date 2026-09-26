@@ -1,0 +1,117 @@
+/* Airport: the terminal of Fairview Regional Airport, one hall of 22 x 10. The shuttle from downtown drops
+   you at the west door (airport_door). Check-in counters line the north wall of the west half, with Amy at
+   the middle one (airport_checkin). Security splits the hall: a rope line runs north-south with one lane
+   past the X-ray belt (bins on a counter) and through the scanner frame, where Lee checks you
+   (airport_security). East of it is the gate: rows of cushioned benches (airport_gate), a gate desk and
+   flight screens, and the boarding door in the east wall, which takes you to the hotel on the other end of
+   the trip (airport_arrive; you also come back through it). */
+(function () {
+  var K = SO_ZONE_KIT;
+  function f(node, x, z, turn, extra) { return K.prop('furniture', node, x, z, turn, extra); }
+  function food(node, x, z, turn, extra) { return K.prop('food', node, x, z, turn, extra); }
+  function box(size, x, z, color, extra) {
+    var o = { pack: 'box', size: size, at: [x, z], color: color };
+    for (var k in extra) o[k] = extra[k];
+    return o;
+  }
+  var D = 0.384;
+  var props = [];
+  function add(list) { props = props.concat(list); }
+
+  add(K.walls(22, 10, { n: 'wwwwwwwwwwwwwWWwWWwWWw', s: 'wwWWwwWWwwwwwWWwWWwWWw', w: 'wwwwwwwDww', e: 'wwDwWWwWWw' }));
+
+  // ----- check-in: five counters along the north wall, agents stand behind them
+  [-9.0, -8.0, -7.0, -6.0, -5.0].forEach(function (x) {
+    add([
+      f('desk', x, -2.8, 180, { solid: 'fit' }),
+      f('computerScreen', x + 0.1, -2.9, 180, { lift: D }),
+      f('cardboardBoxClosed', x + 0.5, -2.8, 0, { solid: 'fit' })
+    ]);
+  });
+  add([
+    box([4.6, 0.3, 0.05], -7.0, -4.9, '#2b5d8a', { lift: 0.95 }),        // "Check-in" sign board
+    f('coatRackStanding', -9.4, -1.5, 0, { solid: 'fit' }),
+    f('coatRackStanding', -7.9, -1.5, 0, { solid: 'fit' }),
+    f('coatRackStanding', -6.1, -1.5, 0, { solid: 'fit' }),
+    f('coatRackStanding', -4.6, -1.5, 0, { solid: 'fit' }),
+    f('cardboardBoxClosed', -10.6, -4.6, 0, { solid: 'fit' }),
+    f('cardboardBoxClosed', -10.6, -4.6, 15, { lift: 0.28 }),
+    f('cardboardBoxOpen', -10.55, -4.2, 0, { solid: 'fit' }),
+    f('pottedPlant', -10.6, 4.5, 0, { solid: 'fit' }),
+    f('pottedPlant', -10.6, 0.6, 0, { solid: 'fit' }),
+    f('loungeDesignSofa', -7.5, 4.72, 180, { solid: 'fit' }),
+    f('loungeDesignSofa', -5.8, 4.72, 180, { solid: 'fit' }),
+    f('trashcan', -4.7, 4.7, 0, { solid: 'fit' })
+  ]);
+
+  // ----- security: X-ray belt, bins, scanner frame, and a rope line from wall to wall with one gap
+  for (var i = 0; i < 7; i++) add([f('kitchenBar', -2.0 + 0.43 * i, 0.25, 0, { solid: 'fit' })]);
+  add([
+    f('cardboardBoxOpen', -1.6, 0.22, 0, { lift: 0.42 }),
+    f('cardboardBoxOpen', -0.6, 0.22, 0, { lift: 0.42 }),
+    food('bag', -0.1, 0.22, 90, { lift: 0.42, scale: 0.5 }),
+    f('cardboardBoxOpen', 0.5, 0.22, 0, { lift: 0.42 }),
+    box([0.7, 0.55, 0.5], 0.35, 0.25, '#9aa3b5'),   // X-ray tunnel over the belt
+    box([0.15, 1.1, 0.15], 1.4, 0.42, '#c8ccd4', { solid: [0.15, 0.15] }),  // scanner frame
+    box([0.15, 1.1, 0.15], 1.4, 1.98, '#c8ccd4', { solid: [0.15, 0.15] }),
+    box([0.15, 0.14, 1.71], 1.4, 1.2, '#c8ccd4', { lift: 1.1 }),
+    f('desk', 2.3, -0.9, 90, { solid: 'fit' }),
+    f('computerScreen', 2.3, -0.9, 90, { lift: D })
+  ]);
+  function rope(z0, z1) {
+    var out = [], n = Math.max(1, Math.round((z1 - z0) / 1.1)), step = (z1 - z0) / n;
+    for (var k = 0; k <= n; k++) out.push(f('coatRackStanding', 1.4, z0 + k * step, 0));
+    out.push(box([0.04, 0.04, z1 - z0], 1.4, (z0 + z1) / 2, '#b03030', { lift: 0.55, solid: [0.2, z1 - z0] }));
+    return out;
+  }
+  add(rope(-4.85, 0.3));
+  add(rope(2.1, 4.85));
+
+  // ----- gate: benches, gate desk, flight screens
+  [[-1.3, 180], [-0.9, 0], [1.9, 180], [2.3, 0]].forEach(function (row) {
+    for (var b = 0; b < 9; b++) {
+      var x = 4.4 + 0.4 * b, seat = row[0] === -1.3 && b === 4;   // airport_gate: that seat stays free to sit on
+      add([f('benchCushion', x, row[0], row[1], seat ? {} : { solid: 'fit' })]);
+    }
+  });
+  add([
+    f('desk', 9.8, 0.3, 270, { solid: 'fit' }),
+    f('desk', 9.8, 1.03, 270, { solid: 'fit' }),
+    f('computerScreen', 9.85, 0.5, 270, { lift: D }),
+    f('televisionModern', 6.0, -4.92, 0, { lift: 0.6 }),
+    f('televisionModern', 7.2, -4.92, 0, { lift: 0.6 }),
+    box([2.6, 0.25, 0.05], 10.9, -2.5, '#2b5d8a', { lift: 1.0, turn: 90 }),   // "Gate 3" sign over the door
+    f('pottedPlant', 3.6, -4.5, 0, { solid: 'fit' }),
+    f('pottedPlant', 10.5, 4.5, 0, { solid: 'fit' }),
+    f('pottedPlant', 3.6, 4.5, 0, { solid: 'fit' }),
+    f('trashcan', 8.3, 4.6, 0, { solid: 'fit' }),
+    f('coatRackStanding', 9.2, -1.4, 0, { solid: 'fit' }),
+    f('coatRackStanding', 9.2, -3.6, 0, { solid: 'fit' })
+  ]);
+
+  SO_ZONES.airport = {
+    name: 'Fairview Regional Airport', name_ko: '페어뷰 지역 공항',
+    indoor: true,
+    size: [22, 10],
+    floor: '#d6d8dc',
+    props: props,
+    places: {
+      airport_checkin: { at: [-7.0, -3.4], face: [-7.0, -2.0] },
+      airport_security: { at: [2.3, -0.1], face: [1.6, 1.2] },
+      airport_gate: { at: [6.0, -1.36], face: [6.0, -2.4], sit: true },
+      airport_door: { at: [-9.4, 2.5], face: [-7.5, 1.2] },
+      airport_arrive: { at: [9.4, -2.5], face: [7.5, -1.8] }
+    },
+    portals: [
+      { at: [-10.7, 2.5], size: [0.5, 0.9], to: 'city', arrive: 'airport_shuttle', label: 'Take the shuttle downtown', label_ko: '시내 셔틀 타기' },
+      { at: [10.7, -2.5], size: [0.5, 0.9], to: 'hotel', arrive: 'hotel_shuttle', label: 'Board your flight', label_ko: '비행기 타기' }
+    ],
+    spawn: 'airport_door',
+    lights: [
+      { at: [-7, -1], height: 1.25, color: '#ffffff', intensity: 1.1 },
+      { at: [0, 1], height: 1.25, color: '#ffffff', intensity: 1.0 },
+      { at: [7, 0.5], height: 1.25, color: '#fff4e0', intensity: 1.0 }
+    ],
+    ambient: 1.0
+  };
+})();

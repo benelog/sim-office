@@ -2,98 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>The Little Prince · Play it in 3D · Sim Office</title>
-<meta name="description" content="Walk through The Little Prince in 3D, chapter by chapter, and speak your lines in English.">
-<meta name="theme-color" content="#0b1230">
-<link rel="icon" href="icon.svg" type="image/svg+xml">
-<link rel="stylesheet" href="game.css">
+<meta http-equiv="refresh" content="0; url=office/index.html">
+<title>Sim Office</title>
 </head>
 <body>
-<canvas id="view" aria-label="The scene of the chapter"></canvas>
-<div id="bubbles" aria-live="polite"></div>
-
-<header id="bar">
-  <a id="back" href="#">← Chapters</a>
-  <div class="title"><b>The Little Prince</b> <span id="where"></span></div>
-  <label class="opt"><input type="checkbox" id="voice-on" checked> Voice</label>
-  <label class="opt"><input type="checkbox" id="ko-on"> Korean help</label>
-</header>
-
-<div id="goal" hidden>
-  <div class="en"></div>
-  <div class="ko"></div>
-</div>
-<div id="meter" hidden><div class="fill"></div><span></span></div>
-
-<button id="act" type="button" hidden>Talk <kbd>E</kbd></button>
-<div id="stick" aria-hidden="true"><div class="knob"></div></div>
-
-<section id="dialog" hidden>
-  <p class="situation"></p>
-  <p class="situation-ko ko"></p>
-  <p class="line"><b class="who"></b> <span class="say"></span></p>
-  <p class="prompt"></p>
-  <p class="prompt-ko ko"></p>
-  <div class="choices"></div>
-  <form class="typing" autocomplete="off">
-    <input type="text" name="answer" placeholder="Type what you say, in English" spellcheck="false" aria-label="Your answer">
-    <button type="submit">Say</button>
-  </form>
-  <p class="feedback"></p>
-  <div class="foot">
-    <div class="mode" role="group" aria-label="Answer mode">
-      <button type="button" data-mode="type">Type</button><button type="button" data-mode="choose">Choose</button>
-    </div>
-    <button type="button" class="leave">Walk away</button>
-    <button type="button" class="next" hidden>Continue ▸</button>
-  </div>
-</section>
-
-<div id="splash">
-  <div class="card">
-    <p class="kicker"></p>
-    <h1></h1>
-    <p class="summary"></p>
-    <p class="summary-ko ko"></p>
-    <p class="role"></p>
-    <p class="intro"></p>
-    <p class="intro-ko ko"></p>
-    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd><br>
-      <span class="touch-only">On a phone, drag the circle at the bottom left.</span></p>
-    <button id="start" type="button" disabled>Loading…</button>
-  </div>
-</div>
-
-<div id="menu" hidden>
-  <div class="card wide">
-    <p class="kicker">Antoine de Saint-Exupéry</p>
-    <h1>The Little Prince in 3D</h1>
-    <p>Walk into each chapter, meet the characters and speak your lines in English.</p>
-    <p class="ko">장마다 3D 장면 속을 걸어 다니며 인물을 만나고, 내 대사를 영어로 말해 보세요.</p>
-    <ol id="chapters"></ol>
-    <p class="small">Characters are new models on the skeleton and animations of Kenney's Mini Characters; ground cover and other pieces from Kenney's kits (all CC0). Built with three.js (MIT).</p>
-  </div>
-</div>
-
-<div id="done" hidden>
-  <div class="card">
-    <h2 id="done-title"></h2>
-    <p id="done-text"></p>
-    <p id="done-ko" class="ko"></p>
-    <div class="buttons">
-      <a id="next-ch" class="btn" href="#" hidden>Next chapter ▸</a>
-      <button id="stay" type="button">Keep walking</button>
-      <a id="to-book" class="btn" href="#">Back to the book</a>
-    </div>
-  </div>
-</div>
-
-<script src="lib/storage.js"></script>
-<script src="lib/matcher.js"></script>
-<script src="data/scenes.js"></script>
-<script src="vendor/three-game.min.js"></script>
-<script src="levels/index.js"></script>
-<script src="game.js"></script>
+<p><a href="office/index.html">Sim Office</a></p>
 </body>
 </html>
