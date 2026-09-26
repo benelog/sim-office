@@ -270,6 +270,8 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
   //   opts.floor: pattern name or { pattern, a, b } for the whole room; opts.floors: [{ pattern, rect: [x0, z0, x1, z1] }]
   //   opts.walls: { color, back, trim, base, scale }   (back: the other side; scale: height of the pieces, 1 = 1.29)
   //   opts.ground: { pattern, y, strips: [{ pattern, rect, dir: 'x' | 'z' }] }   (the land around the room)
+  //   opts.mountains: { side: 'n' | 's' | 'w' | 'e', from, depth, width, height, seed }   (a range beyond the town)
+  //   opts.sea: { side, from, beach, width, depth }   (the sea beyond the town, a strip of sand before it)
   //   opts.tower: { top, bottom, color }   (the building under a room that is not on the ground floor)
   //   opts.skyline: { kind: 'city' | 'suburb' | 'airport' | 'harbor', seed, r, y, h }
   //   opts.panels: [{ kind, wall: 'n' | 's' | 'w' | 'e', along, y, w, h, ... }] or with at: [x, z] and turn
@@ -319,6 +321,75 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
     m.position.set((rect[0] + rect[2]) / 2, y, (rect[1] + rect[3]) / 2);
     m.receiveShadow = true;
     return m;
+  }
+
+  // the country beyond the town's edge (the city zone): the local -z of a piece is "away from town"; a side turns it
+  function sideTurn(side) { return { n: 0, w: Math.PI / 2, s: Math.PI, e: -Math.PI / 2 }[side || 'n']; }
+  function sidePlace(mesh, side, from) {       // the near edge of the piece `from` out of the centre, on that side
+    var t = sideTurn(side);
+    mesh.rotation.y = t;
+    mesh.position.set(-Math.sin(t) * from, mesh.position.y, -Math.cos(t) * from);
+    return mesh;
+  }
+  // A range of mountains: a strip of triangles `width` long along the side and `depth` deep, foothills at the near
+  // edge rising to a ridge of peaks (sums of bumps along the strip), coloured by height (forest, rock, snow) and flat
+  // shaded. Lit like the props and dimmed after dark with the rest of the outside.
+  function mountains(api, keep, o) {
+    var T = api.T, W = o.width || 300, D = o.depth || 36, H = o.height || 16, r = rng(o.seed || 3);
+    var nx = Math.round(W / 4), nz = Math.max(4, Math.round(D / 4));
+    var peaks = [];
+    for (var i = 0; i < Math.round(W / 14); i++) peaks.push([(r() - 0.5) * W, 0.45 + r() * 0.55, 8 + r() * 12]);   // x, height, half-width
+    function h(x, v) {          // v: 0 at the near edge (the foothills) .. 1 at the far edge
+      var s = 0;
+      peaks.forEach(function (pk) { var d = (x - pk[0]) / pk[2]; s += pk[1] * Math.exp(-d * d); });
+      var rise = v < 0.55 ? Math.pow(v / 0.55, 1.6) : 1 - 0.35 * (v - 0.55) / 0.45;       // up to the ridge, then a little down
+      return H * Math.min(1.35, s) * rise * (0.85 + 0.15 * Math.sin(x * 0.7) * Math.sin(x * 0.23));
+    }
+    var pos = [], col = [], c = new T.Color(), low = new T.Color('#5f9250'), mid = new T.Color('#7f8a77'), top = new T.Color('#eef2f5');
+    function vert(i, k) {
+      var x = -W / 2 + i * W / nx, v = k / nz, z = -v * D, jit = (rng(i * 131 + k * 7)() - 0.5) * 1.6;
+      return [x + jit, h(x, v), z + jit];
+    }
+    function paint(y) {
+      var t = y / H;
+      if (t < 0.45) c.copy(low).lerp(mid, t / 0.45); else if (t < 0.72) c.copy(mid); else c.copy(mid).lerp(top, Math.min(1, (t - 0.72) / 0.14));
+      col.push(c.r, c.g, c.b);
+    }
+    for (var i2 = 0; i2 < nx; i2++) for (var k2 = 0; k2 < nz; k2++) {
+      var a = vert(i2, k2), b = vert(i2 + 1, k2), d2 = vert(i2, k2 + 1), e = vert(i2 + 1, k2 + 1);
+      [[a, b, e], [a, e, d2]].forEach(function (tri) {           // counter-clockwise seen from above: the faces look up
+        tri.forEach(function (q) { pos.push(q[0], q[1], q[2]); });
+        var y = (tri[0][1] + tri[1][1] + tri[2][1]) / 3;
+        paint(y); paint(y); paint(y);
+      });
+    }
+    var g = new T.BufferGeometry();
+    g.setAttribute('position', new T.Float32BufferAttribute(pos, 3));
+    g.setAttribute('color', new T.Float32BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    var m = api.litMaterial({ color: new T.Color('#ffffff'), vertexColors: true });
+    m.name = 'dress-mountains';
+    (keep.outdoor = keep.outdoor || []).push(m);
+    var mesh = new T.Mesh(g, m);
+    mesh.position.y = -0.02;
+    mesh.receiveShadow = true;
+    mesh.name = 'mountains';
+    return sidePlace(mesh, o.side, o.from || 36);
+  }
+  // the sea: water out to the horizon (fog takes it), a strip of sand between the grass and the water
+  function sea(api, keep, o) {
+    var T = api.T, W = o.width || 320, D = o.depth || 130, beach = o.beach == null ? 3 : o.beach;
+    var grp = new T.Group();
+    grp.name = 'sea';
+    var wt = patternTex(api, { pattern: 'water', a: '#4a8fbf' });
+    grp.add(flat(api, [-W / 2, -D, W / 2, -beach], 0.006, outMat(api, keep, wt), wt.tile));
+    if (beach > 0) {
+      var st = patternTex(api, 'sand');
+      grp.add(flat(api, [-W / 2, -beach, W / 2, 0], 0.005, outMat(api, keep, st), st.tile));
+      var foam = flat(api, [-W / 2, -beach - 0.5, W / 2, -beach + 0.1], 0.007, flatMat(api, 'foam', null, { color: new T.Color('#dbeaf2'), transparent: true, opacity: 0.55 }), [1, 1]);
+      grp.add(foam);
+    }
+    return sidePlace(grp, o.side, o.from || 31);
   }
 
   // ---------- patterns: [tile size in game units along u, along v, canvas w, h, draw]
@@ -455,6 +526,10 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
       g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 2;
       for (var i = 0; i < 40; i++) { var x = r() * w, y = r() * h, l = 10 + r() * 24; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + l / 2, y - 4, x + l, y); g.stroke(); }
       noise(g, w, h, r, 600, ['rgba(0,30,60,0.15)', 'rgba(255,255,255,0.08)'], 2);
+    }],
+    sand: [3, 3, 256, 256, function (g, w, h, r, o) {
+      g.fillStyle = o.a || '#e3d3a6'; g.fillRect(0, 0, w, h);
+      noise(g, w, h, r, 2200, ['rgba(120,90,40,0.12)', 'rgba(255,250,230,0.25)', 'rgba(180,150,90,0.15)'], 1.5);
     }],
     gravel: [2, 2, 256, 256, function (g, w, h, r, o) {
       g.fillStyle = o.a || '#a8a39a'; g.fillRect(0, 0, w, h);
@@ -835,6 +910,9 @@ window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 
         g.add(flat(api, sp.rect, gy + 0.004 + k * 0.001, outMat(api, keep, st), tile, sp.dir === 'z'));
       });
     }
+    // the country beyond the edge of town
+    if (o.mountains) g.add(mountains(api, keep, o.mountains));
+    if (o.sea) g.add(sea(api, keep, o.sea));
     // the building under a room upstairs: four faces with windows
     if (o.tower) {
       var tw = o.tower, top = tw.top == null ? -0.02 : tw.top, bot = tw.bottom, hh = top - bot, m = tw.margin == null ? 0.3 : tw.margin;

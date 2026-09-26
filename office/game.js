@@ -38,7 +38,7 @@
   // the player's choices (office/models/<id>.js, tools/office-characters.py): people the cast does not wear
   const CHARACTER_LABELS = {
     'man-casual-3': 'Blazer ♂', 'man-hoodie-2': 'Hoodie ♂', 'man-suit-2': 'Suit ♂', 'man-adventurer': 'Jacket ♂',
-    'woman-casual': 'Tee ♀', 'woman-dress': 'Dress ♀', 'woman-tanktop': 'Tank top ♀', 'woman-alt': 'Jacket ♀'
+    'woman-casual': 'Tee ♀', 'woman-formal': 'Dress ♀', 'woman-adventurer': 'Jacket ♀', 'woman-punk': 'Crop top ♀'
   };
   const CHARACTERS = Object.keys(CHARACTER_LABELS), DEFAULT_CHARACTER = 'man-casual-3';
   const charLabel = (id) => CHARACTER_LABELS[id] || pretty(id);

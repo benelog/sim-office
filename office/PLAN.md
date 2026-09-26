@@ -60,22 +60,22 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 ### 인물 id(고정) — model — 장소
 | id | 이름·역할 | model | place |
 |---|---|---|---|
-| maya | Maya Chen, engineering manager | woman-alt-2 | office_manager |
+| maya | Maya Chen, engineering manager | woman-suit | office_manager |
 | derek | Derek Alvarez, senior developer (팀 동료) | man-hoodie | office_desk_team |
 | priya | Priya Nair, product manager | woman-casual-2 | office_meeting |
 | tom | Tom Becker, office manager (프런트) | man-casual | office_lobby |
 | sam | Sam Reyes, IT helpdesk | man-casual-2 | office_it |
-| linda | Linda Park, HR | woman-dress-2 | office_hr |
+| linda | Linda Park, HR | woman-formal-2 | office_hr |
 | rosa | Rosa, diner server | woman-casual-3 | diner_counter |
 | mike | Mike, grocery cashier | man-worker | market_checkout |
-| nina | Nina, barista (coffee cart) | woman-tanktop-2 | coffee_cart |
+| nina | Nina, barista (coffee cart) | woman-adventurer-2 | coffee_cart |
 | carl | Carl, neighbor / landlord | man-farmer | bus_stop |
 | greg | Greg Whitfield, client (Summit Retail의 VP) | man-suit | client_meeting |
-| amy | Amy, airline agent | woman-dress-3 | airport_checkin |
-| kelly | Kelly, hotel front desk | woman-alt-3 | hotel_desk |
+| amy | Amy, airline agent | woman-formal-3 | airport_checkin |
+| kelly | Kelly, hotel front desk | woman-suit-2 | hotel_desk |
 | lee | Lee, TSA officer | man-worker-2 | airport_security |
 
-플레이어 기본 모델 man-casual-3. 고를 수 있는 8명(캐스트가 안 쓰는 모습): man-casual-3 man-hoodie-2 man-suit-2 man-adventurer woman-casual woman-dress woman-tanktop woman-alt. 인물 모델은 겹쳐도 됩니다(행인은 캐스트가 안 쓰는 모습을 먼저 씀, `office/life.js`).
+플레이어 기본 모델 man-casual-3. 고를 수 있는 8명(캐스트가 안 쓰는 모습): man-casual-3 man-hoodie-2 man-suit-2 man-adventurer woman-casual woman-formal woman-adventurer woman-punk. 인물 모델은 겹쳐도 됩니다(행인은 캐스트가 안 쓰는 모습을 먼저 씀, `office/life.js`).
 
 ### 에피소드 id 규칙
 `d<날>_<이름>` (예 `d1_badge`, `d3_one_on_one`, `d11_checkin`). 주말·반복은 `w_` (예 `w_market`). 턴은 3~6개. `answers`는 키워드 그룹 `[{all:[…]},{any:[…]}]`(구는 정확히, 5글자 이상 단어는 오타 1개 허용). `distractors`는 3개, 문법은 맞지만 상황에 안 맞는 문장. `hints`는 2개(첫 힌트는 표현 방향, 둘째는 `Key words: …`). `phrases`는 에피소드마다 4~8개, `id`는 `<episode>.<slug>`.
@@ -86,7 +86,7 @@ Kenney CC0 팩(원본 zip은 `/tmp/claude-1000/kenney-packs/`에 있음). Blende
 
 | pack | 원본 | 노드(전부 Kenney 파일 이름) | 게임 기본 배율 |
 |---|---|---|---|
-| `man-*`, `woman-*` (22개) + `rig-umc`, `rig-women` | Quaternius Ultimate Modular Men, Animated Women (`tools/office-characters.py`) | 인물 파일은 골격+스킨 메시(애니메이션 없음, extras `rig`), 리그 파일에 클립 idle walk sprint sit emote-yes emote-no interact-right | 1 (키 남 0.96, 여 0.94) |
+| `man-*`, `woman-*` (22개) + `rig-umc`, `rig-women` | Quaternius Ultimate Modular Men·Women (`tools/office-characters.py`) | 인물 파일은 골격+스킨 메시(애니메이션 없음, extras `rig`), 리그 파일에 클립 idle walk sprint sit emote-yes emote-no interact-right | 1 (키 남 0.96, 여 0.94) |
 | `city` | city-kit-commercial 2.1, city-kit-suburban | building-a…h, building-skyscraper-a…c, detail-awning, detail-awning-wide, detail-parasol-a, detail-parasol-b, building-type-a…h, tree-large, tree-small, fence, fence-1x3, planter, driveway-short, path-short | 3 |
 | `roads` | city-kit-roads | road-straight, road-straight-half, road-crossroad, road-crossroad-line, road-intersection, road-intersection-line, road-bend, road-bend-sidewalk, road-curve, road-crossing, road-end, road-side, road-square, tile-low, light-square, light-square-double, light-curved, traffic-light, road-sign-stop, road-sign-street, construction-cone, construction-barrier, dumpster, electricity-pole, sign-highway | 3 |
 | `cars` | car-kit | sedan, sedan-sports, suv, hatchback-sports, taxi, van, delivery, police, truck, ambulance, wheel-default (차 노드는 바퀴가 포함된 완성체로) | 0.6 |

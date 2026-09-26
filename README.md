@@ -21,7 +21,7 @@ google-chrome "file://$PWD/office/index.html"
 | 경로 | 내용 |
 |---|---|
 | `office/index.html`, `game.css`, `game.js` | 엔진: 존·인물·대화·TTS·시간·돈·상점·Phrasebook·저장·디버그 API(`SO.debug`) |
-| `office/zones/<zone>.js` | 존 8개의 배치(home, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미 |
+| `office/zones/<zone>.js` | 존 8개의 배치(home, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
 | `office/data/db.js` | DoltHub에서 내려받은 데이터(`window.SO_DB`). **생성물** |
 | `office/life.js` | 거리의 삶: 걷는 행인·앉은 사람, 달리는 차, 신호등 |
 | `office/models/*.js` | 모델(base64 .glb): Kenney 소품 팩, Quaternius 인물(`man-*`, `woman-*`)과 리그(`rig-*`). **생성물**, 목록은 `office/models/README.md` |
@@ -55,7 +55,7 @@ node tools/db-lint.mjs                          # 내려받은 데이터 검사
 
 ## 모델: Kenney·Quaternius CC0
 
-인물은 Quaternius의 Ultimate Modular Men과 Animated Women을 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개), 자연물(Nature Kit 71개: 나무·덤불·꽃·바위·길, 팔레트는 도시 키트에 맞춰 다시 칠함)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
+인물은 Quaternius의 Ultimate Modular Men과 Ultimate Modular Women(같은 골격, 옷마다 머리·몸·다리·발 부품)을 부품을 섞고 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개), 자연물(Nature Kit 71개: 나무·덤불·꽃·바위·길, 팔레트는 도시 키트에 맞춰 다시 칠함)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
 
 ```sh
 blender -b --python tools/office-models.py                    # 전부
@@ -81,8 +81,8 @@ SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office
 
 ## 저작권·출처
 
-- 인물: [Quaternius](https://quaternius.com) Ultimate Modular Men, Animated Women — CC0.
-- 소품: [Kenney](https://www.kenney.nl) City Kit (Commercial, Suburban, Roads), Car Kit, Furniture Kit, Food Kit, Mini Market, Mini Arcade, Factory Kit, Nature Kit — CC0.
+- 인물: [Quaternius](https://quaternius.com) — [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularmen.html), [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html)(원본 Google Drive가 다운로드 한도로 막혀 [poly.pizza 묶음](https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN)의 glb를 씀) — CC0.
+- 소품: [Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial), [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban), [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Car Kit](https://kenney.nl/assets/car-kit)(달리는 차와 주차된 차 전부), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit), [Nature Kit](https://kenney.nl/assets/nature-kit) — CC0.
 - three.js — MIT (`vendor/three.LICENSE`).
 - 대사·표현·인물·회사(Lakeside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
 - 이 저장소는 2026-09-26 어린 왕자 3D 게임으로 시작했다가 같은 날 Sim Office로 바꿨습니다(이전 게임은 커밋 609621f).

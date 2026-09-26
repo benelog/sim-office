@@ -5,14 +5,17 @@
     blender -b --python tools/office-characters.py -- --list                 # ids, sources and colours
     blender -b --python tools/office-characters.py -- men --keep-glb /tmp/glb   # also keep the .glb files ('men', 'women', 'rigs')
 
-Sources (only the files used are in the repo):
+Sources (only the files used are in the repo; the two packs are built alike, https://quaternius.com/packs/ultimatemodularmen.html
+and https://quaternius.com/packs/ultimatemodularwomen.html):
 - quaternius/ultimate-modular-characters/<Outfit>.gltf: Quaternius "Ultimate Modular Men" (Suit, Casual_2, Casual_Hoodie,
   Worker, Adventurer, Farmer; exported by Quaternius from his Humans_Master.blend, which is not copied here). Every file
   has the same 62-bone armature 'CharacterArmature' and its parts as separate skinned meshes <Outfit>_Head/_Body/_Legs/_Feet,
-  so a man is put together from parts of several outfits (a suit body with another head).
-- quaternius/animated-women/Female_<Casual|Dress|TankTop|Alternative>.blend: Quaternius "Animated Women". One mesh 'Female'
-  (materials Skin Eyes Hair Shirt Pants Socks Shoes ...) on the same 31-bone 'HumanArmature' in all four files; the legs
-  are IK (LowerLeg -> Foot), so the actions are baked to plain bone keys here.
+  so a person is put together from parts of several outfits (a suit body with another head).
+- quaternius/ultimate-modular-women/<Outfit>.glb: Quaternius "Ultimate Modular Women" (Casual, Formal, Suit, Adventurer,
+  Punk): the same armature (bone names and rest pose of their own), the same four parts per outfit, the same 24 actions.
+  Google Drive refuses the pack's own files (download quota), so these are the pack's .fbx files as poly.pizza serves them
+  (FBX2glTF): the armature under a 'RootNode' scaled by 100 (centimetres), actions named 'CharacterArmature|<name>' whose
+  keys run 1.25 x slow (30 fps frames read as 24 fps), and 'Formad_Head' (sic) in Formal.glb; normalize_fbx() undoes that.
 
 Output, one .glb as base64 per file (the game runs from file://): office/models/<id>.js with
 `(window.SO_MODELS = window.SO_MODELS || {})['<id>'] = '<base64>';`
@@ -38,12 +41,13 @@ from mathutils import Matrix, Quaternion, Vector
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 UMC = os.path.join(ROOT, 'quaternius', 'ultimate-modular-characters')
-WOMEN = os.path.join(ROOT, 'quaternius', 'animated-women')
+WOMEN = os.path.join(ROOT, 'quaternius', 'ultimate-modular-women')
 OUT = os.path.join(ROOT, 'office', 'models')
 
+SRC = {'umc': (UMC, '.gltf'), 'women': (WOMEN, '.glb')}     # rig -> source folder and file type
 HEIGHT = {'umc': 0.96, 'women': 0.94}      # top of the head (a bare head; a cap adds a little)
-UMC_TOP = 1.856                          # top of the Suit hair in the source (Blender units)
-WOMEN_TOP = 4.64                         # Female mesh top in the source
+TOP = {'umc': 1.856, 'women': 1.797}       # top of the hair in the source (Suit / Casual head, Blender units)
+FBX_FPS = 24 / 30                          # women: the FBX2glTF keys' time scale (see normalize_fbx)
 SEAT = 0.24                              # seat height of the Kenney chairs and benches (chair, chairDesk, bench)
 HIP_OVER_SEAT = 0.05                     # hip joint above the seat when sitting
 LIMIT = {'person': 400 * 1024, 'rig': 400 * 1024}   # base64 bytes
@@ -52,9 +56,10 @@ LIMIT = {'person': 400 * 1024, 'rig': 400 * 1024}   # base64 bytes
 CLIPS = {
     'umc': {'idle': 'Idle_Neutral', 'walk': 'Walk', 'sprint': 'Run', 'sit': None, 'emote-yes': 'Wave', 'emote-no': None,
             'interact-right': 'Interact'},
-    'women': {'idle': 'Female_Idle', 'walk': 'Female_Walk', 'sprint': 'Female_Run', 'sit': None, 'emote-yes': 'Female_Clapping',
-              'emote-no': None, 'interact-right': None},
+    'women': {'idle': 'Idle_Neutral', 'walk': 'Walk', 'sprint': 'Run', 'sit': None, 'emote-yes': 'Wave', 'emote-no': None,
+              'interact-right': 'Interact'},
 }
+RIG_SOURCE = {'rig-umc': 'Suit', 'rig-women': 'Casual'}     # the outfit file whose animations make the rig
 
 # ---------- the people ----------
 # colours are sRGB hex. A key 'Mat' recolours that material everywhere, 'part:Mat' only on that part (head, body, legs, feet).
@@ -62,12 +67,16 @@ SKIN = {'light': '#f2c7a0', 'fair': '#e8b48c', 'tan': '#c98f62', 'brown': '#9c6a
 HAIR = {'black': '#1f1a17', 'dark': '#3a2a1f', 'brown': '#6b4a2e', 'auburn': '#8a3f22', 'blond': '#c9a55a', 'grey': '#9a9794'}
 
 
+def person(rig, head, body, legs, feet, colors, note):
+    return {'rig': rig, 'parts': {'head': head, 'body': body, 'legs': legs, 'feet': feet}, 'colors': colors or {}, 'note': note}
+
+
 def man(head, body, legs, feet, colors=None, note=''):
-    return {'rig': 'umc', 'parts': {'head': head, 'body': body, 'legs': legs, 'feet': feet}, 'colors': colors or {}, 'note': note}
+    return person('umc', head, body, legs, feet, colors, note)
 
 
-def woman(blend, colors=None, note=''):
-    return {'rig': 'women', 'blend': blend, 'colors': colors or {}, 'note': note}
+def woman(head, body, legs, feet, colors=None, note=''):
+    return person('women', head, body, legs, feet, colors, note)
 
 
 PEOPLE = {
@@ -100,33 +109,41 @@ PEOPLE = {
     'man-casual-3': man('Casual_Hoodie', 'Suit', 'Casual_2', 'Suit', {'Suit': '#7a5a3f', 'White': '#a9c4e0', 'Tie': '#a9c4e0',
                                                                       'LightBlue': '#34507a', 'Black': '#5a3b26', 'Skin': SKIN['light'],
                                                                       'Hair': HAIR['auburn']}, 'brown blazer, blue shirt, jeans'),
-    # --- women (one blend each; recoloured) ---
-    'woman-casual': woman('Casual', {'Skin': SKIN['brown']}, 'sage tee, dark trousers, long dark hair'),
-    'woman-casual-2': woman('Casual', {'Shirt': '#2f7f86', 'Pants': '#2e3038', 'Skin': SKIN['brown'], 'Hair': HAIR['black']},
+    # --- women (Ultimate Modular Women parts, like the men). Heads: Casual (long hair Hair_Blond, brows Hair_Brown),
+    # Formal (long hair Red), Adventurer (short hair Hair_Brown); the Punk head (a mohawk) is too tall ---
+    'woman-suit': woman('Casual', 'Suit', 'Suit', 'Suit', {'Black': '#2b3440', 'White': '#eef0f2', 'Skin': SKIN['fair'],
+                                                           'head:Hair_Blond': HAIR['black'], 'head:Hair_Brown': HAIR['black']},
+                        'navy pantsuit, white blouse, black hair'),
+    'woman-suit-2': woman('Formal', 'Suit', 'Suit', 'Suit', {'Black': '#6b2232', 'White': '#f0ece4', 'Skin': SKIN['light'],
+                                                             'head:Red': HAIR['brown']}, 'burgundy suit (hotel uniform), brown hair'),
+    'woman-casual': woman('Casual', 'Casual', 'Casual', 'Casual', {'White': '#7d9c7a', 'Orange': '#3a3f4a', 'Skin': SKIN['brown'],
+                                                                   'head:Hair_Blond': HAIR['dark'], 'head:Hair_Brown': HAIR['dark']},
+                          'sage tee, dark trousers, long dark hair'),
+    'woman-casual-2': woman('Casual', 'Casual', 'Casual', 'Casual', {'White': '#2f7f86', 'Orange': '#2e3038', 'Skin': SKIN['brown'],
+                                                                     'head:Hair_Blond': HAIR['black'], 'head:Hair_Brown': HAIR['black']},
                             'teal top, charcoal trousers'),
-    'woman-casual-3': woman('Casual', {'Shirt': '#e58f9a', 'Pants': '#1f1f24', 'Socks': '#1f1f24', 'Skin': SKIN['tan'], 'Hair': HAIR['dark']},
-                            'pink diner uniform, black trousers'),
-    'woman-dress': woman('Dress', {'Hair': HAIR['blond'], 'Skin': SKIN['fair']}, 'red dress, blond ponytail'),
-    'woman-dress-2': woman('Dress', {'Dress': '#1f5f5b', 'Skin': SKIN['light'], 'Hair': HAIR['black'], 'Shoes': '#1f1f24'},
-                           'dark teal dress'),
-    'woman-dress-3': woman('Dress', {'Dress': '#27406e', 'Skin': SKIN['fair'], 'Hair': HAIR['auburn'], 'Shoes': '#1f1f24'},
-                           'navy uniform dress'),
-    'woman-tanktop': woman('TankTop', {'Skin': SKIN['dark']}, 'light blue tank top, shorts'),
-    'woman-tanktop-2': woman('TankTop', {'Shirt': '#d9a441', 'Pants': '#44536b', 'Skin': SKIN['light'], 'Hair': HAIR['auburn']},
-                             'mustard tank top, denim shorts'),
-    'woman-alt': woman('Alternative', {'Skin': SKIN['tan']}, 'rose jacket, jeans, short two-tone hair'),
-    'woman-alt-2': woman('Alternative', {'Jacket': '#2f3136', 'LightJacket': '#3a3d44', 'Shirt': '#e9e6df', 'Pants': '#24262b',
-                                         'Skin': SKIN['light'], 'Hair': HAIR['black'], 'HairBase': HAIR['black']},
-                         'charcoal blazer, white shirt, black hair'),
-    'woman-alt-3': woman('Alternative', {'Jacket': '#6b2232', 'LightJacket': '#7d2a3b', 'Shirt': '#f0ece4', 'Pants': '#23232a',
-                                         'Skin': SKIN['fair'], 'Hair': HAIR['brown'], 'HairBase': HAIR['brown']},
-                         'burgundy blazer (hotel uniform), brown hair'),
+    'woman-casual-3': woman('Casual', 'Casual', 'Casual', 'Casual', {'White': '#e58f9a', 'Orange': '#1f1f24', 'Grey': '#1f1f24',
+                                                                     'Skin': SKIN['tan'], 'head:Hair_Blond': HAIR['dark'],
+                                                                     'head:Hair_Brown': HAIR['dark']}, 'pink diner tee, black trousers'),
+    'woman-formal': woman('Formal', 'Formal', 'Formal', 'Formal', {'LimeGreen': '#a63d4a', 'Gold': '#d9b25c', 'Skin': SKIN['fair'],
+                                                                   'head:Red': HAIR['blond'], 'feet:Red': '#4a2a2a'}, 'red dress, blond hair'),
+    'woman-formal-2': woman('Formal', 'Formal', 'Formal', 'Formal', {'LimeGreen': '#1f5f5b', 'Gold': '#3a3a40', 'Skin': SKIN['light'],
+                                                                     'head:Red': HAIR['black'], 'feet:Red': '#1f1f24'}, 'dark teal dress, black hair'),
+    'woman-formal-3': woman('Formal', 'Formal', 'Formal', 'Formal', {'LimeGreen': '#27406e', 'Gold': '#c9a55a', 'Skin': SKIN['fair'],
+                                                                     'head:Red': HAIR['auburn'], 'feet:Red': '#1f1f24'}, 'navy uniform dress, auburn hair'),
+    'woman-adventurer': woman('Adventurer', 'Adventurer', 'Adventurer', 'Adventurer', {'Skin': SKIN['tan']},
+                              'field jacket, shorts, boots, short brown hair'),
+    'woman-adventurer-2': woman('Adventurer', 'Adventurer', 'Adventurer', 'Adventurer', {'LightGreen': '#d9a441', 'Green': '#b98a30',
+                                                                                         'Skin': SKIN['light'], 'head:Hair_Brown': HAIR['auburn']},
+                                'mustard shirt, shorts, auburn hair'),
+    'woman-punk': woman('Casual', 'Punk', 'Punk', 'Punk', {'Pink': '#3f5fa8', 'Black': '#2a2a2e', 'Skin': SKIN['dark'],
+                                                           'head:Hair_Blond': HAIR['black'], 'head:Hair_Brown': HAIR['black']},
+                        'blue crop top, black pants'),
 }
 RIGS = {'rig-umc': 'umc', 'rig-women': 'women'}
-BAKE_STEP = {'idle': 3, 'emote-yes': 2}     # women: bake these slow clips every n frames (linear in between)
 PART_MESH = {'head': '_Head', 'body': '_Body', 'legs': '_Legs', 'feet': '_Feet'}
-UMC_PREFIX = {'Casual_2': 'Casual2', 'Casual_Hoodie': 'Casual', 'Farmer': 'Farmer'}   # file -> mesh name prefix
-UMC_MESH = {('Farmer', 'legs'): 'Farmer_Pants'}
+MESH_PREFIX = {'Casual_2': 'Casual2', 'Casual_Hoodie': 'Casual'}                        # file -> mesh name prefix
+MESH_NAME = {('umc', 'Farmer', 'legs'): 'Farmer_Pants', ('women', 'Formal', 'head'): 'Formad_Head'}
 
 
 # ---------- Blender helpers ----------
@@ -207,8 +224,60 @@ def import_gltf(path):
     if not os.path.exists(path):
         raise SystemExit(f'missing source {path}')
     before = set(bpy.data.objects)
+    acts = set(bpy.data.actions)
     bpy.ops.import_scene.gltf(filepath=path, merge_vertices=True, import_shading='SMOOTH')
-    return [o for o in bpy.data.objects if o not in before]
+    objs = [o for o in bpy.data.objects if o not in before]
+    if path.endswith('.glb'):
+        objs = normalize_fbx(objs, [a for a in bpy.data.actions if a not in acts])
+    return objs
+
+
+def import_outfit(rig, outfit):
+    folder, ext = SRC[rig]
+    return import_gltf(os.path.join(folder, outfit + ext))
+
+
+def normalize_fbx(objs, actions):
+    """An FBX2glTF file (the women) as if Quaternius had exported it: the armature at the origin at scale 1 (the RootNode's
+    scale of 100 baked into the bones, the mesh and the location keys), the parts its children, the helper empties gone,
+    the actions named as in the men's files and their keys at the source's speed (times x 24/30)."""
+    arm = next(o for o in objs if o.type == 'ARMATURE')
+    meshes = [o for o in objs if o.type == 'MESH' and o.parent is arm]
+    M = arm.matrix_world.copy()
+    sc = M.to_scale()
+    if max(sc) - min(sc) > 1e-4:
+        raise SystemExit(f'{arm.name}: non-uniform scale {tuple(sc)}')
+    for o in meshes:
+        mw = o.matrix_world.copy()
+        o.parent = None
+        o.matrix_world = mw
+    arm.parent = None
+    arm.matrix_world = M
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in [arm] + meshes:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    for o in meshes:
+        o.parent = arm
+        o.matrix_parent_inverse = Matrix.Identity(4)
+        o.matrix_basis = Matrix.Identity(4)
+        for m in o.modifiers:
+            if m.type == 'ARMATURE':
+                m.object = arm
+    for a in actions:
+        a.name = a.name.split('|', 1)[-1]
+        for fc in fcurves(a):
+            loc = fc.data_path.endswith('.location')
+            for k in fc.keyframe_points:
+                for pt in (k.co, k.handle_left, k.handle_right):
+                    pt.x *= FBX_FPS
+                    if loc:
+                        pt.y *= sc.x
+    for o in objs:
+        if o is not arm and o not in meshes:
+            bpy.data.objects.remove(o, do_unlink=True)
+    return [arm] + meshes
 
 
 def fcurves(action):
@@ -254,10 +323,10 @@ def is_umc_finger(name):
     return name.startswith(UMC_FINGERS)
 
 
-def relax_fingers(arm, meshes):
-    """UMC: make the fingers' pose in the first idle frame (a relaxed hand) their rest pose, in the meshes and the bones,
-    so the clips need no finger channels (the rig drops them). The rig and every man do the same, so they still match."""
-    idle = bpy.data.actions.get(CLIPS['umc']['idle'])
+def relax_fingers(arm, meshes, rig):
+    """Make the fingers' pose in the first idle frame (a relaxed hand) their rest pose, in the meshes and the bones, so
+    the clips need no finger channels (the rig drops them). The rig and every person of it do the same, so they match."""
+    idle = bpy.data.actions.get(CLIPS[rig]['idle'])
     if idle is None:
         raise SystemExit('no idle action for the fingers')
     use_action(arm, idle)
@@ -337,24 +406,25 @@ def export_glb(path, objs, animations):
 
 # ---------- people ----------
 
-def umc_mesh_name(outfit, part):
-    return UMC_MESH.get((outfit, part)) or UMC_PREFIX.get(outfit, outfit) + PART_MESH[part]
+def mesh_name(rig, outfit, part):
+    return MESH_NAME.get((rig, outfit, part)) or MESH_PREFIX.get(outfit, outfit) + PART_MESH[part]
 
 
-def build_man(pid, spec):
-    s = HEIGHT['umc'] / UMC_TOP
+def build_person(pid, spec):
+    rig = spec['rig']
+    s = HEIGHT[rig] / TOP[rig]
     arm = None
     parts = []
     loaded = {}
     for part in ('body', 'head', 'legs', 'feet'):
         outfit = spec['parts'][part]
         if outfit not in loaded:
-            loaded[outfit] = import_gltf(os.path.join(UMC, outfit + '.gltf'))
+            loaded[outfit] = import_outfit(rig, outfit)
         objs = loaded[outfit]
-        want = umc_mesh_name(outfit, part)
+        want = mesh_name(rig, outfit, part)
         ob = next((o for o in objs if o.type == 'MESH' and o.name.split('.')[0] == want), None)
         if ob is None:
-            raise SystemExit(f'{pid}: no mesh {want} in {outfit}.gltf')
+            raise SystemExit(f'{pid}: no mesh {want} in {outfit}{SRC[rig][1]}')
         if arm is None:
             arm = next(o for o in objs if o.type == 'ARMATURE')
         mw = ob.matrix_world.copy()
@@ -371,35 +441,10 @@ def build_man(pid, spec):
         if o not in keep:
             bpy.data.objects.remove(o, do_unlink=True)
     clear_anim(arm)
-    relax_fingers(arm, parts)
+    relax_fingers(arm, parts, rig)
     for a in list(bpy.data.actions):
         bpy.data.actions.remove(a)
-    return finish_person(pid, arm, parts, s, 'rig-umc')
-
-
-def open_women(blend):
-    path = os.path.join(WOMEN, f'Female_{blend}.blend')
-    if not os.path.exists(path):
-        raise SystemExit(f'missing source {path}')
-    bpy.ops.wm.open_mainfile(filepath=path)
-    for o in list(bpy.data.objects):
-        if o.type not in ('ARMATURE', 'MESH'):
-            bpy.data.objects.remove(o, do_unlink=True)
-    arm = next(o for o in bpy.data.objects if o.type == 'ARMATURE')
-    mesh = next(o for o in bpy.data.objects if o.type == 'MESH')
-    return arm, mesh
-
-
-def build_woman(pid, spec):
-    arm, mesh = open_women(spec['blend'])
-    for a in list(bpy.data.actions):
-        bpy.data.actions.remove(a)
-    clear_anim(arm)
-    for pb in arm.pose.bones:
-        for c in list(pb.constraints):
-            pb.constraints.remove(c)
-    recolour(mesh, 'body', spec['colors'])
-    return finish_person(pid, arm, [mesh], HEIGHT['women'] / WOMEN_TOP, 'rig-women')
+    return finish_person(pid, arm, parts, s, 'rig-' + rig)
 
 
 def finish_person(pid, arm, parts, s, rig):
@@ -547,22 +592,23 @@ def foot_speed(arm, act, foot, fps):
     return v[len(v) // 2] if v else 0.0
 
 
-def build_rig_umc():
-    objs = import_gltf(os.path.join(UMC, 'Suit.gltf'))
+def build_rig(rid):
+    rig = RIGS[rid]
+    objs = import_outfit(rig, RIG_SOURCE[rid])
     arm = next(o for o in objs if o.type == 'ARMATURE')
     for o in list(bpy.data.objects):
         if o is not arm:
             bpy.data.objects.remove(o, do_unlink=True)
     clear_anim(arm)
-    relax_fingers(arm, [])
-    s = HEIGHT['umc'] / UMC_TOP
+    relax_fingers(arm, [], rig)
+    s = HEIGHT[rig] / TOP[rig]
     fps = bpy.context.scene.render.fps
     acts = {}
-    for clip, src in CLIPS['umc'].items():
+    for clip, src in CLIPS[rig].items():
         if src:
             a = bpy.data.actions.get(src)
             if a is None:
-                raise SystemExit(f'rig-umc: no action {src}')
+                raise SystemExit(f'{rid}: no action {src}')
             acts[clip] = a
     idle0 = pose_from(arm, acts['idle'], 0)
     sit = sit_pose(arm, idle0, s, poles='PT.')
@@ -576,78 +622,7 @@ def build_rig_umc():
         for fc in fcurves(a):
             for k in fc.keyframe_points:
                 k.interpolation = 'LINEAR'
-    return finish_rig('rig-umc', arm, acts, s, meta)
-
-
-def bake_action(arm, src, step=1):
-    """Plain bone keys (visual transform: the IK legs included) every `step` frames of `src` (and its last frame)."""
-    use_action(arm, src)
-    f0, f1 = int(src.frame_range[0]), int(src.frame_range[1])
-    keys = []
-    for f in sorted(set(range(f0, f1 + 1, step)) | {f1}):
-        bpy.context.scene.frame_set(f)
-        bpy.context.view_layer.update()
-        keys.append((f - f0, visual_basis(arm)))
-    return keys
-
-
-def visual_basis(arm):
-    """matrix_basis of every bone that reproduces the evaluated (constrained) pose without constraints."""
-    out = {}
-    world = {pb.name: pb.matrix.copy() for pb in arm.pose.bones}
-    for pb in arm.pose.bones:
-        rest = pb.bone.matrix_local
-        if pb.parent:
-            parent = world[pb.parent.name] @ pb.parent.bone.matrix_local.inverted() @ rest
-        else:
-            parent = rest
-        out[pb.name] = parent.inverted() @ world[pb.name]
-    return out
-
-
-def build_rig_women():
-    arm, mesh = open_women('Casual')
-    bpy.data.objects.remove(mesh, do_unlink=True)
-    sc = bpy.context.scene
-    fps = sc.render.fps
-    s = HEIGHT['women'] / WOMEN_TOP
-    baked = {}
-    for clip, src in CLIPS['women'].items():
-        if src:
-            a = bpy.data.actions.get(src)
-            if a is None:
-                raise SystemExit(f'rig-women: no action {src}')
-            baked[clip] = bake_action(arm, a, BAKE_STEP.get(clip, 1))
-    idle0 = baked['idle'][0][1]
-    # everything is baked with the constraints on; now drop them and key plain transforms
-    pb = arm.pose.bones
-    for p in pb:
-        for c in list(p.constraints):
-            p.constraints.remove(c)
-    set_pose(arm, {})
-    for a in list(bpy.data.actions):
-        bpy.data.actions.remove(a)
-    # interact-right: the right forearm comes up and forward (a small 'here you go' / talking gesture), then down
-    gesture = []
-    for f, a, b in [(0, 0, 0), (8, -10, -45), (16, -12, -52), (24, -10, -45), (34, 0, 0)]:
-        set_pose(arm, idle0)
-        rotate_about_head(pb['UpperArm.R'], 'X', a)
-        rotate_about_head(pb['LowerArm.R'], 'X', b)
-        gesture.append((f, {x.name: x.matrix_basis.copy() for x in pb}))
-    acts = {clip: new_action(arm, clip, keys) for clip, keys in baked.items()}
-    sit = sit_pose(arm, idle0, s, arms=(-4, -22))
-    acts['sit'] = new_action(arm, 'sit', [(0, sit), (1, sit)])
-    acts['emote-no'] = new_action(arm, 'emote-no', head_shake(arm, idle0))
-    acts['interact-right'] = new_action(arm, 'interact-right', gesture)
-    meta = {'walk_speed': foot_speed(arm, acts['walk'], 'Foot.L', fps) * s,
-            'run_speed': foot_speed(arm, acts['sprint'], 'Foot.L', fps) * s,
-            'seat': SEAT}
-    prune_actions(acts.values())
-    for a in acts.values():
-        for fc in fcurves(a):
-            for k in fc.keyframe_points:
-                k.interpolation = 'LINEAR'
-    return finish_rig('rig-women', arm, acts, s, meta)
+    return finish_rig(rid, arm, acts, s, meta)
 
 
 def finish_rig(rid, arm, acts, s, meta):
@@ -766,10 +741,10 @@ def main():
         del argv[i:i + 2]
     if '--list' in argv:
         for pid, sp in PEOPLE.items():
-            src = ', '.join(f'{k} {v}' for k, v in sp['parts'].items()) if sp['rig'] == 'umc' else f'Female_{sp["blend"]}'
-            print(f'{pid:16} rig-{sp["rig"]:6} {src:70} {sp["note"]}')
+            src = ', '.join(f'{k} {v}' for k, v in sp['parts'].items())
+            print(f'{pid:20} rig-{sp["rig"]:6} {src:70} {sp["note"]}')
         for rid, r in RIGS.items():
-            print(f'{rid:16} clips {", ".join(f"{k}<-{v or "made here"}" for k, v in CLIPS[r].items())}')
+            print(f'{rid:20} clips {", ".join(f"{k}<-{v or "made here"}" for k, v in CLIPS[r].items())}')
         return
     wanted = []
     for a in argv:
@@ -787,16 +762,13 @@ def main():
     failed = []
     for pid in todo:
         reset()
-        if pid == 'rig-umc':
-            objs, src = build_rig_umc(), 'Quaternius Ultimate Modular Men (Suit.gltf animations)'
-        elif pid == 'rig-women':
-            objs, src = build_rig_women(), 'Quaternius Animated Women (Female_Casual.blend animations)'
-        elif PEOPLE[pid]['rig'] == 'umc':
-            objs = build_man(pid, PEOPLE[pid])
-            src = 'Quaternius Ultimate Modular Men (' + ', '.join(sorted({f'{v}.gltf' for v in PEOPLE[pid]['parts'].values()})) + ')'
+        rig = RIGS.get(pid) or PEOPLE[pid]['rig']
+        pack = {'umc': 'Quaternius Ultimate Modular Men', 'women': 'Quaternius Ultimate Modular Women'}[rig]
+        if pid in RIGS:
+            objs, src = build_rig(pid), f'{pack} ({RIG_SOURCE[pid]}{SRC[rig][1]} animations)'
         else:
-            objs = build_woman(pid, PEOPLE[pid])
-            src = f'Quaternius Animated Women (Female_{PEOPLE[pid]["blend"]}.blend)'
+            objs = build_person(pid, PEOPLE[pid])
+            src = f'{pack} (' + ', '.join(sorted({v + SRC[rig][1] for v in PEOPLE[pid]['parts'].values()})) + ')'
         path = os.path.join(tmp, pid + '.glb')
         if os.environ.get('SO_SAVE_BLEND'):          # debugging: keep the built scene
             bpy.ops.wm.save_as_mainfile(filepath=os.path.join(os.environ['SO_SAVE_BLEND'], pid + '.blend'))

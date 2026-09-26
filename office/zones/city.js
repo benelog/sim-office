@@ -6,7 +6,9 @@
    and Nina's coffee cart on the corner. South-west: Riverside Park with trees, flower beds, a monument and benches
    (park_bench). South-east: the diner (diner_door) and the grocery store (market_door) face Maple Street, with a
    small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
-   (airport_shuttle). The Fairview River runs along the south edge of town. Roads and sidewalks are walkable;
+   (airport_shuttle). The Fairview River runs along the south edge of town, the sea lies beyond it (a beach at
+   z 31) and a range of mountains rises north of town (from z -48, low enough for the camera, which looks
+   down, to see the ridge; both are SO_ZONE_KIT.dress). Roads and sidewalks are walkable;
    buildings, parked cars, trees, water and street furniture block.
    Trees, bushes, flowers, rocks and the park's paths are Kenney's Nature Kit (pack 'nature', scale 2); the
    `map` block names the streets and areas for the town map (Menu > Map). */
@@ -70,8 +72,8 @@
     // front gardens: flowers and shrubs behind the fences
     flower('flower_redB', -12.8, -5.3, 0), flower('flower_yellowA', -12.3, -5.25, 30), flower('flower_purpleA', -13.3, -5.3, 0),
     flower('flower_purpleB', -7.2, -5.3, 0), flower('flower_redA', -6.6, -5.3, 60), flower('flower_yellowB', -6.1, -5.25, 0),
-    bush('plant_bushSmall', -14.6, -5.5, 0, 1.0), bush('plant_bushSmall', -5.2, -5.5, 20, 1.0), bush('plant_bushDetailed', -1.9, -5.9, 0, 0.9),
-    bit('grass', -14.2, -6.3, 0, 0.6), bit('grass_leafs', -11.0, -5.6, 0, 0.6), bit('grass', -3.0, -5.7, 40, 0.6),
+    bush('plant_bushSmall', -13.0, -5.6, 0, 1.0), bush('plant_bushSmall', -5.2, -5.5, 20, 1.0), bush('plant_bushDetailed', -1.9, -5.9, 0, 0.9),
+    bit('grass_leafs', -11.0, -5.6, 0, 0.6), bit('grass', -3.0, -5.7, 40, 0.6),
     // bus stop on Maple Street
     { pack: 'box', size: [1.5, 0.9, 0.06], at: [-5.0, -2.85], color: '#8fb3cf', solid: [1.5, 0.1] },
     c('detail-overhang-wide', -5.6, -2.55, 0),                                      // the shelter's roof on two posts
@@ -117,7 +119,7 @@
     r('road-sign-stop', -13.25, 1.75, 0, { solid: [0.2, 0.2] }),
     r('road-sign-stop', 13.25, -1.75, 180, { solid: [0.2, 0.2] }),
 
-    // ----- south-west: Riverside Park (x -16.5..-1.5, z 4.65..13.5), the gate at x = -7.5 on Maple Street
+    // ----- south-west: Riverside Park (x -13.5..-1.5, z 4.65..13.5; Elm Street's tile runs to x -13.5), the gate at x = -7.5 on Maple Street
     c('fence', -12.9, 4.65, 0, { solid: 'fit', scale: 0.7 }),
     c('fence', -11.9, 4.65, 0, { solid: 'fit', scale: 0.7 }),
     c('fence', -10.9, 4.65, 0, { solid: 'fit', scale: 0.7 }),
@@ -146,28 +148,28 @@
     flower('flower_purpleB', -8.2, 5.4, 0), flower('flower_redB', -8.25, 6.1, 0), flower('flower_yellowA', -8.15, 6.7, 0),
     flower('flower_redA', -6.8, 5.4, 0), flower('flower_purpleA', -6.75, 6.1, 0), flower('flower_yellowB', -6.85, 6.7, 0),
     // shrubs inside the fence
-    bush('plant_bushDetailed', -13.6, 5.5, 0, 0.9), bush('plant_bush', -11.2, 5.4, 0, 1), bush('plant_bushLarge', -9.8, 5.5, 30, 1),
+    bush('plant_bushDetailed', -12.9, 5.6, 0, 0.9), bush('plant_bush', -11.2, 5.4, 0, 1), bush('plant_bushLarge', -9.8, 5.5, 30, 1),
     bush('plant_bush', -5.0, 5.4, 0, 1), bush('plant_bushDetailed', -2.6, 5.6, 0, 0.9),
     // trees
     tree('tree_oak', -12.2, 6.9),
-    tree('tree_default', -14.8, 10.0),
+    tree('tree_default', -13.1, 10.4),
     tree('tree_fat_fall', -12.4, 12.3),
     tree('tree_detailed', -4.0, 6.6),
     tree('tree_tall', -2.8, 10.4),
     tree('tree_oak_fall', -5.6, 12.6),
-    tree('tree_pineRoundA', -15.3, 6.2),
+    tree('tree_pineRoundA', -13.1, 7.9),
     tree('tree_thin', -9.6, 12.5),
     tree('tree_small', -10.2, 9.6, 0, 1.1),
     tree('tree_detailed_dark', -2.3, 13.0, 0, 0.9),
     // the quiet corner: a fallen log, a stump, mushrooms, rocks
     n('log', -11.6, 10.6, 35, { solid: 'fit' }),
     bush('stump_round', -10.8, 11.4, 0, 1),
-    bit('mushroom_tanGroup', -11.3, 11.7, 0, 0.7), bit('mushroom_red', -12.8, 7.6, 0, 0.7),
-    n('rock_largeA', -14.3, 12.6, 20, { solid: 'fit', scale: 0.6 }),
-    bit('rock_smallA', -13.5, 12.9, 0, 0.8), bit('rock_smallC', -14.9, 12.0, 0, 0.8),
+    bit('mushroom_tanGroup', -11.3, 11.7, 0, 0.7), bit('mushroom_red', -12.2, 8.3, 0, 0.7),
+    n('rock_largeA', -13.1, 12.8, 20, { solid: 'fit', scale: 0.6 }),
+    bit('rock_smallA', -12.5, 13.2, 0, 0.8), bit('rock_smallC', -13.3, 11.6, 0, 0.8),
     n('stone_largeA', -3.4, 8.6, 70, { solid: 'fit', scale: 0.5 }),
     bit('grass_large', -13.3, 8.6, 0, 0.6), bit('grass', -9.2, 6.4, 0, 0.6), bit('grass_leafs', -5.2, 8.6, 0, 0.6), bit('grass', -4.4, 11.6, 0, 0.6),
-    bit('grass_large', -15.4, 12.4, 0, 0.6), bit('grass', -11.0, 8.9, 0, 0.6), bit('grass_leafs', -6.2, 10.8, 0, 0.6),
+    bit('grass', -11.0, 8.9, 0, 0.6), bit('grass_leafs', -6.2, 10.8, 0, 0.6),
     r('light-square', -12.5, 1.75, 0, { solid: [0.2, 0.2] }),
     r('light-square', -4.0, 1.75, 0, { solid: [0.2, 0.2] }),
 
@@ -289,7 +291,8 @@
     },
     setup: function (api) {
       // signs on the fronts of the buildings you go into, the bus stop's timetable, Nina's cart and the park gate
-      K.dress(api, { panels: [
+      K.dress(api, { mountains: { side: 'n', from: 48, depth: 44, width: 380, height: 7.5, seed: 3 }, sea: { side: 's', from: 31, beach: 3, width: 340, depth: 140 },
+        panels: [
         { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Lakeside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
         { kind: 'sign', at: [5.4, 3.47], turn: 180, y: 1.55, w: 2.8, h: 0.5, text: 'Sunny Side Diner', bg: '#c0392b', fg: '#fff6d8', border: '#ffd166', frame: '#7e2a23' },
         { kind: 'sign', at: [11.0, 3.77], turn: 180, y: 1.75, w: 2.4, h: 0.48, text: 'Fairview Market', bg: '#3f8f5a', logo: '#ffd166', frame: '#2f6b45' },
