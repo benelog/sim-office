@@ -148,14 +148,22 @@
   });
 
   // ---------------------------------------------------------------- renderer, scene, light
+  // Graphics quality: High = one soft shadow map, street lamps and ceiling lights, a vignette; Low = no shadows,
+  // two point lights at most, pixel ratio 1. Phones and tablets start on Low (settings.gfx remembers a choice).
+  const coarse = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+  const gfxHigh = () => (settings.gfx || (coarse ? 'low' : 'high')) === 'high';
   const canvas = $('view');
   const renderer = new T.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = T.SRGBColorSpace;
+  renderer.toneMapping = T.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.0;
+  renderer.shadowMap.type = T.PCFShadowMap;           // r186: PCFSoftShadowMap is gone; PCF with a radius is soft
   const scene = new T.Scene();
   scene.background = new T.Color('#9fd0f5');
   const camera = new T.PerspectiveCamera(50, 1, 0.05, 400);
   function resize() {
     const w = window.innerWidth, h = window.innerHeight;
+    renderer.setPixelRatio(gfxHigh() ? Math.min(window.devicePixelRatio || 1, 2) : 1);
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
     camera.fov = w < h ? 64 : 50;
@@ -164,24 +172,63 @@
   window.addEventListener('resize', resize);
   resize();
   const hemi = new T.HemisphereLight(0xe6efff, 0x6b6258, 1.1);
-  const sun = new T.DirectionalLight(0xfff2dd, 2.0);
+  const sun = new T.DirectionalLight(0xfff2dd, 2.0);        // the sun or the moon outdoors, the window light indoors
+  sun.shadow.bias = -0.0006;
+  sun.shadow.normalBias = 0.05;
+  sun.shadow.radius = 1.5;
+  sun.shadow.intensity = 0.8;
   scene.add(hemi, sun, sun.target);
+  function applyQuality() {
+    const high = gfxHigh();
+    renderer.shadowMap.enabled = high;
+    sun.castShadow = high;
+    const size = coarse ? 1024 : 2048;
+    if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
+    document.body.classList.toggle('gfx-low', !high);
+    const b = $('gfx-btn');
+    if (b) b.textContent = 'Graphics: ' + (high ? 'High' : 'Low');
+    resize();
+    shadowMat.opacity = high ? 0.6 : 1;
+    if (zoneGroup) { setupLights(); lampTimer = 0; applyEnvironment(); }
+    scene.traverse(o => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.needsUpdate = true; }); });
+  }
+  // what casts and what takes shadows: people, furniture, buildings, cars and trees cast; floors, tiles and food only take
+  function shadows(root, cast) {
+    root.traverse(o => {
+      if (!o.isMesh || o.userData.ink) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      o.castShadow = !!cast && !mats.some(m => m && m.transparent && m.opacity < 0.9);
+      o.receiveShadow = true;
+    });
+    return root;
+  }
 
-  // ---------------------------------------------------------------- toon look: three tones; ink outline on people only
-  const gradient = (function () {
-    const t = new T.DataTexture(new Uint8Array([110, 185, 255]), 3, 1, T.RedFormat);
+  // ---------------------------------------------------------------- toon look: stepped light on the Kenney colours; ink outline on people only
+  // LOOK (for tuning; localStorage 'so.look'): 'toon5' (default), 'toon3', 'lambert' or 'standard'.
+  const LOOK = (() => { try { return localStorage.getItem('so.look') || 'toon5'; } catch (e) { return 'toon5'; } })();
+  function steps(levels) {
+    const t = new T.DataTexture(new Uint8Array(levels), levels.length, 1, T.RedFormat);
     t.minFilter = t.magFilter = T.NearestFilter;
     t.needsUpdate = true;
     return t;
-  })();
+  }
+  const gradient = LOOK === 'toon3' ? steps([110, 185, 255]) : steps([96, 138, 180, 220, 255]);
+  function litMaterial(params) {
+    let m;
+    if (LOOK === 'lambert') m = new T.MeshLambertMaterial(params);
+    else if (LOOK === 'standard') m = new T.MeshStandardMaterial(Object.assign({ roughness: 1, metalness: 0 }, params));
+    else m = new T.MeshToonMaterial(Object.assign({ gradientMap: gradient }, params));
+    m.userData.lit = true;
+    return m;
+  }
   const colorMats = {};
-  const toon = (color) => colorMats[color] || (colorMats[color] = new T.MeshToonMaterial({ color: new T.Color(color), gradientMap: gradient }));
+  const toon = (color) => colorMats[color] || (colorMats[color] = litMaterial({ color: new T.Color(color) }));
   const toonCache = new Map();
   function toonOf(m) {          // keeps the Kenney colormap texture (map), unlike the Little Prince engine
-    if (!m || m.isMeshToonMaterial || m.isShaderMaterial) return m;
+    if (!m || (m.userData && m.userData.lit) || m.isShaderMaterial) return m;
     if (toonCache.has(m)) return toonCache.get(m);
-    const t = new T.MeshToonMaterial({
-      color: m.color ? m.color.clone() : new T.Color(0xffffff), map: m.map || null, gradientMap: gradient,
+    const t = litMaterial({
+      color: m.color ? m.color.clone() : new T.Color(0xffffff), map: m.map || null,
       transparent: !!m.transparent, opacity: m.opacity == null ? 1 : m.opacity, alphaTest: m.alphaTest || 0, side: m.side, vertexColors: !!m.vertexColors
     });
     if (m.emissive && m.emissive.getHex() && !m.emissiveMap) t.emissive = m.emissive.clone();
@@ -314,6 +361,7 @@
     head.position.y = 0.46;
     g.add(legs, body, head);
     outline(g);
+    shadows(g, true);
     return g;
   }
   function makeActor(id, model, opts) {
@@ -325,6 +373,7 @@
       const g = packs[model].gltf;
       root = T.SkeletonUtils.clone(g.scene);
       outline(root);
+      shadows(root, true);
       if (g.animations.length) {
         mixer = new T.AnimationMixer(root);
         g.animations.forEach(c => { actions[c.name] = mixer.clipAction(c); });
@@ -449,7 +498,6 @@
   // ---------------------------------------------------------------- building a zone
   let zoneId = null, Z = null, zoneGroup = null, buildToken = 0, busy = false, portalArmed = false;
   let solids = [], zoneProps = {}, npcActors = {}, tags = [], disposables = [];
-  const zoneLights = [];
   function propSize(p) {
     const s = (p.pack === 'box' ? 1 : (PACK_SCALE[p.pack] || 1)) * (p.scale || 1);
     if (p.pack === 'box') return p.size || [1, 1, 1];
@@ -498,6 +546,10 @@
     zoneGroup.add(holder);
     holder.updateMatrixWorld(true);
     holder.traverse(o => { o.matrixAutoUpdate = false; });
+    const flat = isTile || p.pack === 'food' || /^(floor|rug|path|driveway|tile|road-(?!sign))/i.test(p.node || '');
+    shadows(holder, !flat);
+    if (!isTile && !flat) zoneBox.union(new T.Box3().setFromObject(holder));
+    if (p.pack === 'roads' && /^light-(square|curved)/.test(p.node || '')) addLamp(p, holder);
     if (p.solid && !isTile) {
       if (Array.isArray(p.solid)) solids.push(rectOf(p.at[0], p.at[1], p.solid[0], p.solid[1], 0));
       else if (p.pack === 'box' || fallback) { const sz = p.pack === 'box' ? (p.size || [1, 1, 1]) : propSize(p); solids.push(rectOf(p.at[0], p.at[1], sz[0], sz[2], p.turn)); }
@@ -531,7 +583,6 @@
     if (zoneGroup) scene.remove(zoneGroup);
     disposables.forEach(d => d.dispose());
     disposables = [];
-    zoneLights.length = 0;
     zoneGroup = new T.Group();
     scene.add(zoneGroup);
     Z = spec;
@@ -547,22 +598,21 @@
     disposables.push(fg);
     const floor = new T.Mesh(fg, toon(spec.floor || '#c8c8c8'));
     floor.position.y = -0.01;
+    floor.receiveShadow = true;
     zoneGroup.add(floor);
     if (spec.indoor) {           // the rest of the building around the room, seen over the walls
       const og = new T.PlaneGeometry(w + 80, d + 80).rotateX(-Math.PI / 2);
       disposables.push(og);
       const outer = new T.Mesh(og, toon('#' + new T.Color(spec.outside || spec.floor || '#c8c8c8').lerp(new T.Color('#8a8f99'), 0.55).getHexString()));
       outer.position.y = -0.03;
+      outer.receiveShadow = true;
       zoneGroup.add(outer);
     }
+    zoneBox.makeEmpty();
+    lamps.length = 0;
     (spec.tiles || []).forEach(t => addProp(t, true));
     (spec.props || []).forEach(p => addProp(p, false));
-    (spec.lights || []).slice(0, 8).forEach(l => {
-      const pl = new T.PointLight(l.color || '#ffe6c0', l.intensity == null ? 1.5 : l.intensity, l.range || 12, 1.2);
-      pl.position.set(l.at[0], l.height == null ? 1.6 : l.height, l.at[1]);
-      zoneGroup.add(pl);
-      zoneLights.push(pl);
-    });
+    setupLights();
     // portal signs and place labels
     (spec.portals || []).forEach(p => {
       addTag(p.label || ('To ' + zoneName(p.to)[0]), new T.Vector3(p.at[0], 1.1, p.at[1]), 'portal', 14, p.label_ko || ('→ ' + zoneName(p.to)[1]));
@@ -577,7 +627,8 @@
       if (placeActions(id).length) addTag(place(id).name, new T.Vector3(spec.places[id].at[0], 0.02, spec.places[id].at[1]), 'place', 5, place(id).name_ko);
     });
     zoneGroup.add(marker.group);
-    applyEnvironment(true);
+    lampTimer = 0;
+    applyEnvironment();
     // people
     refreshNpcs(true);
     if (G) {
@@ -606,40 +657,221 @@
     goalTimer = 0; actTimer = 0;
     return true;
   }
-  const portalMat = new T.MeshBasicMaterial({ color: 0x3fb5ad, transparent: true, opacity: 0.35, depthWrite: false });
+  const portalMat = new T.MeshBasicMaterial({ color: 0x3fb5ad, transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false });
 
-  // ---------------------------------------------------------------- environment: sky by the clock outdoors, a plain backdrop indoors
-  const SKY = { day: new T.Color('#9fd0f5'), dusk: new T.Color('#f0b58c'), night: new T.Color('#1a2442') };
-  let envTimer = 0;
+  // ---------------------------------------------------------------- environment: sun, sky and street lamps by the clock outdoors; window and ceiling light indoors
+  // Outdoors the clock drives everything: the sun rises in the east (+x) at 06:00, stands in the south (+z) at noon
+  // and sets in the west at 18:30; from dusk the moon (blue, from the south-west) takes over and the street lamps
+  // (roads light-square / light-curved props) glow, lighting the ground with a few point lights that follow you.
+  // Indoors the light does not change with the clock: a window light (from the side with the most windows) with
+  // the one shadow map, ceiling lights (the zone's lights, or a grid), a warm fill; only the backdrop darkens at night.
+  const zoneBox = new T.Box3(), lamps = [], zoneLights = [];
+  let lampPool = [], windowDir = new T.Vector3(0.45, 0.78, 0.45).normalize();
+  const KEYS = [          // hour, sun colour, sun, fill sky, fill ground, fill, sky top, sky horizon, lamps, exposure
+    [0, '#a4b2dc', 0.6, '#5c6788', '#22242e', 0.75, '#060b1c', '#1c2848', 1, 1.15],
+    [5.0, '#a4b2dc', 0.6, '#5c6788', '#22242e', 0.75, '#060b1c', '#1c2848', 1, 1.15],
+    [6.0, '#ff9868', 0.8, '#8c86b0', '#4a3e3a', 0.8, '#34416e', '#e89a7c', 0.6, 1.05],
+    [7.0, '#ffb070', 1.8, '#c3cdea', '#6e5c4a', 0.9, '#6d9dd6', '#ffd0a4', 0, 0.9],
+    [9.0, '#ffeedd', 2.1, '#dde8ff', '#6d6458', 0.8, '#5c9fe2', '#cde4f6', 0, 0.85],
+    [12.0, '#fffaf2', 2.3, '#e4eeff', '#6d6458', 0.8, '#4e97e4', '#d0e8fa', 0, 0.85],
+    [16.0, '#fff0da', 2.1, '#e0eaff', '#6d6458', 0.8, '#5899dc', '#d6e5f2', 0, 0.85],
+    [17.5, '#ffbe7c', 1.9, '#d6d2e6', '#6c5848', 0.8, '#6a90ca', '#f5c898', 0, 0.9],
+    [18.5, '#ff8a4c', 1.6, '#c4b8b4', '#5e4a3a', 0.8, '#4a5c98', '#f5a070', 0.25, 0.95],
+    [19.5, '#ff6a40', 0.7, '#8a86a4', '#3a3238', 0.75, '#253062', '#c47a6c', 0.8, 1.05],
+    [20.5, '#a4b2dc', 0.6, '#5c6788', '#22242e', 0.75, '#0a1128', '#223052', 1, 1.15],
+    [24, '#a4b2dc', 0.6, '#5c6788', '#22242e', 0.75, '#060b1c', '#1c2848', 1, 1.15]
+  ].map(k => k.map(v => typeof v === 'string' ? new T.Color(v) : v));
+  const env = { sun: new T.Color(), sky: new T.Color(), ground: new T.Color(), top: new T.Color(), horizon: new T.Color(), sunI: 1, fillI: 1, lamp: 0, exposure: 1, night: 0, dir: new T.Vector3() };
+  const MOON = new T.Vector3(-0.45, 0.78, 0.5).normalize(), sunV = new T.Vector3();
+  function envAt(h) {
+    h = ((h % 24) + 24) % 24;
+    let k = 0;
+    while (k < KEYS.length - 2 && KEYS[k + 1][0] <= h) k++;
+    const A = KEYS[k], B = KEYS[k + 1], t = clamp((h - A[0]) / (B[0] - A[0]), 0, 1);
+    env.sun.copy(A[1]).lerp(B[1], t); env.sunI = A[2] + (B[2] - A[2]) * t;
+    env.sky.copy(A[3]).lerp(B[3], t); env.ground.copy(A[4]).lerp(B[4], t); env.fillI = A[5] + (B[5] - A[5]) * t;
+    env.top.copy(A[6]).lerp(B[6], t); env.horizon.copy(A[7]).lerp(B[7], t);
+    env.lamp = A[8] + (B[8] - A[8]) * t; env.exposure = A[9] + (B[9] - A[9]) * t;
+    env.night = h < 5 ? 1 : h < 6.2 ? (6.2 - h) / 1.2 : h < 19.3 ? 0 : h < 20.3 ? h - 19.3 : 1;
+    const az = Math.PI * (h - 6) / 12.5, el = Math.max(0.2, Math.sin(az));
+    sunV.set(Math.cos(az) * Math.cos(el), Math.sin(el), Math.sin(az) * Math.cos(el));
+    env.dir.copy(sunV).lerp(MOON, env.night).normalize();
+    return env;
+  }
+  // the sky: a dome around the camera, horizon colour = fog colour, the sun (or the moon) as a soft disc, stars at night
+  const sky = (function () {
+    const mat = new T.ShaderMaterial({
+      uniforms: { top: { value: new T.Color() }, horizon: { value: new T.Color() }, sunDir: { value: new T.Vector3(0, 1, 0) }, sunColor: { value: new T.Color() }, glow: { value: 0 }, stars: { value: 0 } },
+      vertexShader: 'varying vec3 vDir; void main() { vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
+      fragmentShader: `uniform vec3 top, horizon, sunDir, sunColor; uniform float glow, stars; varying vec3 vDir;
+        void main() {
+          vec3 d = normalize(vDir);
+          float h = max(d.y, 0.0);
+          vec3 c = mix(horizon, top, pow(smoothstep(0.0, 0.75, h), 0.7));
+          float s = max(dot(d, sunDir), 0.0);
+          c += sunColor * (pow(s, 12.0) * 0.45 * glow + pow(s, 3.0) * 0.18 * glow + smoothstep(0.9990, 0.9994, s));
+          vec3 q = floor(d * 240.0);
+          float r = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+          c += stars * step(0.9975, r) * smoothstep(0.06, 0.35, d.y) * vec3(0.85, 0.88, 1.0);
+          gl_FragColor = vec4(c, 1.0);
+          #include <colorspace_fragment>
+        }`,
+      side: T.BackSide, depthWrite: false, depthTest: false, fog: false, toneMapped: false
+    });
+    const m = new T.Mesh(new T.SphereGeometry(300, 24, 12), mat);
+    m.frustumCulled = false;
+    m.renderOrder = -1000;
+    scene.add(m);
+    return m;
+  })();
+  const fog = new T.Fog(0xffffff, 10, 100);
+  const glowTex = radialTexture([[0, 'rgba(255,240,205,1)'], [0.22, 'rgba(255,214,150,0.6)'], [0.55, 'rgba(255,190,110,0.16)'], [1, 'rgba(255,180,100,0)']]);
+  const glowMat = new T.SpriteMaterial({ map: glowTex, blending: T.AdditiveBlending, depthWrite: false, transparent: true, toneMapped: false, opacity: 0 });
+  function addLamp(p, holder) {        // a street lamp: where its light hangs, and a glow sprite there
+    const bb = (((window.SO_ZONE_KIT || {}).BOX || {}).roads || {})[p.node];
+    const s = (PACK_SCALE.roads || 3) * (p.scale || 1), heads = [];
+    if (bb) {
+      const x = (bb[0] + bb[1]) / 2 * s, y = bb[5] * s - 0.08;
+      heads.push(new T.Vector3(x, y, bb[2] * s + 0.1));
+      if (/double/.test(p.node)) heads.push(new T.Vector3(x, y, bb[3] * s - 0.1));
+    } else heads.push(new T.Vector3(0, 1.7, 0));
+    heads.forEach(h => {
+      holder.localToWorld(h);
+      const g = new T.Sprite(glowMat);
+      g.position.copy(h);
+      g.scale.setScalar(0.9);
+      g.renderOrder = 2;
+      g.visible = false;
+      zoneGroup.add(g);
+      lamps.push({ at: h, glow: g });
+    });
+  }
+  function autoLights(spec) {          // ceiling lights on a grid when the zone gives none
+    const [w, d] = spec.size;
+    let nx = Math.max(1, Math.round(w / 5)), nz = Math.max(1, Math.round(d / 5));
+    while (nx * nz > 6) { if (nx >= nz) nx--; else nz--; }
+    const out = [];
+    for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) out.push({ at: [-w / 2 + (i + 0.5) * w / nx, -d / 2 + (k + 0.5) * d / nz], height: 1.25, color: '#fff0dc', intensity: 1.0 });
+    return out;
+  }
+  function setupLights() {
+    zoneLights.forEach(l => { if (l.parent) l.parent.remove(l); });
+    zoneLights.length = 0;
+    lampPool = [];
+    if (!Z || !zoneGroup) return;
+    const high = gfxHigh();
+    if (Z.indoor) {
+      let list = (Z.lights && Z.lights.length ? Z.lights : autoLights(Z)).slice(0, 8);
+      if (!high && list.length > 2) list = list.slice().sort((a, b) => Math.hypot(a.at[0], a.at[1]) - Math.hypot(b.at[0], b.at[1])).slice(0, 2);
+      list.forEach(l => {
+        const pl = new T.PointLight(l.color || '#fff0dc', (l.intensity == null ? 1.2 : l.intensity) * 1.2, l.range || 9, 1.3);
+        pl.position.set(l.at[0], l.height == null ? 1.25 : l.height, l.at[1]);
+        zoneGroup.add(pl);
+        zoneLights.push(pl);
+      });
+      // the window light comes from the side of the room with the most windows (a steep angle, so the walls shade only their foot)
+      const v = new T.Vector2();
+      (Z.props || []).forEach(p => { if (p && /^wallWindow/.test(p.node || '')) v.add(new T.Vector2(p.at[0] / (Z.size[0] || 1), p.at[1] / (Z.size[1] || 1))); });
+      const n = v.length();
+      if (n > 0.6) v.divideScalar(n); else v.set(0.55, 0.8).normalize();
+      windowDir.set(v.x * 0.62, 0.78, v.y * 0.62).normalize();
+    } else if (lamps.length) {
+      const n = Math.min(high ? 6 : 2, lamps.length);
+      for (let i = 0; i < n; i++) {
+        const pl = new T.PointLight('#ffc98a', 0, 7.5, 1.4);
+        pl.position.copy(lamps[i].at);
+        zoneGroup.add(pl);
+        zoneLights.push(pl);
+        lampPool.push(pl);
+      }
+    }
+  }
+  // fit the one shadow map to the zone: the props' box (with the floor, capped near the zone's size) seen from the light
+  const shadowView = new T.Matrix4(), boxC = new T.Vector3(), corner = new T.Vector3(), fitBox = new T.Box3();
+  function fitShadow(dir) {
+    if (!Z) return;
+    const [w, d] = Z.size, m = Z.indoor ? 0.6 : 6;
+    fitBox.copy(zoneBox);
+    fitBox.expandByPoint(corner.set(-w / 2, 0, -d / 2)).expandByPoint(corner.set(w / 2, 0, d / 2));
+    fitBox.intersect(new T.Box3(new T.Vector3(-w / 2 - m, -1, -d / 2 - m), new T.Vector3(w / 2 + m, 60, d / 2 + m)));
+    fitBox.getCenter(boxC);
+    const r = fitBox.getSize(corner).length() + 4;
+    sun.target.position.copy(boxC);
+    sun.position.copy(boxC).addScaledVector(dir, r);
+    sun.target.updateMatrixWorld();
+    sun.updateMatrixWorld();
+    const cam = sun.shadow.camera;
+    cam.position.copy(sun.position);
+    cam.lookAt(boxC);
+    cam.updateMatrixWorld();
+    shadowView.copy(cam.matrixWorld).invert();
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      corner.set(i & 1 ? fitBox.max.x : fitBox.min.x, i & 2 ? fitBox.max.y : fitBox.min.y, i & 4 ? fitBox.max.z : fitBox.min.z).applyMatrix4(shadowView);
+      x0 = Math.min(x0, corner.x); x1 = Math.max(x1, corner.x); y0 = Math.min(y0, corner.y); y1 = Math.max(y1, corner.y); z0 = Math.min(z0, corner.z); z1 = Math.max(z1, corner.z);
+    }
+    cam.left = x0 - 0.5; cam.right = x1 + 0.5; cam.bottom = y0 - 0.5; cam.top = y1 + 0.5;
+    cam.near = Math.max(0.1, -z1 - 2); cam.far = -z0 + 2;
+    cam.updateProjectionMatrix();
+  }
+  let envTimer = 0, lampTimer = 0;
+  const hourNow = () => (G ? G.minute : 600) / 60;
   function applyEnvironment() {
     if (!Z) return;
+    const e = envAt(hourNow());
     if (Z.indoor) {
-      const bg = new T.Color(Z.background || '#cdd3dc');
+      sky.visible = false;
+      const bg = new T.Color(Z.background || '#cdd3dc').lerp(new T.Color('#1a2238'), e.night * 0.85);
       scene.background = bg;
-      scene.fog = new T.Fog(bg, Math.max(Z.size[0], Z.size[1]) * 0.9 + 6, Math.max(Z.size[0], Z.size[1]) * 1.6 + 30);
-      sun.position.set(3, 10, 6);
-      sun.intensity = 1.5;
-      sun.color.set('#fff4e6');
-      hemi.intensity = 1.15 * (Z.ambient == null ? 0.9 : Z.ambient);
-      hemi.color.set('#f2f4ff');
-      hemi.groundColor.set('#8a8070');
+      fog.color.copy(bg);
+      fog.near = Math.max(Z.size[0], Z.size[1]) * 0.9 + 6;
+      fog.far = Math.max(Z.size[0], Z.size[1]) * 1.6 + 30;
+      scene.fog = fog;
+      sun.color.set('#fff1de');
+      sun.intensity = 1.2;
+      fitShadow(windowDir);
+      hemi.intensity = 0.85 * (Z.ambient == null ? 0.9 : Z.ambient);
+      hemi.color.set('#fff5e8');
+      hemi.groundColor.set('#8a7c6a');
+      renderer.toneMappingExposure = 0.85;
       return;
     }
-    const h = (G ? G.minute : 600) / 60;
-    const e = clamp(Math.sin(Math.PI * (h - 6) / 14), 0, 1);            // 6:00 → 20:00
-    const night = h < 5.5 || h > 20.5;
-    const bg = night ? SKY.night.clone() : e < 0.3 ? SKY.dusk.clone().lerp(SKY.day, e / 0.3) : SKY.day.clone();
-    if (!night && (h < 6.5 || h > 19.5)) bg.lerp(SKY.night, h < 6.5 ? clamp((6.5 - h) / 1, 0, 1) * 0.6 : clamp((h - 19.5) / 1, 0, 1) * 0.8);
-    scene.background = bg;
+    sky.visible = true;
+    sky.material.uniforms.top.value.copy(e.top);
+    sky.material.uniforms.horizon.value.copy(e.horizon);
+    sky.material.uniforms.sunDir.value.copy(e.dir);
+    sky.material.uniforms.sunColor.value.copy(e.sun).multiplyScalar(e.night > 0.5 ? 0.9 : 1.2);
+    sky.material.uniforms.glow.value = e.night > 0.5 ? 0.35 : 1 + (1 - clamp(e.dir.y / 0.6, 0, 1)) * 1.5;
+    sky.material.uniforms.stars.value = clamp((e.night - 0.5) * 2, 0, 1);
+    scene.background = e.horizon;
     const far = Math.max(Z.size[0], Z.size[1]) * 1.2 + 40;
-    scene.fog = new T.Fog(bg, far * 0.55, far * 1.4);
-    const az = Math.PI * (h - 6) / 14;
-    sun.position.set(Math.cos(az) * 30, 8 + e * 30, 12);
-    sun.color.set(e < 0.35 ? '#ffc796' : '#fff2dd');
-    sun.intensity = night ? 0.25 : 0.6 + 1.7 * e;
-    hemi.intensity = (night ? 0.55 : 0.75 + 0.45 * e) * (Z.ambient == null ? 1 : Z.ambient);
-    hemi.color.set(night ? '#8090c0' : '#e6efff');
-    hemi.groundColor.set(night ? '#303040' : '#6b6258');
+    fog.color.copy(e.horizon);
+    fog.near = far * 0.55;
+    fog.far = far * 1.4;
+    scene.fog = fog;
+    sun.color.copy(e.sun);
+    sun.intensity = e.sunI;
+    fitShadow(e.dir);
+    hemi.intensity = e.fillI * (Z.ambient == null ? 1 : Z.ambient);
+    hemi.color.copy(e.sky);
+    hemi.groundColor.copy(e.ground);
+    renderer.toneMappingExposure = e.exposure;
+    // street lamps: glows on every lamp, the point lights on the ones nearest to you
+    const on = e.lamp;
+    glowMat.opacity = on;
+    lamps.forEach(l => { l.glow.visible = on > 0.02; });
+    if (lampPool.length) {
+      const c = player && state !== 'title' ? player.pos : cam.look;
+      if ((lampTimer -= 1) <= 0) {
+        lampTimer = 4;
+        lamps.slice().sort((a, b) => a.at.distanceToSquared(c) - b.at.distanceToSquared(c)).slice(0, lampPool.length).forEach((l, i) => lampPool[i].position.copy(l.at));
+      }
+      lampPool.forEach(pl => { pl.intensity = on * 5; pl.visible = on > 0.02; });     // hidden by day: no cost (one shader rebuild at dusk)
+    }
+  }
+  function envTick(dt) {
+    if ((envTimer -= dt) <= 0) { envTimer = 0.25; applyEnvironment(); }
+    if (Z && !Z.indoor) sky.position.copy(camera.position);
   }
 
   // ---------------------------------------------------------------- the player and the people around
@@ -691,7 +923,7 @@
         let a = npcActors[w.row.id];
         if (!a) {
           a = npcActors[w.row.id] = makeActor(w.row.id, w.row.model, { name: w.row.name, row: w.row });
-          a.mark = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false }));
+          a.mark = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false, toneMapped: false }));
           a.mark.scale.setScalar(0.2);
           a.mark.position.y = 0.98;
           a.mark.renderOrder = 5;
@@ -835,7 +1067,7 @@
     Object.keys(phones).forEach(id => { if (!keep.has(id) || phones[id].parent !== zoneGroup) { if (phones[id].parent) phones[id].parent.remove(phones[id]); delete phones[id]; } });
     list.forEach(e => {
       if (phones[e.id]) return;
-      const m = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false }));
+      const m = new T.Sprite(new T.SpriteMaterial({ map: bangTex, depthWrite: false, toneMapped: false }));
       m.scale.setScalar(0.22);
       const at = Z.places[e.place].at;
       m.position.set(at[0], 0.95, at[1]);
@@ -847,10 +1079,10 @@
   // the guide on the ground: a ring at the person, a beam at the way out toward them
   const marker = (function () {
     const group = new T.Group();
-    const ring = new T.Mesh(new T.RingGeometry(0.34, 0.44, 32).rotateX(-Math.PI / 2), new T.MeshBasicMaterial({ color: 0xf2b632, transparent: true, opacity: 0.85, depthWrite: false }));
+    const ring = new T.Mesh(new T.RingGeometry(0.34, 0.44, 32).rotateX(-Math.PI / 2), new T.MeshBasicMaterial({ color: 0xf2b632, transparent: true, opacity: 0.85, depthWrite: false, toneMapped: false }));
     ring.position.y = 0.02;
     const beam = new T.Mesh(new T.CylinderGeometry(0.22, 0.32, 3.2, 20, 1, true).translate(0, 1.6, 0),
-      new T.MeshBasicMaterial({ color: 0xf2c75a, transparent: true, opacity: 0.2, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending }));
+      new T.MeshBasicMaterial({ color: 0xf2c75a, transparent: true, opacity: 0.2, depthWrite: false, side: T.DoubleSide, blending: T.AdditiveBlending, toneMapped: false }));
     group.add(ring, beam);
     group.visible = false;
     return { group, ring, beam };
@@ -1635,6 +1867,7 @@
     const b = e.target.closest('button');
     if (!b) return;
     const what = b.dataset.open;
+    if (what === 'graphics') { settings.gfx = gfxHigh() ? 'low' : 'high'; saveSettings(); applyQuality(); return; }
     toggleMenu(false);
     if (what === 'title') { saveGame(); showTitle(); }
     else if (what === 'reset') { if (confirm('Delete your saved game and start over?')) { resetGame(); } }
@@ -1678,6 +1911,7 @@
       try {
         preview.renderer = new T.WebGLRenderer({ canvas: $('preview'), antialias: true, alpha: true });
         preview.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        preview.renderer.toneMapping = renderer.toneMapping;
         const c = $('preview');
         preview.renderer.setSize(c.clientWidth || 150, c.clientHeight || 184, false);
         preview.scene = new T.Scene();
@@ -1750,7 +1984,7 @@
 
   // ---------------------------------------------------------------- the api a zone file's setup/update sees
   const api = {
-    T, scene, camera, toon, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
+    T, scene, camera, renderer, toon, shadows, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
     get zone() { return zoneId; }, get spec() { return Z; }, get group() { return zoneGroup; }, get player() { return player; },
     get npcs() { return npcActors; }, get props() { return zoneProps; }, get game() { return G; }, get state() { return state; },
     get day() { return G ? G.day : 0; }, get minute() { return G ? G.minute : 0; }, isDone: (id) => !!(G && G.done[id]),
@@ -1772,7 +2006,7 @@
     if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) refreshNpcs(false); updateGoal(); }
     if ((actTimer -= dt) <= 0) { actTimer = 0.12; actions = computeActions(); renderActions(); }
     if ((hudTimer -= dt) <= 0) { hudTimer = 0.25; hud(); }
-    if ((envTimer -= dt) <= 0) { envTimer = 1; applyEnvironment(); }
+    envTick(dt);
     markerTick(elapsed);
     cameraTick(dt);
     placeBubbles();
@@ -1794,6 +2028,7 @@
     const generated = all.filter(z => !window.SO_ZONES[z]);
     if (generated.length) console.warn(`Sim Office: no zone file for ${generated.join(', ')}; using generated rooms`);
     ZONE_ORDER.push(...all);
+    applyQuality();
     renderer.setAnimationLoop(frame);
     await Promise.all(CHARACTERS.map(loadPack));
     reportMissing();
@@ -1823,6 +2058,7 @@
     get actions() { return actions.map(a => a.label); }, get npcs() { return Object.keys(npcActors); },
     get models() { const o = {}; Object.keys(packs).forEach(k => { o[k] = packs[k].status; }); return o; },
     set speed(v) { debugSpeed = +v || 1; }, set fast(v) { fastMode = !!v; },
+    get gfx() { return gfxHigh() ? 'high' : 'low'; }, set gfx(v) { settings.gfx = v === 'low' ? 'low' : 'high'; applyQuality(); },
     async start(name, model) {
       await until(() => ready, 20000);
       if (talk) endTalk();
