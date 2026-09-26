@@ -97,8 +97,10 @@
   }
   const zoneName = (z) => { const s = zoneSpecs[z] || (window.SO_ZONES || {})[z]; return [(s && s.name) || (ZONE_NAMES[z] || [pretty(z)])[0], (s && s.name_ko) || (ZONE_NAMES[z] || [])[1] || '']; };
 
-  // ---------------------------------------------------------------- storage: settings and the save
-  const SAVE_KEY = 'so.v1.save', SET_KEY = 'so.v1.settings';
+  // ---------------------------------------------------------------- storage: settings and the saves
+  // One saved game per character name: localStorage so.v1.saves = { [name]: game }, so.v1.last = the name played
+  // last. A save from before (so.v1.save, one game) is moved into the list at start.
+  const SAVE_KEY = 'so.v1.save', SAVES_KEY = 'so.v1.saves', LAST_KEY = 'so.v1.last', SET_KEY = 'so.v1.settings';
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } },
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
@@ -106,7 +108,21 @@
   };
   const settings = Object.assign({ voice: true, ko: false, mode: 'type' }, store.get(SET_KEY) || {});
   const saveSettings = () => store.set(SET_KEY, settings);
-  let G = null;           // the game in progress (what goes into so.v1.save)
+  function allSaves() { const s = store.get(SAVES_KEY); return s && typeof s === 'object' && !Array.isArray(s) ? s : {}; }
+  function savedGames() {          // newest first
+    const s = allSaves();
+    return Object.keys(s).filter(n => s[n] && typeof s[n] === 'object').map(n => s[n]).sort((a, b) => (b.saved || 0) - (a.saved || 0));
+  }
+  function lastSave() { const s = allSaves(), last = store.get(LAST_KEY); return (last && s[last]) || savedGames()[0] || null; }
+  function deleteSave(name) { const s = allSaves(); delete s[name]; store.set(SAVES_KEY, s); if (store.get(LAST_KEY) === name) store.del(LAST_KEY); }
+  (function migrateSave() {
+    const old = store.get(SAVE_KEY);
+    if (!old || typeof old !== 'object' || !old.name) return;
+    const s = allSaves();
+    if (!s[old.name] || (old.saved || 0) >= (s[old.name].saved || 0)) { s[old.name] = old; store.set(SAVES_KEY, s); store.set(LAST_KEY, old.name); }
+    store.del(SAVE_KEY);
+  })();
+  let G = null;           // the game in progress (what goes into so.v1.saves under its name)
   function newGame(name, model) {
     return {
       name: (name || CFG.player_name || 'Jun').trim().slice(0, 16) || 'Jun', model: CHARACTERS.includes(model) ? model : DEFAULT_CHARACTER,
@@ -118,7 +134,11 @@
     if (!G) return;
     if (player && zoneId) { G.zone = zoneId; G.at = [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)]; G.heading = +player.heading.toFixed(3); }
     G.log = G.log.slice(-400);
-    store.set(SAVE_KEY, G);
+    G.saved = Date.now();
+    const s = allSaves();
+    s[G.name] = G;
+    store.set(SAVES_KEY, s);
+    store.set(LAST_KEY, G.name);
   }
   function logEvent(type, text, amount, extra) { G.log.push(Object.assign({ day: G.day, minute: Math.floor(G.minute), type, text, amount: amount || 0 }, extra || {})); }
 
@@ -2570,11 +2590,11 @@
     if (what === 'graphics') { settings.gfx = gfxHigh() ? 'low' : 'high'; saveSettings(); applyQuality(); return; }
     toggleMenu(false);
     if (what === 'title') { saveGame(); showTitle(); }
-    else if (what === 'reset') { if (confirm('Delete your saved game and start over?')) { resetGame(); } }
+    else if (what === 'reset') { if (confirm(`Delete ${G ? G.name + "'s" : 'your'} saved game and start over?`)) { resetGame(); } }
     else openPanel(what);
   });
   function resetGame() {
-    store.del(SAVE_KEY);
+    if (G) deleteSave(G.name);
     G = null;
     if (talk) endTalk();
     panel.hidden = true;
@@ -2646,11 +2666,59 @@
     $('side').hidden = true;
     $('acts').innerHTML = '';
     actSig = '';
-    const s = store.get(SAVE_KEY);
-    const cont = $('continue');
-    cont.hidden = !s;
-    if (s) cont.textContent = `Continue: ${s.name}, ${weekday(s.day).slice(0, 3)} Day ${s.day}, ${clock(s.minute)}`;
+    renderSaves();
     markChosen();
+  }
+  // the saved games, one per name: continue any of them, or delete one (two clicks)
+  function renderSaves() {
+    const box = $('saves'), games = savedGames(), last = store.get(LAST_KEY);
+    box.innerHTML = '';
+    box.hidden = !games.length;
+    games.forEach(g => {
+      const row = document.createElement('div');
+      row.className = 'save' + (g.name === last ? ' last' : '');
+      const go = document.createElement('button');
+      go.type = 'button';
+      go.className = 'go';
+      go.innerHTML = `<b></b><span></span>`;
+      go.querySelector('b').textContent = g.name;
+      go.querySelector('span').textContent = `${charLabel(g.model)} · ${weekday(g.day).slice(0, 3)} Day ${g.day}, ${clock(g.minute)} · ${usd(g.money)}`;
+      go.addEventListener('click', () => continueGame(g.name));
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'del';
+      del.textContent = '✕';
+      del.setAttribute('aria-label', `Delete ${g.name}'s game`);
+      del.title = 'Delete this saved game';
+      let armed = 0;
+      del.addEventListener('click', () => {
+        if (!armed) { armed = setTimeout(() => { armed = 0; del.textContent = '✕'; del.classList.remove('armed'); }, 4000); del.textContent = 'Delete?'; del.classList.add('armed'); return; }
+        clearTimeout(armed);
+        deleteSave(g.name);
+        renderSaves();
+        newGameLabel();
+      });
+      row.append(go, del);
+      box.appendChild(row);
+    });
+    newGameLabel();
+  }
+  let replaceArmed = false;
+  function newGameLabel() {         // 'New game', or a warning when the name is taken by a saved game
+    const name = (nameIn.value || '').trim().slice(0, 16), taken = !!(name && allSaves()[name]);
+    const btn = $('new-game'), note = $('new-note');
+    if (btn.disabled) return;
+    btn.textContent = taken ? `New game as ${name}` : 'New game';
+    note.hidden = !(taken && replaceArmed);
+    if (taken && replaceArmed) note.textContent = `${name} already has a saved game. Click again to replace it, or use another name.`;
+  }
+  nameIn.addEventListener('input', () => { replaceArmed = false; newGameLabel(); });
+  function continueGame(name) {
+    const s = allSaves()[name];
+    if (!s) return;
+    const g = Object.assign(newGame(s.name, s.model), s);
+    if (!CHARACTERS.includes(g.model)) g.model = DEFAULT_CHARACTER;     // a save from before (the Kenney character-male-a …)
+    startGame(g, false);
   }
   async function startGame(g, fresh) {
     G = g;
@@ -2671,15 +2739,10 @@
     }
   }
   $('new-game').addEventListener('click', () => {
-    if (store.get(SAVE_KEY) && !confirm('Start a new game? Your saved game will be replaced.')) return;
-    startGame(newGame(nameIn.value, chosen), true);
-  });
-  $('continue').addEventListener('click', () => {
-    const s = store.get(SAVE_KEY);
-    if (!s) return;
-    const g = Object.assign(newGame(s.name, s.model), s);
-    if (!CHARACTERS.includes(g.model)) g.model = DEFAULT_CHARACTER;     // a save from before (the Kenney character-male-a …)
-    startGame(g, false);
+    const g = newGame(nameIn.value, chosen);
+    if (allSaves()[g.name] && !replaceArmed) { replaceArmed = true; newGameLabel(); return; }
+    replaceArmed = false;
+    startGame(g, true);
   });
   window.addEventListener('pagehide', saveGame);
   document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(); });
@@ -2772,6 +2835,7 @@
     btn.disabled = false;
     btn.textContent = 'New game';
     showTitle();
+    newGameLabel();
     ready = true;
     enterZone('city').catch(e => console.error(e));        // the backdrop behind the title
   }
@@ -2789,7 +2853,7 @@
     get ready() { return ready; }, get state() { return state; }, get busy() { return busy; },
     get day() { return G ? G.day : null; }, get time() { return G ? hhmm(G.minute) : null; }, get minute() { return G ? G.minute : null; },
     get money() { return G ? G.money : null; }, get energy() { return G ? Math.round(G.energy * 10) / 10 : null; }, get zone() { return zoneId; },
-    get zones() { return ZONE_ORDER.slice(); }, get save() { return G ? JSON.parse(JSON.stringify(G)) : store.get(SAVE_KEY); },
+    get zones() { return ZONE_ORDER.slice(); }, get save() { return G ? JSON.parse(JSON.stringify(G)) : lastSave(); }, get saves() { return savedGames().map(g => g.name); },
     get actions() { return actions.map(a => a.label); }, get npcs() { return Object.keys(npcActors).filter(id => !npcActors[id].leaving); },
     get walking() { return Object.keys(npcActors).filter(id => npcActors[id].walk); },
     get models() { const o = {}; Object.keys(packs).forEach(k => { o[k] = packs[k].status; }); return o; },
