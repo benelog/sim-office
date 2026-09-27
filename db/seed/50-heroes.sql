@@ -39,3 +39,7 @@ REPLACE INTO schedule (npc, seq, days, time_from, time_to, place) VALUES
   ('jun', 1, 'weekday', '08:45', '12:20', 'office_desk'),
   ('jun', 2, 'weekday', '12:20', '12:45', 'office_kitchen'),
   ('jun', 3, 'weekday', '12:45', '18:00', 'office_desk');
+
+-- Jun is in Ridgeport on days 11 and 12 (his business trip): not in the office in Derek's and Priya's games.
+REPLACE INTO schedule (npc, seq, days, time_from, time_to, place) VALUES
+  ('jun', 0, '11-12', '00:00', '23:59', 'client_lobby');

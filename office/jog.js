@@ -1,5 +1,6 @@
 /* Sim Office: jogging, a mini-game. The Fairview Loop is a running trail round the town: down the west side, along
-   the beach with the sea on your right, up the east side and back along the river. You run by yourself and see
+   the beach with the sea on your right, up the east side and back along the river (you can walk there any time:
+   the city's bounds reach out to it). In a run you run by yourself and see
    through your own eyes; what you do is keep the rhythm of your two feet: left, right, left, right, on the beat
    (← → or A D or F J; on a phone the two halves of the screen). Steps on the beat build your pace, so you run
    faster, pass the other runners and finish in a better time; the score counts how well the steps were timed.
@@ -10,7 +11,7 @@
    and the best score are kept in localStorage so.v1.jog. */
 (function () {
   'use strict';
-  const X = 20.6, ZN = -19.0, ZS = 29.9, CORNER = 3.2, WIDTH = 1.8, START = [-X, 2.5];
+  const X = 20.6, ZN = -20.7, ZS = 29.9, CORNER = 3.2, WIDTH = 1.8, START = [-X, 2.5];
   const BEAT = 0.4, WINDOW = 0.17, SLOW = 2.2, FAST = 5.6, AHEAD = 1.7;
   const KEYS = { ArrowLeft: 0, KeyA: 0, KeyF: 0, ArrowRight: 1, KeyD: 1, KeyJ: 1 };
   const RECORD_KEY = 'so.v1.jog';

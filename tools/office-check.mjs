@@ -125,7 +125,7 @@ try {
       await sleep(600);
     }
     log('played:', played.join(' ') || '(none)');
-    for (const p of ['phrasebook', 'calendar', 'inventory']) {
+    for (const p of ['talks', 'calendar', 'inventory']) {
       await ev(`SO.debug.panel('${p}')`);
       await sleep(400);
       await shot('panel-' + p);

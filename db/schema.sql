@@ -128,7 +128,7 @@ CREATE TABLE IF NOT EXISTS calendar (
   PRIMARY KEY (hero, day, time)
 );
 
--- Where a person is through the day. days: weekday | weekend | all. A person with rows here is at the place of the
+-- Where a person is through the day. days: weekday | weekend | all, or game days ('11' or '11-12': a trip). A person with rows here is at the place of the
 -- first row that fits the day and the time, and away (at home, off work) when none fits; a person without rows is
 -- always at npcs.place. An open episode still puts its person at the episode's place.
 CREATE TABLE IF NOT EXISTS schedule (

@@ -59,7 +59,8 @@
     }
   }
   tile('tile-low', 6, -1, 0);           // airport shuttle stop, east end of Maple Street
-  [-21, -24].forEach(function (z) { tiles.push(r('road-straight', 0, z, 90, { lift: 0.05 })); });    // the Lake Avenue bridge over the river
+  tiles.push(r('road-straight', 0, -21, 90));                                                          // Lake Avenue north of town: the running trail crosses it here
+  [-24, -27].forEach(function (z) { tiles.push(r('road-straight', 0, z, 90, { lift: 0.05 })); });    // the Lake Avenue bridge over the river, clear of the trail
   // garden paths
   [-5.0, -4.6].forEach(function (z) { tiles.push(c('path-short', -9.88, z, 0)); });
   // the park's entrance path, from the gate to the plaza
@@ -221,19 +222,19 @@
     f('bench', 17.45, -3.8, 0),
 
     // ----- the Fairview River along the north edge, Lake Avenue crossing it on a bridge
-    { pack: 'box', size: [98.5, 0.02, 5.6], at: [-50.75, -22.4], color: '#4f97d6', solid: [98.5, 5.6] },
-    { pack: 'box', size: [98.5, 0.02, 5.6], at: [50.75, -22.4], color: '#4f97d6', solid: [98.5, 5.6] },
-    { pack: 'box', size: [3.0, 0.02, 5.6], at: [0, -22.4], color: '#4f97d6' },
-    { pack: 'box', size: [0.12, 0.42, 6.0], at: [-1.42, -22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },   // the bridge's railings
-    { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, -22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
+    { pack: 'box', size: [98.5, 0.02, 5.6], at: [-50.75, -25.4], color: '#4f97d6', solid: [98.5, 5.6] },
+    { pack: 'box', size: [98.5, 0.02, 5.6], at: [50.75, -25.4], color: '#4f97d6', solid: [98.5, 5.6] },
+    { pack: 'box', size: [3.0, 0.02, 5.6], at: [0, -25.4], color: '#4f97d6' },
+    { pack: 'box', size: [0.12, 0.42, 6.0], at: [-1.42, -25.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },   // the bridge's railings
+    { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, -25.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
     // the bank: reeds, rocks, a canoe pulled up on the grass, lilies in the water
-    n('canoe', -13.6, -17.6, 15, { solid: 'fit' }),
-    bit('grass-tall', -11.0, -19.62, 0, 0.6), bit('grass-tall', -3.3, -19.62, 30, 0.6), bit('grass-tall', 5.5, -19.62, 0, 0.6),
-    bit('grass-tall', 12.5, -19.62, 60, 0.6), bit('grass-short', -16.2, -19.62, 0, 0.6), bit('grass-short', 8.6, -19.62, 0, 0.6), bit('grass-wispy-short', -7.8, -19.62, 0, 0.6),
-    bit('rock-2', -16.0, -19.62, 0, 0.9), bit('rock-1', -6.4, -19.62, 10, 0.5), bit('rock-1', 3.6, -19.62, 0, 0.9),
-    bit('rock-3', 15.2, -19.62, 50, 0.55),
-    bit('lily_large', -8.0, -20.4, 0, 0.8), bit('lily_small', -7.3, -20.8, 0, 0.8), bit('lily_large', 4.2, -20.5, 40, 0.8), bit('lily_small', 10.6, -20.3, 0, 0.8),
-    bit('lily_small', -14.6, -20.6, 0, 0.8), bit('lily_large', 16.4, -20.7, 0, 0.8),
+    n('canoe', -13.6, -22.15, 80, { solid: 'fit' }),
+    bit('grass-tall', -11.0, -22.25, 0, 0.6), bit('grass-tall', -3.3, -22.25, 30, 0.6), bit('grass-tall', 5.5, -22.25, 0, 0.6),
+    bit('grass-tall', 12.5, -22.25, 60, 0.6), bit('grass-short', -16.2, -22.25, 0, 0.6), bit('grass-short', 8.6, -22.25, 0, 0.6), bit('grass-wispy-short', -7.8, -22.25, 0, 0.6),
+    bit('rock-2', -16.0, -22.25, 0, 0.9), bit('rock-1', -6.4, -22.25, 10, 0.5), bit('rock-1', 3.6, -22.25, 0, 0.9),
+    bit('rock-3', 15.2, -22.25, 50, 0.55),
+    bit('lily_large', -8.0, -23.4, 0, 0.8), bit('lily_small', -7.3, -23.8, 0, 0.8), bit('lily_large', 4.2, -23.5, 40, 0.8), bit('lily_small', 10.6, -23.3, 0, 0.8),
+    bit('lily_small', -14.6, -23.6, 0, 0.8), bit('lily_large', 16.4, -23.7, 0, 0.8),
 
     // ----- scenery at the edge of town
     tree('tree-pine-4', -18.0, -17.6),
@@ -291,6 +292,8 @@
       { at: [11.0, 3.35], size: [1.0, 0.6], to: 'market', arrive: 'market_door', label: 'Enter the grocery store', label_ko: '식료품점에 들어가기' },
       { at: [18.0, -1.9], size: [1.2, 0.6], to: 'airport', arrive: 'airport_door', label: 'Take the airport shuttle', label_ko: '공항 셔틀 타기' }
     ],
+    // you can walk out of town as far as the running trail round it (office/jog.js), the river bank and the beach
+    bounds: [-21.9, -22.45, 21.9, 33.7],
     spawn: 'apartment_door',
     ambient: 1.0,
     // the town map (Menu > Map): street names along the roads, names of areas without a place of their own
@@ -302,18 +305,19 @@
       ],
       areas: [
         { name: 'Seaside Park', name_ko: '시사이드 공원', at: [-11.5, 11.5] },
-        { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, -22.4], water: true },
+        { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, -25.4], water: true },
         { name: 'Seaside Labs', name_ko: '시사이드 랩스', at: [8.2, -8.6] }
       ]
     },
     setup: function (api) {
+      api.solid(-19.0, 21.3, 19.0, 27.3);          // the woods between the town and the beach
       // signs on the fronts of the buildings you go into, the bus stop's timetable, Nina's cart and the park gate
       K.dress(api, { mountains: { side: 'n', from: 48, depth: 44, width: 380, height: 7.5, seed: 3 }, sea: { side: 's', from: 31, beach: 3, width: 340, depth: 140 },
         // the plains beyond the edge of town (out of reach): woods west and east of town on both banks of the river, north
         // of the river up to the foothills, and south of town down to the beach
-        wild: { seed: 11, rects: [[-90, -46, -21.5, -26], [-90, -19, -21.5, 19.5], [21.5, -46, 90, -26], [21.5, -19, 90, 19.5], [-21.5, -46, 21.5, -26], [-90, 21, 90, 27.5]],
+        wild: { seed: 11, rects: [[-90, -46, -21.5, -29], [-90, -22, -21.5, 19.5], [21.5, -46, 90, -29], [21.5, -22, 90, 19.5], [-21.5, -46, 21.5, -29], [-90, 21, 90, 27.5]],
           avoid: [[-90, -3, 90, 3], [-3, -46, 3, 19.5],
-            [-22.6, -21, -19.4, 32], [19.4, -21, 22.6, 32], [-24, 27.2, 24, 32]] },          // the running trail (office/jog.js): the sides of town and the beach
+            [-23.2, -23, -19.2, 32], [19.2, -23, 23.2, 32], [-24, 26.8, 24, 32]] },          // the running trail (office/jog.js), with room on both sides
         panels: [
         { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Seaside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
         { kind: 'sign', at: [5.4, 3.47], turn: 180, y: 1.55, w: 2.8, h: 0.5, text: 'Sunny Side Diner', bg: '#c0392b', fg: '#fff6d8', border: '#ffd166', frame: '#7e2a23' },

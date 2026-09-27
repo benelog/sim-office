@@ -316,3 +316,5 @@ body.touring #view { cursor: grab; touch-action: none; }
 #tour .tour-keys kbd { color: var(--ink); }
 #tour .tour-keys .ko { color: #d5def0; font-size: 12px; }
 @media (pointer: coarse) { #tour .tour-keys kbd { display: none; } }
+details.talk h4 { margin: 12px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent-deep); }
+details.talk .words .row { padding: 6px 0; }

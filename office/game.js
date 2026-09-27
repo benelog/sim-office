@@ -90,6 +90,12 @@
   const TURNS = {};
   rows('turns').forEach(t => { (TURNS[t.episode] = TURNS[t.episode] || []).push(t); });
   Object.values(TURNS).forEach(l => l.sort((a, b) => a.seq - b.seq));
+  const SPEAKERS = {};            // episode → the people with a line in it besides the one you talk to
+  Object.keys(TURNS).forEach(id => {
+    const who = new Set();
+    TURNS[id].forEach(t => [t.speaker, t.reply_speaker].forEach(x => { if (x && x !== 'player' && x !== 'you') who.add(x); }));
+    SPEAKERS[id] = Array.from(who);
+  });
   const CHATTER = {};
   rows('chatter').slice().sort((a, b) => a.seq - b.seq).forEach(c => { (CHATTER[c.npc] = CHATTER[c.npc] || []).push(c); });
   const SCHEDULE = {}, SMALLTALK = {};
@@ -620,6 +626,8 @@
     Z.id = z;
     Z.name = Z.name || (ZONE_NAMES[z] || [pretty(z)])[0];
     Z.name_ko = Z.name_ko || (ZONE_NAMES[z] || [])[1] || '';
+    // where you can walk: the rectangle `size` round the origin, or `bounds` [x0, z0, x1, z1] when the zone says (the city: out to the trail and the beach)
+    Z.walk = Array.isArray(f.bounds) ? f.bounds.slice() : [-Z.size[0] / 2, -Z.size[1] / 2, Z.size[0] / 2, Z.size[1] / 2];
     Z.places = Object.assign({}, Z.places);
     const missing = placesOfZone(z).filter(id => !Z.places[id] && (PLACES[id] ? PLACES[id].zone === z : true));
     if (missing.length) {
@@ -660,7 +668,7 @@
       for (let x = -w / 2 + 2; x < w / 2; x += 4.5) props.push({ pack: 'box', size: [3.6, 3 + (hash(x) % 4), 2.4], color: ['#c9b8a4', '#a9b8c9', '#c4c0b5'][hash(x) % 3], at: [x, -d / 2 + 1.3], solid: true });
     }
     const floors = { home: '#d8c9ae', city: '#8e9a7c', office: '#cfd3d6', diner: '#caa98a', market: '#d9d6cc', airport: '#d7d9de', hotel: '#b8a58f', client: '#c9ccd2' };
-    return { id: z, generated: true, name: zoneName(z)[0], name_ko: zoneName(z)[1], indoor, size: [w, d], floor: floors[z] || '#c8c8c8', tiles: [], props, places, portals,
+    return { walk: [-w / 2, -d / 2, w / 2, d / 2], id: z, generated: true, name: zoneName(z)[0], name_ko: zoneName(z)[1], indoor, size: [w, d], floor: floors[z] || '#c8c8c8', tiles: [], props, places, portals,
       spawn: ids.find(id => DOORS[z + ':' + id]) || ids[0], lights: [], ambient: indoor ? 1 : undefined };
   }
   // the first portal to take from zone `from` to reach zone `to` (breadth-first over the portals)
@@ -1160,11 +1168,17 @@
     const list = SCHEDULE[n.id];
     if (!list || !G) return n.place;
     const days = isWeekend(G.day) ? 'weekend' : 'weekday';
-    const s = list.find(s => (s.days === 'all' || s.days === days) && G.minute >= hm(s.time_from, 0) && G.minute < hm(s.time_to, 1440));
+    const onDay = (d) => { const m = /^(\d+)(?:-(\d+))?$/.exec(d); return m ? G.day >= +m[1] && G.day <= +(m[2] || m[1]) : d === 'all' || d === days; };      // '11-12': those game days
+    const s = list.find(s => onDay(String(s.days)) && G.minute >= hm(s.time_from, 0) && G.minute < hm(s.time_to, 1440));
     return s ? s.place : null;
   }
   function npcPlaceNow(n) {
-    const ep = G ? openEpisodes().find(e => e.npc === n.id && e.place && !isPhone(e)) : null;
+    if (!G) return scheduledPlace(n);
+    const open = openEpisodes().filter(e => e.place);
+    // their own conversation first; otherwise one they have a line in (a meeting: everybody who speaks is in the room,
+    // also round the phone of a call), if it is in the building they work in (not the client on the screen)
+    const ep = open.find(e => e.npc === n.id && !isPhone(e))
+      || open.find(e => e.npc !== n.id && (SPEAKERS[e.id] || []).includes(n.id) && n.place && zoneOfPlace(n.place) === zoneOfPlace(e.place) && scheduledPlace(n) && zoneOfPlace(scheduledPlace(n)) === zoneOfPlace(e.place));
     return ep ? ep.place : scheduledPlace(n);
   }
   // opening hours (config hours_<zone or place>, hours_<…>_weekend: 'HH:MM-HH:MM'); never closed while a conversation waits there
@@ -1189,7 +1203,17 @@
       const pl = spec.places[pid];
       if (!pl) return;
       const k = byPlace[pid] = (byPlace[pid] || 0) + 1;
-      const off = k === 1 ? [0, 0] : [Math.cos(k * 2.1) * 0.6, Math.sin(k * 2.1) * 0.6];
+      // the first one there has the place itself; the others stand round it, clear of the furniture and of one another
+      let off = [0, 0];
+      if (k > 1) {
+        const spots = [];
+        for (const r of [0.8, 1.1, 1.4]) for (let j = 0; j < 10; j++) spots.push([Math.cos(k * 2.1 + j * 0.63) * r, Math.sin(k * 2.1 + j * 0.63) * r]);
+        const B = spec.walk || [-99, -99, 99, 99];
+        const free = (o) => { const x = pl.at[0] + o[0], q = pl.at[1] + o[1];
+          return x > B[0] + 0.3 && x < B[2] - 0.3 && q > B[1] + 0.3 && q < B[3] - 0.3 && (z !== zoneId || !solids.some(b => x > b.x0 - NPC_R && x < b.x1 + NPC_R && q > b.z0 - NPC_R && q < b.z1 + NPC_R))
+            && !out.some(w => Math.hypot(w.at[0] - x, w.at[1] - q) < 0.6); };
+        off = spots.find(free) || spots[0];
+      }
       out.push({ row: n, place: pid, at: [pl.at[0] + off[0], pl.at[1] + off[1]], face: pl.face, sit: !!pl.sit && k === 1 });
     });
     return out;
@@ -1306,8 +1330,8 @@
   function navGrid() {
     const key = zoneId + ':' + solids.length;
     if (nav && nav.key === key) return nav;
-    const [w, d] = Z.size, nx = Math.max(1, Math.ceil(w / NAV_CELL)), nz = Math.max(1, Math.ceil(d / NAV_CELL));
-    const g = { key, nx, nz, x0: -w / 2, z0: -d / 2, block: new Uint8Array(nx * nz) };
+    const w = Z.walk[2] - Z.walk[0], d = Z.walk[3] - Z.walk[1], nx = Math.max(1, Math.ceil(w / NAV_CELL)), nz = Math.max(1, Math.ceil(d / NAV_CELL));
+    const g = { key, nx, nz, x0: Z.walk[0], z0: Z.walk[1], block: new Uint8Array(nx * nz) };
     const r = NPC_R * 0.8, m = Math.ceil(r / NAV_CELL);
     for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) if (i < m || k < m || i >= nx - m || k >= nz - m) g.block[k * nx + i] = 1;
     solids.forEach(s => {
@@ -1741,7 +1765,7 @@
       return;
     }
     if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
-    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank', KeyT: 'talks' }[e.code];
+    const panelKey = { KeyT: 'talks', KeyP: 'talks', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank' }[e.code];
     if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
   });
@@ -1778,11 +1802,11 @@
   const insideSolid = (x, z) => solids.some(s => x > s.x0 - PLAYER_R && x < s.x1 + PLAYER_R && z > s.z0 - PLAYER_R && z < s.z1 + PLAYER_R);
   function freeSpot(a, dist) {     // where to stand to talk to a: in front if free, otherwise to the side or behind
     const f = a.home == null ? a.heading : a.home;
-    const hw = Z.size[0] / 2 - PLAYER_R, hd = Z.size[1] / 2 - PLAYER_R;
+    const B = Z.walk;
     for (const r of [dist, dist + 0.25, dist + 0.5]) {
       for (const turn of [0, 0.6, -0.6, 1.2, -1.2, 1.7, -1.7, 2.4, -2.4, Math.PI]) {
         const x = a.pos.x + Math.sin(f + turn) * r, z = a.pos.z + Math.cos(f + turn) * r;
-        if (Math.abs(x) > hw || Math.abs(z) > hd || insideSolid(x, z)) continue;
+        if (x < B[0] + PLAYER_R || x > B[2] - PLAYER_R || z < B[1] + PLAYER_R || z > B[3] - PLAYER_R || insideSolid(x, z)) continue;
         if (Object.values(npcActors).some(o => o !== a && Math.hypot(o.pos.x - x, o.pos.z - z) < 0.5)) continue;
         return new T.Vector3(x, 0, z);
       }
@@ -1807,9 +1831,8 @@
       });
     }
     if (Z) {
-      const hw = Z.size[0] / 2 - PLAYER_R, hd = Z.size[1] / 2 - PLAYER_R;
-      p.x = clamp(p.x, -hw, hw);
-      p.z = clamp(p.z, -hd, hd);
+      p.x = clamp(p.x, Z.walk[0] + PLAYER_R, Z.walk[2] - PLAYER_R);
+      p.z = clamp(p.z, Z.walk[1] + PLAYER_R, Z.walk[3] - PLAYER_R);
     }
   }
   const movers = [];
@@ -2372,11 +2395,11 @@
     if (ep.summary) body.push(`<p>${esc(personal(ep.summary))}</p>${ep.summary_ko ? `<p class="ko">${esc(ep.summary_ko)}</p>` : ''}`);
     if (+ep.reward > 0) body.push(`<p><b>${usd2(+ep.reward)}</b> added to your account.</p>`);
     if (+ep.reward < 0) body.push(`<p>You paid <b>${usd2(-ep.reward)}</b>. Balance: ${usd2(G.money)}.</p>`);
-    if (learned.length) body.push(`<p><b>New in your Phrasebook</b></p>` + phraseRows(learned));
+    if (learned.length) body.push(`<p><b>Expressions to remember</b> <small>(kept with the conversation: Menu &gt; Conversations)</small></p>` + phraseRows(learned));
     showCard({ kicker: 'Conversation complete', title: ep.title, body: body.join(''), ok: 'Continue', state: 'card' }, () => { goalTimer = 0; });
   }
 
-  // ---------------------------------------------------------------- panels: shop, bus, inventory, phrasebook, calendar
+  // ---------------------------------------------------------------- panels: shop, bus, inventory, conversations, calendar
   const panel = $('panel');
   let panelKind = null, panelArg = null, panelBack = 'play';
   function openPanel(kind, arg) {
@@ -2434,14 +2457,6 @@
       body.innerHTML = list.map(id => { const i = ITEMS[id] || { id, name: pretty(id), energy: 0 }; return `<div class="row"><div class="main"><div class="t">${esc(i.name)} × ${G.inventory[id]}</div>
         <div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}</div></div>${i.energy ? `<button type="button" data-eat="${esc(id)}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : ''}</div>`; }).join('')
         || '<p class="empty">Your bag is empty. Groceries you buy at the market go here.</p>';
-    } else if (panelKind === 'phrasebook') {
-      h.textContent = 'Phrasebook';
-      sub.textContent = `${G.phrases.length} phrases`;
-      const got = G.phrases.map(id => PHRASES[id]).filter(Boolean);
-      const byEp = {};
-      got.forEach(p => { (byEp[p.episode] = byEp[p.episode] || []).push(p); });
-      body.innerHTML = Object.keys(byEp).map(eid => `<h3>${esc((EPISODES[eid] || {}).title || pretty(eid))}</h3>` + phraseRows(byEp[eid])).join('')
-        || '<p class="empty">Finish conversations to collect phrases here.</p>';
     } else if (panelKind === 'calendar') {
       h.textContent = 'Calendar';
       sub.textContent = `Week ${Math.floor((G.day - 1) / 7) + 1}`;
@@ -2461,11 +2476,12 @@
         if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
       }
       body.innerHTML = html;
-    } else if (panelKind === 'talks') {
-      // the conversations you have had, newest first: what was said to you, what you answered, and the reply; every line can be heard again
+    } else if (panelKind === 'talks' || panelKind === 'phrasebook') {
+      // the conversations you have had, newest first: what was said to you, what you answered and the reply, then the
+      // expressions the conversation taught (what used to be the Phrasebook); every line can be heard again
       h.textContent = 'Conversations';
       const had = G.log.filter(l => l.type === 'episode' && l.id && EPISODES[l.id] && G.done[l.id]).slice().reverse();
-      sub.textContent = `${had.length} finished`;
+      sub.textContent = `${had.length} finished · ${G.phrases.length} expressions`;
       const sayBtn = (text, who) => `<button type="button" class="play" data-say="${esc(text)}" data-voice="${esc(who || '')}" aria-label="Play">▶</button>`;
       body.innerHTML = had.map((l, n) => {
         const ep = EPISODES[l.id], said = (G.said || {})[l.id] || [];
@@ -2476,7 +2492,9 @@
             ${mine ? `<div class="said me">${sayBtn(mine, G.hero)}<div><b>${esc(G.name)}</b> ${esc(mine)}${said[i] && M.normalize(said[i]) !== M.normalize(personal(t.model)) ? `<span class="model">Example: ${esc(personal(t.model))}</span>` : ''}</div></div>` : ''}
             ${t.reply_line ? `<div class="said">${sayBtn(personal(t.reply_line), rs)}<div><b>${esc(npcRow(rs).name.split(' ')[0])}</b> ${esc(personal(t.reply_line))}<span class="ko"> ${esc(t.reply_ko || '')}</span></div></div>` : ''}`;
         }).join('');
-        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${weekday(l.day).slice(0, 3)}, Day ${l.day} · ${clock(l.minute)}</span> <b>${esc(ep.title)}</b><span class="with"> with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}</span><span class="ko"> ${esc(ep.title_ko || '')}</span></summary>${lines}</details>`;
+        const learned = G.phrases.map(id => PHRASES[id]).filter(p => p && p.episode === l.id);
+        const words = learned.length ? `<h4>Expressions</h4><div class="words">${phraseRows(learned)}</div>` : '';
+        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${weekday(l.day).slice(0, 3)}, Day ${l.day} · ${clock(l.minute)}</span> <b>${esc(ep.title)}</b><span class="with"> with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}</span><span class="ko"> ${esc(ep.title_ko || '')}</span></summary>${lines}${words}</details>`;
       }).join('') || '<p class="empty">Conversations you finish are kept here, so you can read and hear them again.</p>';
     } else if (panelKind === 'bank') {
       h.textContent = 'Bank';
@@ -2543,8 +2561,8 @@
     return { x0: mx - W / 2, x1: mx + W / 2, z0: mz - D / 2, z1: mz + D / 2 };
   }
   function mapBounds(spec) {
-    const [w, d] = spec.size, m = spec.indoor ? 0.7 : 3.5;
-    return { x0: -w / 2 - m, x1: w / 2 + m, z0: -d / 2 - m, z1: d / 2 + m };
+    const b = spec.walk || [-spec.size[0] / 2, -spec.size[1] / 2, spec.size[0] / 2, spec.size[1] / 2], m = spec.indoor ? 0.7 : spec.bounds ? 1.5 : 3.5;
+    return { x0: b[0] - m, x1: b[2] + m, z0: b[1] - m, z1: b[3] + m };
   }
   // where someone (an npc row) is on the map of zone `mz`: their spot, or the door of the building they are in
   function personOnMap(n, mz, spec) {
@@ -3275,7 +3293,7 @@
     set speed(v) { debugSpeed = +v || 1; }, set fast(v) { fastMode = !!v; },
     get gfx() { return gfxHigh() ? 'high' : 'low'; }, set gfx(v) { settings.gfx = v === 'low' ? 'low' : 'high'; applyQuality(); },
     get hero() { return G ? G.hero : null; }, get heroes() { return HEROES.map(h => h.id); },
-    tour: { async start() { await startTour(); return state; }, do(what) { tourDo(what); return Object.assign({}, tour); }, get view() { return Object.assign({}, tour); } },
+    tour: { async start() { await startTour(); return state; }, do(what) { tourDo(what); return Object.assign({}, tour); }, get view() { return Object.assign({}, tour); }, get ref() { return tour; } },
     // the jogging game: jog.start(story) and what a run says about itself; jog.press(0 | 1) steps, jog.auto(n) lands the next n steps on the beat
     jog: {
       async start(story) { await startJog(!!story); return !!jog; },
