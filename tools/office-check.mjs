@@ -112,6 +112,7 @@ try {
       }
       if (day === 1) {
         const items = await ev("(SO_DB.items || []).filter(i => !/fare|rent/.test(i.kind)).map(i => i.id)") || [];
+        await ev('SO.debug.setTime(18 * 60)');          // while the shops are open
         for (const it of items.slice(0, 3)) log(`buy ${it}:`, await ev(`SO.debug.buy(${JSON.stringify(it)})`), 'money', await ev('SO.debug.money'));
       }
       const left = await ev(`SO_DB.episodes.filter(e => e.day_to === ${day} && !SO.debug.save.done[e.id]).map(e => e.id)`);

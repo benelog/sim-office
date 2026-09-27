@@ -236,3 +236,17 @@ body.touch .touch-only { display: inline; }
   .who-row { gap: 10px; }
   #preview { width: 104px; height: 140px; }
 }
+
+/* weather in the HUD, tax and tips in a shop, the bank */
+#hud-weather { margin-left: 8px; font-variant-numeric: tabular-nums; color: #dbe6ff; }
+.panel-body .fine { margin: 10px 0 2px; font-size: 13px; color: var(--ink-soft); }
+.row.tips .mode { display: flex; }
+.row.tips .mode button { font-size: 13px; padding: 5px 10px; background: transparent; color: var(--ink); border-color: var(--line); border-radius: 0; border-left-width: 0; }
+.row.tips .mode button:first-child { border-radius: 8px 0 0 8px; border-left-width: 1px; }
+.row.tips .mode button:last-child { border-radius: 0 8px 8px 0; }
+.row.tips .mode button[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent-deep); font-weight: 600; }
+.row .price.in { color: var(--ok); }
+.panel-body .sum { font-variant-numeric: tabular-nums; margin: 6px 0 2px; color: var(--ink-soft); font-size: 13px; }
+.panel-body .sum b { display: block; font-size: 24px; color: var(--ink); }
+#panel .row .when { width: auto; min-width: 3.4em; }
+@media (max-width: 640px) { .row.tips { flex-wrap: wrap; } }

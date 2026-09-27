@@ -125,3 +125,48 @@ CREATE TABLE IF NOT EXISTS calendar (
   episode varchar(40),
   PRIMARY KEY (day, time)
 );
+
+-- Where a person is through the day. days: weekday | weekend | all. A person with rows here is at the place of the
+-- first row that fits the day and the time, and away (at home, off work) when none fits; a person without rows is
+-- always at npcs.place. An open episode still puts its person at the episode's place.
+CREATE TABLE IF NOT EXISTS schedule (
+  npc varchar(32) NOT NULL,
+  seq int NOT NULL,
+  days varchar(8) NOT NULL DEFAULT 'all',
+  time_from varchar(5) NOT NULL,
+  time_to varchar(5) NOT NULL,
+  place varchar(32) NOT NULL,
+  PRIMARY KEY (npc, seq)
+);
+
+-- The weather of each game day. kind: clear | partly | cloudy | rain | fog (fog lifts by late morning).
+-- Temperatures are in Fahrenheit. Days past the last row repeat the table.
+CREATE TABLE IF NOT EXISTS weather (
+  day int PRIMARY KEY,
+  kind varchar(12) NOT NULL,
+  high_f int NOT NULL,
+  low_f int NOT NULL,
+  forecast varchar(160) NOT NULL,
+  forecast_ko varchar(160)
+);
+
+-- What people say in passing about the weather, the day or the time. topic: weather:<kind> | day:monday |
+-- day:friday | day:weekend | time:morning | time:lunch | time:evening.
+CREATE TABLE IF NOT EXISTS smalltalk (
+  topic varchar(24) NOT NULL,
+  seq int NOT NULL,
+  line varchar(255) NOT NULL,
+  line_ko varchar(255),
+  PRIMARY KEY (topic, seq)
+);
+
+-- Bills on autopay: taken from the account in the morning of game day `day`, then every `every` days.
+CREATE TABLE IF NOT EXISTS bills (
+  id varchar(32) PRIMARY KEY,
+  name varchar(80) NOT NULL,
+  name_ko varchar(80),
+  amount decimal(7,2) NOT NULL,
+  day int NOT NULL,
+  every int NOT NULL DEFAULT 30,
+  note varchar(255)
+);

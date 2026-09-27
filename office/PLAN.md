@@ -16,6 +16,13 @@
 - **상점**: 식료품점(market)·식당(diner)·커피 카트(coffee_cart)에서 `items`를 삽니다(잔액 확인, "You can't afford that"). 식료품은 인벤토리에 들어가 집에서 먹고, 식사·음료는 바로 먹습니다.
 - **잠**: 집 침대(home_bed)에서 Sleep → 다음 날 07:00, 에너지 100, 급여·월세 처리, 그날의 캘린더 요약 카드.
 - **저장**: `localStorage` `so.v1.saves` = `{ [이름]: { name, model, day, minute, money, energy, zone, at, done:{episodeId:true}, inventory:{itemId:n}, phrases:[id], log:[…], saved } }`(캐릭터 이름마다 한 판), `so.v1.last` = 마지막에 한 이름. 자동 저장(에피소드 완료·구매·존 이동·잠). 예전 한 판짜리 `so.v1.save`는 시작할 때 목록으로 옮깁니다.
+- **날씨**(DoltHub `weather`, 하루 한 줄: `clear` `partly` `cloudy` `rain` `fog`, 최고·최저 기온 °F, 예보 문장): 하늘에 구름(하늘 셰이더의 `cover`), 흐리면 해가 약해지고 그림자가 옅어지며, 비 오는 날은 비가 오락가락(빗줄기 `LineSegments`), 안개는 아침에 끼고 11시까지 걷힘. 실내는 창밖 빛이 시간·날씨를 따름. HUD 시계 옆에 지금 기온, 아침 카드와 새 게임 첫 알림에 예보. 표의 마지막 날 뒤로는 표를 되풀이.
+- **세금과 팁**: 표시 가격은 세전. 식사·음료·기타 물품에 판매세(`config.sales_tax` 8.25%), 식료품·요금은 면세. 식사·음료를 파는 곳에서는 상점 창 위에 팁 선택(`tip_options`, 세전 가격 기준; 다이너·식당은 기본 `tip_default` 18%, 카운터는 기본 없음). 영수증은 `가격 + tax + tip = 합계`.
+- **영업시간**(`config.hours_<존 또는 장소>`, 주말은 `…_weekend`): 다이너 06:30~21:30, 마켓 07:00~22:00, 커피 카트 평일 06:30~15:00·주말 08:00~14:00. 닫혀 있으면 문으로 못 들어가고 상점 행동이 `Closed · open …`. 그 장소에 열린 에피소드가 있으면 닫지 않음.
+- **인물의 일과**(DoltHub `schedule`: npc, seq, days `weekday|weekend|all`, time_from, time_to, place): 맞는 첫 줄의 장소에 있고, 맞는 줄이 없으면 없음(퇴근·휴무). 줄이 없는 인물은 늘 `npcs.place`. 열린 에피소드가 있으면 그 장소가 우선. 사무실 사람들은 평일에만 출근하고 점심때 탕비실에 번갈아 가며, **주말에는 사무실에 아무도 없음**(들어갈 수는 있음).
+- **잡담**(DoltHub `smalltalk`, topic `weather:<kind>` `day:monday|friday|weekend` `time:morning|lunch|evening`): 인물이 지나가는 말 셋에 하나(첫마디 포함)는 지금 날씨·요일·시간에 맞는 말.
+- **공과금과 은행**(DoltHub `bills`: 자동이체 날짜 `day`, 주기 `every`): 아침에 빠져나가고 아침 카드·달력에 표시. Menu > Bank(`B`): 잔액, 2주 안의 입출금 예정, 최근 거래(세금·팁 포함).
+- **거리의 붐빔**(`office/life.js`): 존에 들어올 때의 시각·요일·날씨로 자동차와 행인 수를 정함(출퇴근 시간 자동차 1.6배, 밤에는 절반, 비 오면 행인 절반, 비 오는 날 공원 벤치에는 아무도 없음).
 - **조작**: 어린 왕자 게임과 같음. ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동. 터치: 왼쪽 아래 조이스틱, 행동 버튼. HUD: 요일·날짜·시각, $잔액, 에너지 막대, 다음 일정, 현재 목표.
 
 ## 2. 파일
@@ -43,7 +50,7 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 
 토큰은 `.envrc`(`source .envrc`). `node tools/dolt.mjs push db/seed/10-x.sql`(문장마다 커밋 1개, 2초; **여러 행을 한 INSERT로**), `node tools/dolt.mjs query "…"`, `node tools/dolt.mjs pull`(→ `office/data/db.js`, `window.SO_DB`). 스키마는 `db/schema.sql`. 시드는 `REPLACE INTO`로 써서 다시 밀어 넣어도 됩니다. 문장 구분은 **줄 끝의 `;`** 입니다(값 안의 `;`는 줄 끝에 오지 않게).
 
-`SO_DB` 모양: `config` `{k:v}`(숫자는 숫자), 나머지는 행 배열. `turns.answers/distractors/hints/hints_ko`는 JSON(배열)으로 풀려 있습니다.
+`SO_DB` 모양: `config` `{k:v}`(숫자는 숫자), 나머지는 행 배열(`places npcs chatter episodes turns phrases items calendar schedule weather smalltalk bills`). `turns.answers/distractors/hints/hints_ko`는 JSON(배열)으로 풀려 있습니다.
 
 ### 장소 id(고정) — zone
 | zone | places |

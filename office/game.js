@@ -27,7 +27,8 @@
   const CFG = Object.assign({
     player_name: 'Jun', company: 'Lakeside Labs', city: 'Fairview', start_money: 1200, salary_net: 2600, salary_gross: 3654,
     payday_days: '5,15', rent: 1450, rent_day: 21, bus_fare: 2.5, day_start: '07:00', day_end: '23:00', work_start: '09:00', work_end: '18:00',
-    minutes_per_second: 1, energy_max: 100, energy_per_hour: -6
+    minutes_per_second: 1, energy_max: 100, energy_per_hour: -6,
+    sales_tax: 0.0825, tip_options: '0,15,18,20', tip_default: 18
   }, DB.config || {});
   const DAY_START = hm(CFG.day_start, 420), DAY_END = hm(CFG.day_end, 1380);
   const E_MAX = +CFG.energy_max || 100;
@@ -82,6 +83,11 @@
   Object.values(TURNS).forEach(l => l.sort((a, b) => a.seq - b.seq));
   const CHATTER = {};
   rows('chatter').slice().sort((a, b) => a.seq - b.seq).forEach(c => { (CHATTER[c.npc] = CHATTER[c.npc] || []).push(c); });
+  const SCHEDULE = {}, SMALLTALK = {};
+  rows('schedule').slice().sort((a, b) => a.seq - b.seq).forEach(s => { (SCHEDULE[s.npc] = SCHEDULE[s.npc] || []).push(s); });
+  rows('smalltalk').slice().sort((a, b) => a.seq - b.seq).forEach(c => { (SMALLTALK[c.topic] = SMALLTALK[c.topic] || []).push(c); });
+  const WEATHER = rows('weather').slice().sort((a, b) => a.day - b.day);
+  const isWeekend = (d) => (d - 1) % 7 >= 5;
   const builtinZoneOf = (id) => Object.keys(BUILTIN_PLACES).find(z => BUILTIN_PLACES[z].includes(id)) || null;
   function place(id) {
     if (PLACES[id]) return PLACES[id];
@@ -837,6 +843,21 @@
   // (roads light-square / light-curved props) glow, lighting the ground with a few point lights that follow you.
   // Indoors the light does not change with the clock: a window light (from the side with the most windows) with
   // the one shadow map, ceiling lights (the zone's lights, or a grid), a warm fill; only the backdrop darkens at night.
+  // The weather (weather table, one row a game day): clouds over the sky, a dimmer sun with softer shadows, rain
+  // (on and off through a rainy day) and morning fog. Temperatures in Fahrenheit, highest at about 3 PM.
+  const WX_NAME = { clear: 'Sunny', partly: 'Partly cloudy', cloudy: 'Cloudy', rain: 'Rain', fog: 'Fog' };
+  const WX_NAME_KO = { clear: '맑음', partly: '구름 조금', cloudy: '흐림', rain: '비', fog: '안개' };
+  const WX_ICON = { clear: '☀️', partly: '⛅', cloudy: '☁️', rain: '🌧️', fog: '🌫️' };
+  const toC = (f) => Math.round((f - 32) * 5 / 9);
+  const weatherOf = (day) => WEATHER.length ? WEATHER[(Math.max(1, day) - 1) % WEATHER.length] : { day, kind: 'clear', high_f: 72, low_f: 55, forecast: '' };
+  function weatherNow() {
+    const day = G ? G.day : 1, h = (G ? G.minute : 600) / 60, w = weatherOf(day), k = w.kind;
+    const rain = k === 'rain' ? clamp((0.5 + 0.62 * Math.sin(h * 1.3 + day * 2.1)) * 1.6, 0, 1) : 0;
+    const fogged = k === 'fog' ? clamp((11 - h) / 2, 0, 1) : 0;
+    const cover = k === 'rain' ? 1 : k === 'cloudy' ? 0.92 : k === 'partly' ? 0.45 : k === 'fog' ? Math.max(0.3, fogged * 0.8) : 0.1;
+    const temp = Math.round(w.low_f + (w.high_f - w.low_f) * Math.max(0, Math.sin(Math.PI * (h - 5) / 20)));
+    return { kind: k, rain, fog: fogged, cover, dark: k === 'rain' ? 0.6 + 0.4 * rain : k === 'cloudy' ? 0.35 : 0, temp, high: w.high_f, low: w.low_f, row: w };
+  }
   const zoneBox = new T.Box3(), lamps = [], zoneLights = [];
   let lampPool = [], windowDir = new T.Vector3(0.45, 0.78, 0.45).normalize();
   const KEYS = [          // hour, sun colour, sun, fill sky, fill ground, fill, sky top, sky horizon, lamps, exposure
@@ -873,9 +894,14 @@
   // the sky: a dome around the camera, horizon colour = fog colour, the sun (or the moon) as a soft disc, stars at night
   const sky = (function () {
     const mat = new T.ShaderMaterial({
-      uniforms: { top: { value: new T.Color() }, horizon: { value: new T.Color() }, sunDir: { value: new T.Vector3(0, 1, 0) }, sunColor: { value: new T.Color() }, glow: { value: 0 }, stars: { value: 0 } },
+      uniforms: { top: { value: new T.Color() }, horizon: { value: new T.Color() }, sunDir: { value: new T.Vector3(0, 1, 0) }, sunColor: { value: new T.Color() }, glow: { value: 0 }, stars: { value: 0 },
+        cover: { value: 0 }, cloud: { value: new T.Color('#ffffff') }, drift: { value: 0 } },
       vertexShader: 'varying vec3 vDir; void main() { vDir = position; vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0); gl_Position = p.xyww; }',
-      fragmentShader: `uniform vec3 top, horizon, sunDir, sunColor; uniform float glow, stars; varying vec3 vDir;
+      fragmentShader: `uniform vec3 top, horizon, sunDir, sunColor, cloud; uniform float glow, stars, cover, drift; varying vec3 vDir;
+        float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+        float vnoise(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), f.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + vec2(1.0, 1.0)), f.x), f.y); }
+        float fbm(vec2 p) { float a = 0.5, s = 0.0; for (int i = 0; i < 4; i++) { s += a * vnoise(p); p = p * 2.03 + 7.1; a *= 0.5; } return s; }
         void main() {
           vec3 d = normalize(vDir);
           float h = max(d.y, 0.0);
@@ -885,6 +911,12 @@
           vec3 q = floor(d * 240.0);
           float r = fract(sin(dot(q, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
           c += stars * step(0.9975, r) * smoothstep(0.06, 0.35, d.y) * vec3(0.85, 0.88, 1.0);
+          if (cover > 0.01 && d.y > 0.0) {          // clouds: a layer of noise high above, thinning toward the horizon's haze
+            vec2 uv = d.xz / (d.y + 0.14) * 0.85 + vec2(drift, drift * 0.35);
+            float n = fbm(uv), th = mix(0.74, 0.16, cover);
+            float m = smoothstep(th, th + 0.2, n) * smoothstep(0.0, 0.1, d.y);
+            c = mix(c, cloud * (0.82 + 0.3 * fbm(uv * 2.7 + 3.0)), m * mix(0.85, 0.97, cover));
+          }
           gl_FragColor = vec4(c, 1.0);
           #include <colorspace_fragment>
         }`,
@@ -990,17 +1022,20 @@
   const hourNow = () => (G ? G.minute : 600) / 60;
   function applyEnvironment() {
     if (!Z) return;
-    const e = envAt(hourNow());
+    const e = envAt(hourNow()), wx = weatherNow(), day = 1 - e.night;
+    rainShow(!Z.indoor && state !== 'title' ? wx.rain : 0);
     if (Z.indoor) {
       sky.visible = false;
-      const bg = new T.Color(Z.background || '#cdd3dc').lerp(new T.Color('#1a2238'), e.night * 0.85);
+      const bg = new T.Color(Z.background || '#cdd3dc').lerp(new T.Color('#8f98a6'), wx.cover * 0.5 + wx.dark * 0.3).lerp(new T.Color('#1a2238'), e.night * 0.85);
       scene.background = bg;
       fog.color.copy(bg);
       fog.near = Math.max(Z.size[0], Z.size[1]) * 0.9 + 6;
       fog.far = Math.max(Z.size[0], Z.size[1]) * 1.6 + 30;
       scene.fog = fog;
-      sun.color.set('#fff1de');
-      sun.intensity = 1.2;
+      // the light from the windows goes with the day outside: warm and low at dusk, a little moonlight at night, flat under clouds
+      sun.color.set('#fff1de').lerp(e.sun, 0.35 * day).lerp(new T.Color('#dfe4ec'), wx.cover * 0.5 * day);
+      sun.intensity = 1.2 * (0.25 + 0.75 * day) * (1 - 0.45 * wx.cover * day);
+      sun.shadow.intensity = 0.8 * (1 - 0.5 * wx.cover);
       fitShadow(windowDir);
       hemi.intensity = 0.85 * (Z.ambient == null ? 0.9 : Z.ambient);
       hemi.color.set('#fff5e8');
@@ -1008,28 +1043,40 @@
       renderer.toneMappingExposure = 0.85;
       return;
     }
+    // under clouds the sky loses its blue and the horizon its glow; rain clouds are darker; fog whitens everything near
+    const thick = clamp((wx.cover - 0.5) * 2, 0, 1), lum = (c) => 0.3 * c.r + 0.55 * c.g + 0.15 * c.b;
+    const grey = (c, k) => { const l = lum(c) * k; return wxTmp.setRGB(l * 0.95, l, l * 1.07); };
+    e.top.lerp(grey(e.top, 1.5 - 0.5 * wx.dark), thick * 0.9).lerp(grey(e.horizon, 1), thick * 0.35);
+    e.horizon.lerp(grey(e.horizon, 1 - 0.3 * wx.dark), thick * 0.9);
+    if (wx.fog) { e.horizon.lerp(wxTmp.set('#dfe3e8').multiplyScalar(0.25 + 0.75 * day), wx.fog * 0.85); e.top.lerp(e.horizon, wx.fog * 0.8); }
+    const U = sky.material.uniforms;
     sky.visible = true;
-    sky.material.uniforms.top.value.copy(e.top);
-    sky.material.uniforms.horizon.value.copy(e.horizon);
-    sky.material.uniforms.sunDir.value.copy(e.dir);
-    sky.material.uniforms.sunColor.value.copy(e.sun).multiplyScalar(e.night > 0.5 ? 0.9 : 1.2);
-    sky.material.uniforms.glow.value = e.night > 0.5 ? 0.35 : 1 + (1 - clamp(e.dir.y / 0.6, 0, 1)) * 1.5;
-    sky.material.uniforms.stars.value = clamp((e.night - 0.5) * 2, 0, 1);
+    U.top.value.copy(e.top);
+    U.horizon.value.copy(e.horizon);
+    U.sunDir.value.copy(e.dir);
+    U.sunColor.value.copy(e.sun).multiplyScalar((e.night > 0.5 ? 0.9 : 1.2) * (1 - thick) * (1 - wx.fog * 0.7));
+    U.glow.value = e.night > 0.5 ? 0.35 : 1 + (1 - clamp(e.dir.y / 0.6, 0, 1)) * 1.5;
+    U.stars.value = clamp((e.night - 0.5) * 2, 0, 1) * (1 - wx.cover);
+    U.cover.value = wx.cover;
+    U.cloud.value.set('#ffffff').lerp(e.sun, 0.25 * day).multiplyScalar((0.16 + 0.84 * day) * (1 - 0.45 * wx.dark)).lerp(e.horizon, 0.25);
+    U.drift.value = elapsed * 0.004 + (G ? G.day * 3.7 + G.minute * 0.002 : 0);
     scene.background = e.horizon;
-    const far = Math.max(Z.size[0], Z.size[1]) * 1.2 + 40;
+    const far = Math.max(Z.size[0], Z.size[1]) * 1.2 + 40, haze = Math.max(wx.fog, wx.rain * 0.45);
     fog.color.copy(e.horizon);
-    fog.near = far * 0.55;
-    fog.far = far * 1.4;
+    fog.near = far * 0.55 * (1 - haze) + 1.5 * haze;
+    fog.far = far * 1.4 * (1 - haze) + (wx.fog > wx.rain * 0.45 ? 26 : 60) * haze;
     scene.fog = fog;
-    sun.color.copy(e.sun);
-    sun.intensity = e.sunI;
+    const dim = 1 - 0.78 * thick * day - 0.5 * wx.fog * day;
+    sun.color.copy(e.sun).lerp(wxTmp.set('#e8ecf2'), thick * 0.7 * day);
+    sun.intensity = e.sunI * dim;
+    sun.shadow.intensity = 0.8 * (1 - 0.7 * Math.max(thick, wx.fog));
     fitShadow(e.dir);
-    hemi.intensity = e.fillI * (Z.ambient == null ? 1 : Z.ambient);
-    hemi.color.copy(e.sky);
+    hemi.intensity = e.fillI * (Z.ambient == null ? 1 : Z.ambient) * (1 + (0.55 * thick + 0.3 * wx.fog) * day) * (1 - 0.22 * wx.dark);
+    hemi.color.copy(e.sky).lerp(grey(e.sky, 1.05), thick * 0.8);
     hemi.groundColor.copy(e.ground);
     renderer.toneMappingExposure = e.exposure;
     // street lamps: glows on every lamp, the point lights on the ones nearest to you
-    const on = e.lamp;
+    const on = Math.max(e.lamp, wx.dark > 0.8 ? 0.5 : 0, wx.fog > 0.6 ? 0.5 : 0);
     glowMat.opacity = on;
     lamps.forEach(l => { l.glow.visible = on > 0.02; });
     if (lampPool.length) {
@@ -1044,6 +1091,41 @@
   function envTick(dt) {
     if ((envTimer -= dt) <= 0) { envTimer = 0.25; applyEnvironment(); }
     if (Z && !Z.indoor) sky.position.copy(camera.position);
+    rainTick(dt);
+  }
+  // Rain: short slanted streaks in a box that goes with the camera; how many are drawn follows how hard it rains
+  const wxTmp = new T.Color();
+  const rain = (function () {
+    const N = 1600, BOX = [18, 9, 18], pos = new Float32Array(N * 6), drops = [];
+    for (let i = 0; i < N; i++) drops.push({ x: (Math.random() - 0.5) * BOX[0], y: Math.random() * BOX[1], z: (Math.random() - 0.5) * BOX[2], v: 7.5 + Math.random() * 3.5 });
+    const g = new T.BufferGeometry();
+    g.setAttribute('position', new T.BufferAttribute(pos, 3).setUsage(T.DynamicDrawUsage));
+    g.setDrawRange(0, 0);
+    const m = new T.LineSegments(g, new T.LineBasicMaterial({ color: 0xdfe8f4, transparent: true, opacity: 0.42, depthWrite: false, fog: false, toneMapped: false }));
+    m.frustumCulled = false;
+    m.visible = false;
+    m.renderOrder = 3;
+    scene.add(m);
+    return { N, BOX, pos, drops, mesh: m, amount: 0 };
+  })();
+  function rainShow(amount) {
+    rain.amount = amount;
+    rain.mesh.visible = amount > 0.03;
+    rain.mesh.material.opacity = 0.2 + 0.25 * amount;
+  }
+  function rainTick(dt) {
+    if (!rain.mesh.visible) return;
+    const n = Math.round(rain.N * (gfxHigh() ? 1 : 0.45) * clamp(rain.amount, 0.15, 1)), B = rain.BOX, p = rain.pos, wind = 1.1, len = 0.034;
+    for (let i = 0; i < n; i++) {
+      const d = rain.drops[i];
+      d.y -= d.v * dt; d.x += wind * dt;
+      if (d.y < 0) { d.y += B[1]; d.x = (Math.random() - 0.5) * B[0]; d.z = (Math.random() - 0.5) * B[2]; }
+      p[i * 6] = d.x; p[i * 6 + 1] = d.y; p[i * 6 + 2] = d.z;
+      p[i * 6 + 3] = d.x + wind * len; p[i * 6 + 4] = d.y + d.v * len; p[i * 6 + 5] = d.z;
+    }
+    rain.mesh.geometry.setDrawRange(0, n * 2);
+    rain.mesh.geometry.attributes.position.needsUpdate = true;
+    rain.mesh.position.set(camera.position.x, 0, camera.position.z);
   }
 
   // ---------------------------------------------------------------- the player and the people around
@@ -1055,11 +1137,31 @@
     player.boxed = !packReady(G.model);
     player.bubbleY = BUBBLE_Y;
   }
-  // where an npc is now: at the place of its first open episode, otherwise at its own place
+  // where an npc is now: at the place of its first open episode; otherwise where the schedule table puts them at this
+  // time of this day, or nowhere (null: off work, at home) when no row fits; without rows, always at their own place
+  function scheduledPlace(n) {
+    const list = SCHEDULE[n.id];
+    if (!list || !G) return n.place;
+    const days = isWeekend(G.day) ? 'weekend' : 'weekday';
+    const s = list.find(s => (s.days === 'all' || s.days === days) && G.minute >= hm(s.time_from, 0) && G.minute < hm(s.time_to, 1440));
+    return s ? s.place : null;
+  }
   function npcPlaceNow(n) {
     const ep = G ? openEpisodes().find(e => e.npc === n.id && e.place && !isPhone(e)) : null;
-    return ep ? ep.place : n.place;
+    return ep ? ep.place : scheduledPlace(n);
   }
+  // opening hours (config hours_<zone or place>, hours_<…>_weekend: 'HH:MM-HH:MM'); never closed while a conversation waits there
+  function hoursOf(id) {
+    const v = G && ((isWeekend(G.day) && CFG['hours_' + id + '_weekend']) || CFG['hours_' + id]);
+    const m = /^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/.exec(String(v || ''));
+    return m ? [hm(m[1], 0), hm(m[2], 1440)] : null;
+  }
+  function closedNow(id) {
+    const h = hoursOf(id);
+    if (!h || (G.minute >= h[0] && G.minute < h[1])) return false;
+    return !openEpisodes().some(e => e.place === id || zoneOfPlace(e.place) === id);
+  }
+  const hoursText = (id) => { const h = hoursOf(id); return h ? `${clock(h[0])} – ${clock(h[1])}` : ''; };
   function npcsIn(z) {
     const spec = zoneSpec(z);
     const out = [];
@@ -1343,10 +1445,29 @@
     G.energy = clamp(G.energy + (+CFG.energy_per_hour || -6) * mins / 60, 0, E_MAX);
     if (G.minute >= DAY_END && state === 'play') { toast("It's late. You fall asleep.", '늦었어요. 잠이 듭니다.'); goToSleep(true); }
   }
-  function pay(amount, text, type) {
+  function pay(amount, text, type, extra) {
     G.money = Math.round((G.money + amount) * 100) / 100;
-    logEvent(type || (amount >= 0 ? 'income' : 'spend'), text, amount);
+    logEvent(type || (amount >= 0 ? 'income' : 'spend'), text, amount, extra);
   }
+  // Sales tax and tips: prices on a menu or a shelf are before tax. Meals, drinks and other goods are taxed
+  // (config sales_tax); groceries and fares are not. Where food or drinks are served the panel asks about a tip
+  // (config tip_options, percent of the price before tax): tip_default at a table (diner, restaurant), none at a counter.
+  const TAX = Math.max(0, +CFG.sales_tax || 0), TIPS = listOf(CFG.tip_options).map(Number).filter(n => n >= 0);
+  const cents = (n) => Math.round(n * 100) / 100;
+  const pct = (r) => +(r * 100).toFixed(2) + '%';
+  const taxed = (i) => /^(meal|drink|other)$/.test(i.kind);
+  const tipAsked = (pid) => TIPS.length > 1 && rows('items').some(i => i.place === pid && /^(meal|drink)$/.test(i.kind) && +i.price > 0);
+  const tableService = (pid) => /diner|restaurant/.test(pid || '');
+  const tipChoice = {};
+  const tipRate = (pid) => !tipAsked(pid) ? 0 : (tipChoice[pid] != null ? tipChoice[pid] : tableService(pid) ? +CFG.tip_default || 0 : 0) / 100;
+  function billFor(i) {
+    const price = +i.price || 0, tax = taxed(i) ? cents(price * TAX) : 0;
+    const tip = /^(meal|drink)$/.test(i.kind) ? cents(price * tipRate(i.place)) : 0;
+    return { price, tax, tip, total: cents(price + tax + tip) };
+  }
+  const receipt = (b) => usd2(b.price) + (b.tax ? ` + tax ${usd2(b.tax)}` : '') + (b.tip ? ` + tip ${usd2(b.tip)}` : '') + (b.tax || b.tip ? ` = ${usd2(b.total)}` : '');
+  // Bills on autopay (bills table): due on their day, then every `every` days
+  const billsDue = (d) => rows('bills').filter(b => d >= b.day && (d - b.day) % (+b.every || 30) === 0);
 
   // ---------------------------------------------------------------- HUD: clock, money, energy, objective, next event
   let hudTimer = 0, goalTimer = 0, goalTarget = null;
@@ -1354,6 +1475,12 @@
     if (!G) return;
     $('hud-day').textContent = `${weekday(G.day).slice(0, 3)} · Day ${G.day}`;
     $('hud-time').textContent = clock(G.minute);
+    const wx = weatherNow(), hw = $('hud-weather'), dark = G.minute >= 19.5 * 60 || G.minute < 6 * 60;
+    const dry = wx.kind === 'rain' && wx.rain < 0.04, lifted = wx.kind === 'fog' && wx.fog < 0.05;
+    if (hw) {
+      hw.textContent = `${dry ? '☁️' : lifted ? '⛅' : dark && wx.kind === 'clear' ? '🌙' : WX_ICON[wx.kind] || ''} ${wx.temp}°F`;
+      hw.title = `${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}`;
+    }
     const m = $('hud-money');
     m.textContent = usd(G.money);
     m.classList.toggle('neg', G.money < 0);
@@ -1422,10 +1549,30 @@
       if (a.leaving || open.some(e => e.npc === a.id) || !(CHATTER[a.id] || []).length) return;
       if (Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z) > 2.0 || elapsed - (a.chatAt || -99) < 40) return;
       a.chatAt = elapsed;
-      a.chatIdx = (a.chatIdx + 1) % CHATTER[a.id].length;
-      const c = CHATTER[a.id][a.chatIdx];
+      const c = remark(a);
       say(a, personal(c.line), c.line_ko, 3.5);
     });
+  }
+  // what somebody says in passing: their own lines in turn, and every third time (the first time too) a remark
+  // about the weather, the day of the week or the time of day (smalltalk table)
+  function remark(a) {
+    a.chatN = (a.chatN || 0) + 1;
+    const lines = CHATTER[a.id] || [];
+    if (a.chatN % 3 === 1 || !lines.length) {
+      const wx = weatherNow(), wd = (G.day - 1) % 7, m = G.minute, topics = [];
+      if (wx.kind !== 'rain' || wx.rain > 0.04 || Z.indoor) topics.push('weather:' + (wx.kind === 'fog' && wx.fog < 0.05 ? 'partly' : wx.kind));
+      if (wd === 0 && m < 12 * 60) topics.push('day:monday');
+      if (wd === 4) topics.push('day:friday');
+      if (wd >= 5) topics.push('day:weekend');
+      if (m < 9 * 60 && Z.indoor) topics.push('time:morning');
+      if (m >= 11.5 * 60 && m < 13.5 * 60) topics.push('time:lunch');
+      if (m >= 17.5 * 60) topics.push('time:evening');
+      const pool = topics.reduce((l, t) => l.concat(SMALLTALK[t] || []), []).filter(c => !(m >= 19.5 * 60 && /weather:(clear|partly)/.test(c.topic)));
+      if (pool.length) return pool[(hash(a.id) + G.day * 7 + a.chatN) % pool.length];
+    }
+    if (!lines.length) return { line: 'Hi there!', line_ko: '안녕하세요!' };
+    a.chatIdx = ((a.chatIdx == null ? -1 : a.chatIdx) + 1) % lines.length;
+    return lines[a.chatIdx];
   }
   // a phone episode has nobody to stand there: the ! floats over the place
   let phones = {};
@@ -1552,7 +1699,7 @@
     keys[e.code] = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && state === 'play' && actions.length) { e.preventDefault(); actions[0].run(); }
     if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
-    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map' }[e.code];
+    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank' }[e.code];
     if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
   });
@@ -1730,6 +1877,7 @@
     portalArmed = false;
     if (inside.when && !inside.when(api)) return;
     if (TRAVEL_ZONES.includes(inside.to) && !TRAVEL_ZONES.includes(zoneId) && !tripToday()) { toast('No trip scheduled.', '예정된 출장이 없어요.'); return; }
+    if (closedNow(inside.to)) { const zn = zoneName(inside.to); toast(`${zn[0]} is closed. Hours: ${hoursText(inside.to)}`, `${zn[1] || zn[0]}은(는) 문을 닫았어요. 영업시간 ${hoursText(inside.to)}`, 'bad', 4); return; }
     const pid = portalPlace(inside), fares = pid ? faresAt(pid) : [];
     const fare = fares.reduce((t, i) => t + +i.price, 0);
     if (fare && G.money < fare) { toast(`You can't afford the fare (${usd2(fare)}).`, '요금이 부족해요.', 'bad'); return; }
@@ -1758,6 +1906,11 @@
     cam.push = null;
     if (await enterZone(z, arrive, at)) cam.pull = { t: 0, dur: 0.75 };
     const zn = zoneName(z);
+    if (z === 'office' && !npcsIn(z).length) {
+      if (isWeekend(G.day)) toast("It's the weekend. Nobody is in the office.", '주말이라 사무실에 아무도 없어요.', null, 4);
+      else toast('The office is empty. Everyone has gone home.', '사무실이 비었어요. 모두 퇴근했어요.', null, 4);
+      return;
+    }
     if (minutes) toast(`After a ${minutes / 60}-hour flight: ${zn[0]}`, `${minutes / 60}시간 비행 후: ${zn[1] || zn[0]}`, null, 3);
     else toast(zn[0], zn[1], null, 2.2);
   }
@@ -1871,7 +2024,9 @@
     const out = [], kind = placeKind(pid), pl = place(pid);
     if (kind === 'sleep') out.push({ key: 'sleep:' + pid, label: 'Sleep', run: () => trySleep(pid) });
     if (kind === 'eat') out.push({ key: 'eat:' + pid, label: 'Eat something', run: () => openPanel('inventory') });
-    if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
+    const shut = G && (closedNow(pid) ? pid : closedNow(zoneOfPlace(pid)) ? zoneOfPlace(pid) : null);
+    if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: `Closed · open ${hoursText(shut)}`, run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${pl.name_ko || pl.name}: 영업시간 ${hoursText(shut)}`, 'bad') });
+    else if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
     if (isBusStop(pid) && zoneId === 'city') out.push({ key: 'bus:' + pid, label: `Take the bus (${usd2(busFare())})`, run: () => openPanel('bus', pid) });
     if (kind === 'work' || pid === 'office_desk') out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
     if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
@@ -1925,10 +2080,7 @@
   }
   function chatter(a) {
     a.chatAt = elapsed;
-    const lines = CHATTER[a.id] || [];
-    if (!lines.length) { say(a, 'Hi there!', '안녕하세요!', 2.5); speak('Hi there!', voiceOf(a.row)); return; }
-    a.chatIdx = (a.chatIdx + 1) % lines.length;
-    const c = lines[a.chatIdx];
+    const c = remark(a);
     say(a, personal(c.line), c.line_ko, 3.5);
     speak(personal(c.line), voiceOf(a.row));
     play(a, 'interact-right', { once: true });
@@ -2135,6 +2287,13 @@
       body.innerHTML = itemsAt(panelArg).map(i => `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
         <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
         <span class="price">${+i.price ? usd2(+i.price) : 'Free'}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? 'Pay' : /meal|drink/.test(i.kind) && !+i.price ? 'Take' : 'Buy'}</button></div>`).join('') || '<p class="empty">Nothing for sale here.</p>';
+      const list = itemsAt(panelArg);
+      let top = '';
+      if (tipAsked(panelArg)) top += `<div class="row tips"><div class="main"><div class="t">Add a tip?</div><div class="s">${tableService(panelArg) ? '15 to 20% is usual when you are served at a table' : 'Up to you at a counter'}<span class="ko"> · ${tableService(panelArg) ? '자리에서 서빙을 받으면 보통 15~20%' : '카운터에서는 선택'}</span></div></div>
+        <div class="mode" role="group" aria-label="Tip">${TIPS.map(t => `<button type="button" data-tip="${t}" aria-pressed="${Math.abs(tipRate(panelArg) * 100 - t) < 0.01}">${t ? t + '%' : 'No tip'}</button>`).join('')}</div></div>`;
+      if (TAX && list.some(taxed)) top += `<p class="fine">Prices do not include ${pct(TAX)} sales tax.${list.some(i => !taxed(i)) ? ' Groceries are not taxed.' : ''}<span class="ko"> 표시 가격에는 판매세 ${pct(TAX)}가 빠져 있어요.</span></p>`;
+      else if (list.length && list.every(i => i.kind === 'grocery')) top += `<p class="fine">No sales tax on groceries in ${esc(CFG.city)}.<span class="ko"> ${esc(CFG.city)}에서는 식료품에 판매세가 없어요.</span></p>`;
+      body.innerHTML = top + body.innerHTML;
     } else if (panelKind === 'bus') {
       h.textContent = 'Bus';
       const here = panelArg;
@@ -2169,6 +2328,7 @@
         const extra = [];
         if (PAYDAYS.includes(d)) extra.push(`Payday: ${usd(+CFG.salary_net)} direct deposit`);
         if (isRentDay(d)) extra.push(`Rent due: ${usd(+CFG.rent)}`);
+        billsDue(d).forEach(b => extra.push(`Autopay: ${b.name} ${usd2(+b.amount)}`));
         if (!evs.length && !extra.length && d !== G.day) continue;
         html += `<h3>${weekday(d)}, Day ${d}${d === G.day ? ' · today' : ''}</h3>`;
         html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
@@ -2177,6 +2337,23 @@
         if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
       }
       body.innerHTML = html;
+    } else if (panelKind === 'bank') {
+      h.textContent = 'Bank';
+      sub.textContent = 'Checking ···4821';
+      const soon = [];
+      for (let d = G.day + 1; d <= G.day + 14; d++) {
+        const when = `${weekday(d).slice(0, 3)}, Day ${d}`;
+        if (PAYDAYS.includes(d)) soon.push([when, 'Paycheck (direct deposit)', +CFG.salary_net]);
+        if (isRentDay(d)) soon.push([when, 'Rent', -CFG.rent]);
+        billsDue(d).forEach(b => soon.push([when, b.name + ' (autopay)', -b.amount]));
+      }
+      const KIND = { income: 'Deposit', spend: 'Debit card', bill: 'Autopay' };
+      const line = (when, text, amount, kind) => `<div class="row"><span class="when">${esc(when)}</span><div class="main"><div class="t">${esc(text)}</div>${kind ? `<div class="s">${esc(kind)}</div>` : ''}</div><span class="price ${amount < 0 ? 'out' : 'in'}">${amount < 0 ? '−' : '+'}${usd2(Math.abs(amount)).replace('−', '')}</span></div>`;
+      const past = G.log.filter(l => l.amount).slice().reverse().slice(0, 60);
+      body.innerHTML = `<div class="sum"><div><b>${usd2(G.money)}</b>available balance</div></div>
+        <h3>Coming up</h3>${soon.map(x => line(x[0], x[1], x[2])).join('') || '<p class="empty">Nothing in the next two weeks.</p>'}
+        <h3>Recent transactions</h3>${past.map(l => line(`Day ${l.day} · ${clock(l.minute)}`, l.text, l.amount,
+          (/direct deposit/i.test(l.text) ? 'Direct deposit' : KIND[l.type] || '') + (l.tax ? ` · tax ${usd2(l.tax)}` : '') + (l.tip ? ` · tip ${usd2(l.tip)}` : ''))).join('') || '<p class="empty">No transactions yet.</p>'}`;
     } else if (panelKind === 'map') {
       renderMapPanel(h, sub, body);
     }
@@ -2187,6 +2364,7 @@
     if (!b) return;
     if (b.dataset.say) speak(b.dataset.say);
     if (b.dataset.buy) buy(b.dataset.buy);
+    if (b.dataset.tip != null && panelKind === 'shop') { tipChoice[panelArg] = +b.dataset.tip; renderPanel(); }
     if (b.dataset.eat) eat(b.dataset.eat);
     if (b.dataset.ride) ride(b.dataset.ride);
     if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note("You can't afford that.", true); else { pay(-it.price, it.name, 'spend'); G.pass = G.day; saveGame(); renderPanel(); note('Day pass bought. Ride as much as you like today.'); } }
@@ -2471,7 +2649,10 @@
         items.push(`<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')}${people.length ? ' · ' + esc(people.join(', ')) : ''}${acts.length ? ' · ' + esc(acts.join(', ')) : ''}</div>${talk.length ? `<div class="s talk">! ${esc(talk.join(' · '))}</div>` : ''}</div></div>`);
       });
       if (mz === 'city') {
-        const away = rows('npcs').filter(n => !personOnMap(n, mz, spec)).map(n => `${String(n.name).split(' ')[0]} (${zoneName(zoneOfPlace(npcPlaceNow(n)))[0]})`);
+        const gone = rows('npcs').filter(n => !personOnMap(n, mz, spec));
+        const away = gone.filter(n => npcPlaceNow(n)).map(n => `${String(n.name).split(' ')[0]} (${zoneName(zoneOfPlace(npcPlaceNow(n)))[0]})`);
+        const off = gone.filter(n => !npcPlaceNow(n)).map(n => String(n.name).split(' ')[0]);
+        if (off.length) items.push(`<div class="row"><div class="main"><div class="t">Off today or gone home</div><div class="s">${esc(off.join(', '))}</div></div></div>`);
         if (away.length) items.push(`<div class="row"><div class="main"><div class="t">Out of town</div><div class="s">${esc(away.join(', '))} · by the airport shuttle</div></div></div>`);
       }
       list.innerHTML = items.join('');
@@ -2481,19 +2662,23 @@
   function buy(id) {
     const i = ITEMS[id];
     if (!i || !G) return false;
-    const price = +i.price;
-    if (G.money < price) { if (!panel.hidden) note("You can't afford that.", true); speak("Sorry, you can't afford that."); return false; }
-    pay(-price, i.name, 'spend');
+    if (i.place && (closedNow(i.place) || closedNow(zoneOfPlace(i.place)))) { if (!panel.hidden) note('Sorry, we are closed.', true); return false; }
+    const b = billFor(i), price = b.total;
+    if (G.money < price) { if (!panel.hidden) note(`You can't afford that (${receipt(b)}).`, true); speak("Sorry, you can't afford that."); return false; }
+    pay(-price, i.name, 'spend', b.tax || b.tip ? { tax: b.tax, tip: b.tip } : null);
     speak(i.name);
     if (i.kind === 'fare') note(`Paid ${usd2(price)}: ${i.name}.`);
     else if (/^(meal|drink)$/.test(i.kind)) {
       G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
       advanceMinutes(i.kind === 'meal' ? 20 : 5);
-      note(`${i.name}: ${usd2(price)}. Energy +${i.energy || 0}.`);
+      note(`${i.name}: ${receipt(b)}. Energy +${i.energy || 0}.`);
       if (player) play(player, 'interact-right', { once: true });
-    } else {
+    } else if (i.kind === 'grocery') {
       G.inventory[id] = (G.inventory[id] || 0) + 1;
       note(`${i.name} is in your bag (${G.inventory[id]}).`);
+    } else {
+      G.inventory[id] = (G.inventory[id] || 0) + 1;
+      note(`${i.name}: ${receipt(b)}. It is in your bag.`);
     }
     saveGame();
     if (!panel.hidden) { const n = panel.querySelector('.panel-note').textContent; renderPanel(); panel.querySelector('.panel-note').textContent = n; }
@@ -2545,7 +2730,11 @@
     G.energy = E_MAX;
     const morning = [];
     if (PAYDAYS.includes(G.day)) { pay(+CFG.salary_net, 'Paycheck (direct deposit)', 'income'); morning.push(`Payday: <b>${usd2(+CFG.salary_net)}</b> was deposited to your account (gross ${usd(+CFG.salary_gross)}).`); }
-    if (isRentDay(G.day)) { pay(-CFG.rent, 'Rent', 'spend'); morning.push(`Rent: <b>${usd2(+CFG.rent)}</b> was paid to your landlord.`); }
+    if (isRentDay(G.day)) { pay(-CFG.rent, 'Rent', 'bill'); morning.push(`Rent: <b>${usd2(+CFG.rent)}</b> was paid to your landlord.`); }
+    billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill'); morning.push(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.<span class="ko"> 자동이체: ${esc(b.name_ko || b.name)}</span>`); });
+    if (G.money < 0) morning.push('Your account is <b>overdrawn</b>. Spend carefully until payday.<span class="ko"> 계좌 잔액이 마이너스예요. 월급날까지 아껴 쓰세요.</span>');
+    const wx = weatherOf(G.day);
+    morning.unshift(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}<span class="ko"> ${esc(wx.forecast_ko || '')} (최고 ${toC(wx.high_f)}°C)</span>`);
     const cal = rows('calendar').filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
     const body = `<div class="sum"><div><b>${eps.length}</b>conversations</div><div><b>${phrasesToday}</b>new phrases</div><div><b>${usd2(spent)}</b>spent</div><div><b>${usd2(earned)}</b>earned</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(l.text)}</li>`).join('') + '</ul>' : ''}
@@ -2742,6 +2931,8 @@
     hud();
     if (fresh) {
       toast(`${weekday(G.day)}, Day ${G.day}. Welcome to ${CFG.city}, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
+      const wx = weatherOf(G.day);
+      if (wx.forecast) setTimeout(() => toast(`${WX_ICON[wx.kind] || ''} ${wx.high_f}°F today. ${wx.forecast}`, `오늘 최고 ${toC(wx.high_f)}°C. ${wx.forecast_ko || ''}`, null, 5), 4200);
       logEvent('start', 'New game', 0);
       saveGame();
     }
@@ -2768,6 +2959,7 @@
     // colliders that move (circles { x, z, r } the player is pushed out of), the light and the graphics setting
     get propList() { return zoneAll; }, get solids() { return solids; }, get movers() { return movers; },
     get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
+    get weather() { return weatherNow(); }, get weekend() { return !!G && isWeekend(G.day); },
     get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
     loadPack, packReady, findPath: (from, to, opts, cb) => requestPath(from, to, opts, cb),

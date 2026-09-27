@@ -13,7 +13,10 @@
      corners, one search a frame through the engine), as Yuka Vehicles that keep apart and step round you
      (Separation, ObstacleAvoidance), and wave when you come close. You cannot talk to them.
    - Somebody sits on a park bench or a diner chair.
-   Low graphics: 2 cars, 2 passers-by, 1 sitter. */
+   How busy the streets are goes with the clock and the weather when you come into the zone: the most cars in the rush
+   hours of a working day (7:30 to 9:30, 16:30 to 18:30), few late in the evening, fewer people out in the rain or
+   fog and nobody on a bench in the rain.
+   Low graphics: 2 cars, 2 passers-by, 1 sitter (before that). */
 (function () {
   'use strict';
   const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];              // east, south, west, north (x right, z towards the viewer)
@@ -52,6 +55,18 @@
     const mat = (m) => { own.push(m); return m; };
     const geo = (g) => { own.push(g); return g; };
     const props = api.propList || [];
+    // how busy it is now, as factors on the numbers of cars and of people on foot
+    const busy = (function () {
+      const h = api.minute / 60, wx = api.weather || { rain: 0, fog: 0 }, weekend = !!api.weekend;
+      const rush = !weekend && ((h >= 7.5 && h < 9.5) || (h >= 16.5 && h < 18.5));
+      const late = h >= 21 || h < 6, evening = h >= 19.5 && !late;
+      const cars = late ? 0.5 : evening ? 0.75 : rush ? 1.6 : weekend ? 0.8 : 1;
+      const lunch = h >= 11.5 && h < 13.5;
+      let feet = late ? 0.3 : evening ? 0.6 : rush || lunch || (weekend && h >= 10 && h < 17) ? 1.5 : 1;
+      if (wx.rain > 0.05) feet *= 0.5; else if (wx.fog > 0.4) feet *= 0.75;
+      return { cars, feet, wet: wx.rain > 0.05 };
+    })();
+    const some = (base, f) => Math.max(1, Math.round(base * f));
 
     // ------------------------------------------------------------ trees
     props.forEach(r => {
@@ -361,7 +376,7 @@
     }
     function startCars() {
       if (dead || !cells.size || !Y) return;
-      const n = high ? 4 : 2;
+      const n = some(high ? 4 : 2, busy.cars);
       const starts = [];
       cells.forEach(c => {
         if (c.junction || c.crossing || c.signal) return;
@@ -371,7 +386,7 @@
       const pl = api.player;
       for (let tries = 0; tries < 80 && L.cars.length < n && starts.length; tries++) {
         const [c, d] = pick(starts);
-        if (used.some(u => Math.hypot(u.x - c.x, u.z - c.z) < 6.5)) continue;
+        if (used.some(u => Math.hypot(u.x - c.x, u.z - c.z) < (n > 4 ? 5 : 6.5))) continue;
         if (pl && Math.hypot(pl.pos.x - c.x, pl.pos.z - c.z) < 3) continue;
         const [type, tint] = CARS[L.cars.length % CARS.length];
         const car = makeCar(type, tint, c, d, rnd(0.2, 1.6));
@@ -438,7 +453,7 @@
     function startWalkers(models) {
       const rs = rings();
       if (!rs.length || !Y) return;
-      const n = Math.min(high ? 4 : 2, models.length);
+      const n = Math.min(some(high ? 4 : 2, busy.feet), models.length);
       for (let j = 0; j < n; j++) {
         const ring = rs[j % rs.length], dir = j < rs.length ? 1 : -1;
         const leg = Math.floor(rnd(0, 4)), u = rnd(0.1, 0.9);
@@ -523,6 +538,7 @@
     }
     function startSitters(models) {
       if (zone !== 'city' && zone !== 'diner') return;
+      if (zone === 'city' && busy.wet) return;
       const places = Object.values(Z.places || {}).map(p => p.at).filter(Boolean);
       const box = new T.Box3(), c = new T.Vector3();
       const seats = props.filter(r => SEATS.test(r.spec.node || '')).map(r => {
@@ -608,7 +624,7 @@
       own.forEach(o => o.dispose && o.dispose());
     }
     function info() {
-      return { cars: L.cars.length, walkers: L.walkers.length, sitters: L.sitters.length, trees: L.trees.length, lights: L.lights.length,
+      return { busy, cars: L.cars.length, walkers: L.walkers.length, sitters: L.sitters.length, trees: L.trees.length, lights: L.lights.length,
         signal: L.lights.length || [...cells.values()].some(c => c.signal) ? { x: phaseOf('x'), z: phaseOf('z') } : null,
         at: L.cars.map(c => [+c.x.toFixed(1), +c.z.toFixed(1), +c.v.toFixed(2)]).concat(L.walkers.map(w => [+w.a.pos.x.toFixed(1), +w.a.pos.z.toFixed(1)])) };
     }

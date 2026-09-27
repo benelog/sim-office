@@ -17,7 +17,7 @@
 
 <header id="bar">
   <div class="brand">Sim Office</div>
-  <div class="clock"><span id="hud-day"></span> <b id="hud-time"></b></div>
+  <div class="clock"><span id="hud-day"></span> <b id="hud-time"></b> <span id="hud-weather"></span></div>
   <div class="money" id="hud-money"></div>
   <div class="energy" title="Energy"><span class="lbl">Energy</span><div class="meter"><div class="fill" id="hud-energy"></div></div></div>
   <label class="opt"><input type="checkbox" id="voice-on" checked> <span>Voice</span></label>
@@ -27,6 +27,7 @@
     <button type="button" data-open="phrasebook">Phrasebook</button>
     <button type="button" data-open="inventory">Inventory</button>
     <button type="button" data-open="calendar">Calendar</button>
+    <button type="button" data-open="bank">Bank</button>
     <button type="button" data-open="map">Map</button>
     <button type="button" data-open="graphics" id="gfx-btn">Graphics: High</button>
     <button type="button" data-open="title">Title screen</button>
@@ -85,7 +86,7 @@
         <div id="chars" role="radiogroup" aria-label="Character"></div>
       </div>
     </div>
-    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Phrasebook <kbd>P</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd> · Map <kbd>M</kbd><br>
+    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Phrasebook <kbd>P</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd> · Bank <kbd>B</kbd> · Map <kbd>M</kbd><br>
       <span class="touch-only">On a phone, drag the circle at the bottom left.</span></p>
     <div id="saves" class="saves" hidden aria-label="Saved games"></div>
     <div class="buttons">
