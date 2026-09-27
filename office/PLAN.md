@@ -20,7 +20,7 @@
 - **에피소드**(DoltHub `episodes`/`turns`): 장소+인물에서 열리는 대화. `day_from~day_to`, `time_from~time_to`, `requires`를 만족하면 그 인물 머리 위에 `!` 표시가 뜨고 말을 걸면 시작. 턴마다 인물 대사 → 안내(prompt) → 플레이어가 **입력(Type)** 또는 **선택(Choose)** → 판정(`lib/matcher.js`, 키워드 그룹) → 인물의 답(reply). 끝나면 `phrases`가 그 대화와 함께 **Conversations**에 남고 완료 기록.
 - **배운 표현**: 2026-09-27에 Phrasebook 패널을 없애고 Conversations에 합침. 대화마다 그 대화의 표현(영어·한국어 뜻·메모, ▶로 듣기)이 대사 아래에 붙음. 저장의 `phrases`는 그대로.
 - **TTS**: 브라우저 `speechSynthesis`. **미국 영어(en-US) 목소리 우선**, 인물마다 `voice_pitch`·`voice_rate`(·`voice_like`: 목소리 이름 정규식). 인물 대사·답·배운 표현·상점 품목 이름을 읽어 줍니다. 헤더에 Voice 체크박스.
-- **상점**: 식료품점(market)·식당(diner)·커피 카트(coffee_cart)에서 `items`를 삽니다(잔액 확인, "You can't afford that"). 식료품은 인벤토리에 들어가 집에서 먹고, 식사·음료는 바로 먹습니다.
+- **상점**: 식료품점(market)·식당(diner)·커피 카트(coffee_cart)에서 `items`(kind `grocery|meal|drink|gear`)를 삽니다(잔액 확인, "You can't afford that"). 식료품은 인벤토리에 들어가 집에서 먹고, 식사·음료는 바로 먹습니다.
 - **잠**: 집 침대(home_bed)에서 Sleep → 다음 날 07:00, 에너지 100, 급여·월세 처리, 그날의 캘린더 요약 카드.
 - **저장**: `localStorage` `so.v1.saves` = `{ [이름]: { name, model, day, minute, money, energy, zone, at, done:{episodeId:true}, inventory:{itemId:n}, phrases:[id], log:[…], saved } }`(캐릭터 이름마다 한 판), `so.v1.last` = 마지막에 한 이름. 자동 저장(에피소드 완료·구매·존 이동·잠). 예전 한 판짜리 `so.v1.save`는 시작할 때 목록으로 옮깁니다.
 - **날씨**(DoltHub `weather`, 하루 한 줄: `clear` `partly` `cloudy` `rain` `fog`, 최고·최저 기온 °F, 예보 문장): 하늘에 구름(하늘 셰이더의 `cover`), 흐리면 해가 약해지고 그림자가 옅어지며, 비 오는 날은 비가 오락가락(빗줄기 `LineSegments`), 안개는 아침에 끼고 11시까지 걷힘. 실내는 창밖 빛이 시간·날씨를 따름. HUD 시계 옆에 지금 기온, 아침 카드와 새 게임 첫 알림에 예보. 표의 마지막 날 뒤로는 표를 되풀이.
@@ -30,8 +30,16 @@
 - **잡담**(DoltHub `smalltalk`, topic `weather:<kind>` `day:monday|friday|weekend` `time:morning|lunch|evening`): 인물이 지나가는 말 셋에 하나(첫마디 포함)는 지금 날씨·요일·시간에 맞는 말.
 - **공과금과 은행**(DoltHub `bills`: 자동이체 날짜 `day`, 주기 `every`): 아침에 빠져나가고 아침 카드·달력에 표시. Menu > Bank(`B`): 잔액, 2주 안의 입출금 예정, 최근 거래(세금·팁 포함).
 - **거리의 붐빔**(`office/life.js`): 존에 들어올 때의 시각·요일·날씨로 자동차와 행인 수를 정함(출퇴근 시간 자동차 1.6배, 밤에는 절반, 비 오면 행인 절반, 비 오는 날 공원 벤치에는 아무도 없음).
+- **날짜와 공휴일**(`config.start_date` = 1일의 실제 날짜, 월요일이어야 함: 2026-10-05, DoltHub `holidays`: date `YYYY-MM-DD`, kind `federal|observance`): HUD·달력·은행·아침 카드는 미국식 날짜(`Mon, Oct 5`)를 쓰고 `Day n`은 곁들임. 공휴일은 달력(이번 주 + Coming up 3개)과 아침 카드에 나오고, 연방 공휴일에는 버스가 주말 시간표로 다니며 사람들이 그 얘기를 함(smalltalk `holiday`). 사무실은 쉬지 않음(8일 = 10월 12일 Columbus Day).
+- **휴대전화**(DoltHub `messages`: hero `all` 또는 주인공, day, time, kind `text|email|voicemail|alert`, sender = 인물 id 또는 이름, subject, body): 시각이 되면 알림음과 함께 토스트가 뜨고 Menu 버튼에 안 읽은 수. Menu > Phone(`P`)에서 최근 것부터 읽고 ▶로 들음(인물이 보낸 것은 그 목소리). 내가 고른 주인공이 보낸 것은 빠짐. 대화 중에는 오지 않고 끝난 뒤에 옴. 은행 알림(급여 입금, 자동이체, 잔액 부족, 초과 인출 수수료)은 표가 아니라 엔진이 만듦(`notify`). 저장: `got {id: 1 안 읽음 | 2 읽음}`, `notes [...]`(최근 40개). 스팸 전화·피싱 문자도 있음(한국어 설명에 표시).
+- **버스 시간표**(`config.bus_every` 20분, `bus_every_weekend` 30분: 주말·연방 공휴일, `bus_first` 06:00, `bus_last` 22:30): 다음 버스를 기다렸다가 탐(기다린 시간 + 15분 경과). 정류장 행동에 다음 버스 시각, 막차 뒤에는 `No more buses tonight`.
+- **비와 우산**: 밖에 비가 오면(`rain` > 0.12) 인물·행인이 우산을 씀(`shelter`, 기본 도형). 마켓에서 우산(`items` kind `gear`, 과세)을 사서 가방에 있으면 나도 씀. 없으면 젖고(`wet` 0~1, 실내에서 마름) 에너지가 더 빨리 줄며(`config.rain_energy_per_hour`), HUD 날씨 옆에 💧, 실내 사람들이 한마디 함(smalltalk `you:wet`). 빗소리(Web Audio 합성, 실내에서는 작고 먹먹하게).
+- **단골 카드**(`config.punch_card_place` coffee_cart, `punch_card_every` 6): 음료 5잔을 사면 다음 한 잔이 무료. 무료 음료의 팁은 원래 가격 기준. 저장의 `punch`.
+- **은행 수수료**: 자동이체 등으로 잔액이 0 아래로 내려가면 초과 인출 수수료(`config.overdraft_fee` $35, 하루 한 번), `config.low_balance`($100) 아래로 내려가면 잔액 부족 알림.
+- **지각**: 평일에 사무실에 처음 들어간 시각을 기록(`inDay`, `inAt`). `config.late_after`(09:15)보다 늦으면(정오 전) 지각 알림이 뜨고 동료들이 한마디 함(smalltalk `you:late`), 09:00 전이면 "on time". 잠자리 요약에 출근 시각. 23:00에 쓰러져 잠들면 다음 날 에너지 80으로 시작.
+- **유통기한과 요리**(`items.shelf_days`·`uses`·`cook_only`, DoltHub `recipes`: minutes, energy, ingredients = 물품 id 쉼표 목록, tool, steps·steps_ko는 ` | `로 구분): 가방은 묶음 단위(`lots [{id, day, left}]`, `inventory`는 거기서 계산)로 관리. 식료품은 산 날 + `shelf_days`일까지 먹을 수 있고(`best by`, NULL이면 상하지 않음) 그 뒤에는 상해서 Inventory에서 `Throw out`만 됨. 한 묶음은 `uses`회분. `cook_only`(달걀·베이컨·다진 소고기·양파·브로콜리·냉동 피자)는 그냥 못 먹음. 집 부엌의 `Cook a meal`(또는 집에서 Inventory의 버튼)에서 요리법을 고르면 재료마다 1회분을 오래된 묶음부터 쓰고 시간이 지나며 에너지가 오름. 요리법마다 만드는 법(영어 조리 동사)과 ▶ 듣기. 아침 카드에 밤새 상한 것과 오늘까지인 것. 상점 목록에 회분·보관 일수 표시. 예전 저장의 물건은 불러온 날 산 것으로 봄.
 - **목소리**: 인물마다 `npcs.voice_like`(목소리 이름 패턴, 미국 영어 목소리에서 먼저 찾음) → 없으면 모델의 성별(`man-`/`woman-`)에 맞는 미국 영어 목소리 중 id로 고른 것 → 그것도 없으면 기본 목소리의 음높이를 남자는 −0.3, 여자는 +0.3. **주인공이 한 말(입력·선택한 답)도 주인공의 목소리로 읽고**, 상대의 답은 그 뒤에 이어집니다.
-- **지난 대화**(Menu > Conversations, `T` 또는 `P`): 끝낸 대화를 최근 것부터 다시 읽고 ▶로 들음. 대사 아래에 그 대화에서 배운 표현. 내가 실제로 한 말은 저장의 `said[episodeId]`에 있고, 모범 답과 다르면 모범 답도 보여 줍니다.
+- **지난 대화**(Menu > Conversations, `T`): 끝낸 대화를 최근 것부터 다시 읽고 ▶로 들음. 대사 아래에 그 대화에서 배운 표현. 내가 실제로 한 말은 저장의 `said[episodeId]`에 있고, 모범 답과 다르면 모범 답도 보여 줍니다.
 - **조깅**(`office/jog.js`): 시내를 한 바퀴 도는 달리기 길 Fairview Loop(서쪽 가장자리 → 해변 → 동쪽 가장자리 → 강변, 약 175). 집 현관에서 `Go for a jog`(40분 경과, 에너지 −12) 또는 제목 화면의 `Jogging mini-game`(게임 없이 단독). 1인칭 시점으로 저절로 달리고, 박자(0.4초)에 맞춰 왼발·오른발을 번갈아 누릅니다(← → / A D / F J, 터치는 화면 좌우). Perfect·Good·OK에 따라 페이스가 올라 속도 2.2~5.6, 점수는 연속 성공 배수. 다른 주자 셋과 순위를 겨루고, 앞지를 때 "On your left!". 최고 기록은 `localStorage so.v1.jog`. 해변에 가까워지면 파도 소리(Web Audio로 합성, 시내 남쪽을 걸을 때도 들림).
 - **마을 구경**(제목 화면 `Look around town`): 시내를 자유 카메라로 둘러봄. ↑↓/WS 이동, ←→/AD 회전, QE 옆으로, ZX·휠 확대, RF 높이, Shift 빠르게, Space 자동 회전, T 시간대, Y 날씨, Esc 돌아가기, 마우스·터치 끌기.
 - **조작**: 어린 왕자 게임과 같음. ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동. 터치: 왼쪽 아래 조이스틱, 행동 버튼. HUD: 요일·날짜·시각, $잔액, 에너지 막대, 다음 일정, 현재 목표.
@@ -63,7 +71,7 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 
 토큰은 `.envrc`(`source .envrc`). `node tools/dolt.mjs push db/seed/10-x.sql`(문장마다 커밋 1개, 2초; **여러 행을 한 INSERT로**), `node tools/dolt.mjs query "…"`, `node tools/dolt.mjs pull`(→ `office/data/db.js`, `window.SO_DB`). 스키마는 `db/schema.sql`. 시드는 `REPLACE INTO`로 써서 다시 밀어 넣어도 됩니다. 문장 구분은 **줄 끝의 `;`** 입니다(값 안의 `;`는 줄 끝에 오지 않게).
 
-`SO_DB` 모양: `config` `{k:v}`(숫자는 숫자), 나머지는 행 배열(`places npcs chatter episodes turns phrases items calendar schedule weather smalltalk bills`). `turns.answers/distractors/hints/hints_ko`는 JSON(배열)으로 풀려 있습니다.
+`SO_DB` 모양: `config` `{k:v}`(숫자는 숫자), 나머지는 행 배열(`places npcs chatter episodes turns phrases items calendar schedule weather smalltalk bills heroes messages holidays recipes`). `turns.answers/distractors/hints/hints_ko`는 JSON(배열)으로 풀려 있습니다.
 
 ### 장소 id(고정) — zone
 | zone | places |
@@ -165,13 +173,13 @@ SO_ZONES.office = {
 
 어린 왕자 엔진(`/game.js`)의 툰 셰이딩·모델 로딩(base64→`GLTFLoader.parse`)·대화창·TTS·조작·디버그 API를 가져와 **평평한 세계**로 다시 씁니다. Kenney 재질의 `map`(colormap)은 유지해야 합니다(툰 재질에 `map`을 넘김).
 
-- `index.html`: 헤더(게임 이름, 요일·시각, $, 에너지, Voice·Korean help 체크박스), 캔버스, 말풍선, 목표/일정 패널, 행동 버튼, 조이스틱, 대화창(situation·line·prompt·choices·typing·feedback·Type/Choose·Walk away·Continue), 상점 패널, Conversations 패널, 인벤토리, 시작 카드(이름·캐릭터 선택, 저장된 게임 목록에서 이어하기·삭제), 하루 요약 카드(잠잘 때), 메뉴 버튼(Conversations·Inventory·Calendar·Bank·Map·Reset).
+- `index.html`: 헤더(게임 이름, 요일·시각, $, 에너지, Voice·Korean help 체크박스), 캔버스, 말풍선, 목표/일정 패널, 행동 버튼, 조이스틱, 대화창(situation·line·prompt·choices·typing·feedback·Type/Choose·Walk away·Continue), 상점 패널, Conversations 패널, 인벤토리, 시작 카드(이름·캐릭터 선택, 저장된 게임 목록에서 이어하기·삭제), 하루 요약 카드(잠잘 때), 메뉴 버튼(Phone·Conversations·Inventory·Calendar·Bank·Map·Reset).
 - 대화: 인물 대사는 말풍선+TTS+`dialog`. 정답이면 플레이어 말풍선, `emote-yes`. 3번 틀리면 모범 답 제시. Choose 모드는 `model`+`distractors`를 섞어 4개.
 - 인물: `npcs`의 자리에 서서 가까이 오면 바라봄. 열린 에피소드가 있으면 머리 위 `!`. 없으면 `chatter`를 돌아가며 말함. 자리에 `sit:true`이면 `sit` 애니메이션.
 - 시간·돈·에너지·잠·급여·월세·상점·인벤토리·배운 표현·저장은 1절대로.
 - 카메라: 플레이어 뒤 위(3인칭), 실내에서는 더 가깝게. 벽 뒤로 카메라가 들어가지 않게 바닥 위로 제한만.
 - **지도**(Menu > Map, `M`): 존 데이터로 캔버스에 그립니다 — 도로 타일(보도 딸린 3×3 칸), 소품의 발자국(`SO_ZONE_KIT.BOX`, 건물·나무·차·가구), 장소 핀, 문, 존의 `map`에 적은 거리·구역 이름, 사람(지금 있는 자리, 다른 건물 안이면 그 건물 문 앞에 모아서, 열린 에피소드는 `!`), 목표(점선 원), 나(화살표). 실내에 있으면 Town / 지금 있는 곳 탭. 지도 아래에 사람·행동이 있는 장소 목록과 시외(공항·호텔·고객사)에 있는 사람. 열려 있는 동안 0.5초마다 다시 그립니다.
-- 디버그 API `window.SO.debug`: `ready`, `state`('title'|'play'|'talk'|'shop'|'sleep'|'card'), `day`, `time`, `money`, `energy`, `zone`, `start(heroId?)`, `hero`, `heroes`, `voice(id)`, `jog.start(story)`·`jog.state`·`jog.press(0|1)`·`jog.stop()`, `tour.start()`·`tour.do(what)`, `goto(zone, placeId?)`, `episodes()`(지금 열 수 있는 것), `startEpisode(id)`, `advance()`(현재 턴에 모범 답 → Continue), `autoplayEpisode(id)`, `sleep()`, `buy(itemId)`, `panel(kind)`, `mapTab('town'|'room')`, `save`(현재 저장 객체), `saves`(저장된 이름들), `reset()`.
+- 디버그 API `window.SO.debug`: `ready`, `state`('title'|'play'|'talk'|'shop'|'sleep'|'card'), `day`, `time`, `money`, `energy`, `zone`, `start(heroId?)`, `hero`, `heroes`, `voice(id)`, `jog.start(story)`·`jog.state`·`jog.press(0|1)`·`jog.stop()`, `tour.start()`·`tour.do(what)`, `goto(zone, placeId?)`, `episodes()`(지금 열 수 있는 것), `startEpisode(id)`, `advance()`(현재 턴에 모범 답 → Continue), `autoplayEpisode(id)`, `sleep()`, `buy(itemId)`, `panel(kind)`, `mapTab('town'|'room')`, `inbox`·`unread`·`checkPhone()`, `date`·`holiday`, `nextBus(min?)`·`ride(placeId)`, `wet`·`raining`·`rainSound`·`umbrellas`, `punch`, `lots`·`recipes`(지금 만들 수 있는 것)·`cook(recipeId)`·`eat(itemId)`·`toss(n)`, `pay(amount, text)`, `arrive(zone, placeId)`(문으로 들어가듯), `save`(현재 저장 객체), `saves`(저장된 이름들), `reset()`.
 - 점검: `tools/office-check.sh <outdir> [steps.mjs] [w h]` — `tools/game-check.sh`와 같은 방식(bash에서 Chrome 헤드리스 띄우고 node가 CDP로 붙음, `TMPDIR=/tmp/claude-1000`). 기본 시나리오: 제목 화면 → 시작 → 집 → 각 존으로 goto해서 스크린숏 → 열 수 있는 에피소드 전부 autoplay → 잠 → 콘솔 오류 0, `finished: true`.
 - 모델 팩이 아직 없으면(`SO_MODELS[pack]` 없음) 해당 소품은 회색 상자로 대체하고 콘솔 경고 1줄만.
 

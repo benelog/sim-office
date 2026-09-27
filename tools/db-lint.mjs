@@ -23,7 +23,7 @@ bottle-ketchup peanut-butter honey cheese bacon meat-patty sausage turkey fish c
 popsicle candy-bar chocolate barrel`.split(/\s+/));
 const MODELS = /^(man|woman)-[a-z]+(-\d)?$/;   // a person made by tools/office-characters.py (office/models/<id>.js)
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
-const ITEM_KINDS = new Set(['grocery', 'meal', 'drink', 'fare', 'ticket', 'rent', 'other']);
+const ITEM_KINDS = new Set(['grocery', 'meal', 'drink', 'fare', 'ticket', 'rent', 'other', 'gear']);
 
 const problems = [], warnings = [];
 const bad = (where, msg) => problems.push(`${where}: ${msg}`);
@@ -140,8 +140,44 @@ for (const c of rows('calendar')) {
   }
 }
 
+const MSG_KINDS = new Set(['text', 'email', 'voicemail', 'alert']);
+for (const m of DB.messages || []) {
+  const w = `messages ${m.id}`;
+  if (m.hero && m.hero !== 'all' && heroes.size && !heroes.has(m.hero)) bad(w, `hero "${m.hero}" not in heroes`);
+  if (!HHMM.test(m.time || '')) bad(w, `bad time ${m.time}`);
+  if (!(m.day >= 1)) bad(w, `bad day ${m.day}`);
+  if (!MSG_KINDS.has(m.kind)) bad(w, `kind "${m.kind}" is not one of ${[...MSG_KINDS].join('/')}`);
+  if (!m.sender || !m.body) bad(w, 'sender and body are required');
+  if (m.hero && m.hero === m.sender) bad(w, 'the hero cannot send a message to themselves');
+  if (m.kind === 'email' && !m.subject) warn(w, 'an email without a subject');
+  if (!m.body_ko) warn(w, 'no body_ko');
+}
+const start = String((DB.config || {}).start_date || '');
+if (start && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(start + 'T00:00:00Z').getUTCDay() !== 1)) bad('config start_date', `"${start}" is not a Monday (YYYY-MM-DD)`);
+for (const h of DB.holidays || []) {
+  const w = `holidays ${h.date}`;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(h.date || '') || isNaN(Date.parse(h.date))) bad(w, 'date is not YYYY-MM-DD');
+  if (!/^(federal|observance)$/.test(h.kind || '')) bad(w, `kind "${h.kind}" is not federal/observance`);
+  if (!h.name_ko) warn(w, 'no name_ko');
+}
+
+const itemIds = ids('items');
+for (const r of DB.recipes || []) {
+  const w = `recipes ${r.id}`, list = String(r.ingredients || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (!list.length) bad(w, 'no ingredients');
+  for (const x of list) {
+    const it = rows('items').find(i => i.id === x);
+    if (!it) bad(w, `ingredient "${x}" not in items`);
+    else if (it.kind !== 'grocery' || !it.place) bad(w, `ingredient "${x}" is not a grocery sold somewhere`);
+  }
+  if (!(r.minutes > 0) || !(r.energy > 0)) bad(w, 'minutes and energy must be above 0');
+  if (r.steps && r.steps_ko && r.steps.split(' | ').length !== r.steps_ko.split(' | ').length) bad(w, 'steps and steps_ko differ in number');
+  if (!r.name_ko) warn(w, 'no name_ko');
+}
+for (const i of rows('items')) if (i.cook_only && !(DB.recipes || []).some(r => String(r.ingredients).split(',').map(x => x.trim()).includes(i.id))) bad(`items ${i.id}`, 'cook_only but in no recipe');
+
 const count = (t) => `${t} ${Array.isArray(DB[t]) ? DB[t].length : 0}`;
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar'].map(count).join(', '));
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);

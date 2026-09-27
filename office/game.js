@@ -28,7 +28,9 @@
     player_name: 'Jun', company: 'Seaside Labs', city: 'Fairview', start_money: 1200, salary_net: 2600, salary_gross: 3654,
     payday_days: '5,15', rent: 1450, rent_day: 21, bus_fare: 2.5, day_start: '07:00', day_end: '23:00', work_start: '09:00', work_end: '18:00',
     minutes_per_second: 1, energy_max: 100, energy_per_hour: -6,
-    sales_tax: 0.0825, tip_options: '0,15,18,20', tip_default: 18
+    sales_tax: 0.0825, tip_options: '0,15,18,20', tip_default: 18,
+    start_date: '', bus_every: 0, bus_every_weekend: 0, bus_first: '06:00', bus_last: '22:30', overdraft_fee: 0, low_balance: 0,
+    punch_card_place: '', punch_card_every: 0, late_after: '09:15', rain_energy_per_hour: -10, bank_name: 'Fairview Credit Union'
   }, DB.config || {});
   const DAY_START = hm(CFG.day_start, 420), DAY_END = hm(CFG.day_end, 1380);
   const E_MAX = +CFG.energy_max || 100;
@@ -103,6 +105,19 @@
   rows('smalltalk').slice().sort((a, b) => a.seq - b.seq).forEach(c => { (SMALLTALK[c.topic] = SMALLTALK[c.topic] || []).push(c); });
   const WEATHER = rows('weather').slice().sort((a, b) => a.day - b.day);
   const isWeekend = (d) => (d - 1) % 7 >= 5;
+  // Real dates: game day 1 is config start_date (a Monday), written the American way (Mon, Oct 5).
+  // Holidays (holidays table) go by the date; on a federal one banks are closed and buses keep the weekend timetable.
+  const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const START = (() => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(CFG.start_date || '')); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; })();
+  const dateOf = (d) => START == null ? null : new Date(START + (d - 1) * 864e5);
+  const dateShort = (d) => { const t = dateOf(d); return t ? `${weekday(d).slice(0, 3)}, ${MONTHS[t.getUTCMonth()].slice(0, 3)} ${t.getUTCDate()}` : `${weekday(d).slice(0, 3)} · Day ${d}`; };
+  const dateLong = (d) => { const t = dateOf(d); return t ? `${weekday(d)}, ${MONTHS[t.getUTCMonth()]} ${t.getUTCDate()}` : `${weekday(d)}, Day ${d}`; };
+  const dateKo = (d) => { const t = dateOf(d); return (t ? `${t.getUTCMonth() + 1}월 ${t.getUTCDate()}일 ` : `${d}일째 `) + WEEKDAYS_KO[(d - 1) % 7]; };
+  const HOLIDAYS = {};
+  rows('holidays').forEach(h => { HOLIDAYS[h.date] = h; });
+  const holidayOf = (d) => { const t = dateOf(d); return (t && HOLIDAYS[t.toISOString().slice(0, 10)]) || null; };
+  const dayOff = (d) => { const h = holidayOf(d); return !!h && h.kind === 'federal'; };
+  const MESSAGES = rows('messages').slice().sort((a, b) => (a.day - b.day) || (hm(a.time, 0) - hm(b.time, 0)));
   const builtinZoneOf = (id) => Object.keys(BUILTIN_PLACES).find(z => BUILTIN_PLACES[z].includes(id)) || null;
   function place(id) {
     const owner = HEROES.find(h => h.desk === id);
@@ -1114,7 +1129,11 @@
     }
   }
   function envTick(dt) {
-    if ((envTimer -= dt) <= 0) { envTimer = 0.25; applyEnvironment(); }
+    if ((envTimer -= dt) <= 0) {
+      envTimer = 0.25;
+      applyEnvironment();
+      rainSound.set(Z && (G ? state !== 'title' : state === 'tour') && !jog ? weatherNow().rain : 0, !!Z && !!Z.indoor);
+    }
     if (Z && !Z.indoor) sky.position.copy(camera.position);
     rainTick(dt);
   }
@@ -1487,8 +1506,24 @@
     if (G.minute >= DAY_END && state === 'play') { toast("It's late. You fall asleep.", '늦었어요. 잠이 듭니다.'); goToSleep(true); }
   }
   function pay(amount, text, type, extra) {
+    const before = G.money;
     G.money = Math.round((G.money + amount) * 100) / 100;
     logEvent(type || (amount >= 0 ? 'income' : 'spend'), text, amount, extra);
+    if (amount < 0) bankWatch(before);
+  }
+  // The bank: a payment that takes the account below zero costs an overdraft fee (config overdraft_fee, once a day),
+  // and falling below config low_balance brings an alert on the phone
+  function bankWatch(before) {
+    const fee = +CFG.overdraft_fee || 0, low = +CFG.low_balance || 0;
+    if (fee && G.money < 0 && G.feeDay !== G.day) {
+      G.feeDay = G.day;
+      G.money = Math.round((G.money - fee) * 100) / 100;
+      logEvent('fee', 'Overdraft fee', -fee);
+      notify(CFG.bank_name, `Your checking account is overdrawn. A ${usd2(fee)} overdraft fee was charged. Available balance: ${usd2(G.money)}.`,
+        `계좌 잔액이 마이너스가 되어 초과 인출 수수료 ${usd2(fee)}가 부과되었습니다. 잔액: ${usd2(G.money)}. (overdrawn: 잔액보다 많이 빠져나간)`);
+    } else if (low && before >= low && G.money < low && G.money >= 0) {
+      notify(CFG.bank_name, `Low balance alert: checking ···4821 is at ${usd2(G.money)}.`, `잔액 부족 알림: 계좌 잔액이 ${usd2(G.money)}입니다.`);
+    }
   }
   // Sales tax and tips: prices on a menu or a shelf are before tax. Meals, drinks and other goods are taxed
   // (config sales_tax); groceries and fares are not. Where food or drinks are served the panel asks about a tip
@@ -1496,31 +1531,258 @@
   const TAX = Math.max(0, +CFG.sales_tax || 0), TIPS = listOf(CFG.tip_options).map(Number).filter(n => n >= 0);
   const cents = (n) => Math.round(n * 100) / 100;
   const pct = (r) => +(r * 100).toFixed(2) + '%';
-  const taxed = (i) => /^(meal|drink|other)$/.test(i.kind);
+  const taxed = (i) => /^(meal|drink|other|gear)$/.test(i.kind);
   const tipAsked = (pid) => TIPS.length > 1 && rows('items').some(i => i.place === pid && /^(meal|drink)$/.test(i.kind) && +i.price > 0);
   const tableService = (pid) => /diner|restaurant/.test(pid || '');
   const tipChoice = {};
   const tipRate = (pid) => !tipAsked(pid) ? 0 : (tipChoice[pid] != null ? tipChoice[pid] : tableService(pid) ? +CFG.tip_default || 0 : 0) / 100;
+  // A punch card (config punch_card_place, punch_card_every: 6 = buy 5 drinks, the 6th is free). The tip on a free
+  // drink still goes by its full price.
+  const PUNCH_AT = String(CFG.punch_card_place || ''), PUNCH_N = +CFG.punch_card_every || 0;
+  const punchable = (i) => PUNCH_N > 1 && !!PUNCH_AT && i.place === PUNCH_AT && i.kind === 'drink' && +i.price > 0;
+  const punches = (pid) => (G && G.punch && G.punch[pid]) || 0;
+  const onTheHouse = (i) => punchable(i) && punches(i.place) >= PUNCH_N - 1;
   function billFor(i) {
-    const price = +i.price || 0, tax = taxed(i) ? cents(price * TAX) : 0;
-    const tip = /^(meal|drink)$/.test(i.kind) ? cents(price * tipRate(i.place)) : 0;
-    return { price, tax, tip, total: cents(price + tax + tip) };
+    const list = +i.price || 0, free = onTheHouse(i), price = free ? 0 : list, tax = taxed(i) ? cents(price * TAX) : 0;
+    const tip = /^(meal|drink)$/.test(i.kind) ? cents(list * tipRate(i.place)) : 0;
+    return { price, tax, tip, total: cents(price + tax + tip), free, list };
   }
-  const receipt = (b) => usd2(b.price) + (b.tax ? ` + tax ${usd2(b.tax)}` : '') + (b.tip ? ` + tip ${usd2(b.tip)}` : '') + (b.tax || b.tip ? ` = ${usd2(b.total)}` : '');
+  const receipt = (b) => (b.free ? 'free with your punch card' : usd2(b.price)) + (b.tax ? ` + tax ${usd2(b.tax)}` : '') + (b.tip ? ` + tip ${usd2(b.tip)}` : '') + (b.tax || b.tip ? ` = ${usd2(b.total)}` : '');
   // Bills on autopay (bills table): due on their day, then every `every` days
   const billsDue = (d) => rows('bills').filter(b => d >= b.day && (d - b.day) % (+b.every || 30) === 0);
+
+  // ---------------------------------------------------------------- the phone: texts, emails, voicemails and alerts
+  // Messages (messages table) arrive when the clock passes their day and time, the bank's alerts (notify) when
+  // something happens to the account. Kept in the save: G.got { id: 1 unread | 2 read }, G.notes [{ day, minute,
+  // sender, kind, body, body_ko, read }]. Menu > Phone (P) lists them, newest first.
+  const MSG_KIND = { text: 'Text', email: 'Email', voicemail: 'Voicemail', alert: 'Alert' };
+  const senderName = (id) => NPCS[id] ? NPCS[id].name : String(id || '');
+  const myMessages = () => MESSAGES.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && m.sender !== G.hero);
+  const unread = () => !G ? 0 : myMessages().filter(m => (G.got || {})[m.id] === 1).length + (G.notes || []).filter(n => !n.read).length;
+  const sound = (function () {          // small sounds made with Web Audio (no files): the phone's chime
+    let ctx = null, failed = false;
+    function context() {
+      if (!ctx && !failed) { try { const A = window.AudioContext || window.webkitAudioContext; if (A) ctx = new A(); else failed = true; } catch (e) { failed = true; } }
+      if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
+      return ctx;
+    }
+    function tone(freq, at, dur, vol) {
+      const c = context();
+      if (!c || c.state !== 'running') return;
+      try {
+        const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + at;
+        o.type = 'sine'; o.frequency.value = freq;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        o.connect(g); g.connect(c.destination);
+        o.start(t); o.stop(t + dur + 0.02);
+      } catch (e) { /* no sound */ }
+    }
+    return { context, chime() { tone(1318.5, 0, 0.22, 0.07); tone(1760, 0.11, 0.3, 0.06); } };
+  })();
+  function phoneBadge() {
+    const n = unread(), b = $('menu-btn'), p = document.querySelector('#menu button[data-open="phone"]');
+    if (n) b.dataset.n = n > 9 ? '9+' : String(n); else delete b.dataset.n;
+    if (p) p.textContent = n ? `Phone (${n})` : 'Phone';
+  }
+  let hush = false;                // overnight the alerts arrive without a sound: the morning card tells
+  function ping(sender, kind, text, ko) {
+    if (state !== 'play' || hush) return;
+    const short = String(text).length > 84 ? String(text).slice(0, 82).replace(/\s+\S*$/, '') + '…' : String(text);
+    toast(`📱 ${MSG_KIND[kind] || 'Message'} from ${senderName(sender)}: ${short}`, ko && String(ko).length > 70 ? String(ko).slice(0, 68) + '…' : ko, 'phone', 6);
+    sound.chime();
+  }
+  function notify(sender, body, ko, kind) {
+    if (!G) return;
+    G.notes = (G.notes || []).concat({ day: G.day, minute: Math.floor(G.minute), sender, kind: kind || 'alert', body, body_ko: ko || '', read: 0 }).slice(-40);
+    ping(sender, kind || 'alert', body, ko);
+    phoneBadge();
+  }
+  function checkPhone() {          // what has come in by now (only while you are walking about: not in the middle of a conversation)
+    if (!G || state !== 'play') return;
+    G.got = G.got || {};
+    const due = myMessages().filter(m => !G.got[m.id] && (m.day < G.day || (m.day === G.day && hm(m.time, 0) <= G.minute)));
+    if (!due.length) return;
+    due.forEach(m => { G.got[m.id] = 1; });
+    const fresh = due.filter(m => m.day === G.day && G.minute - hm(m.time, 0) < 120).pop();
+    if (fresh) ping(fresh.sender, fresh.kind, fresh.subject || personal(fresh.body), fresh.subject ? '' : fresh.body_ko);
+    phoneBadge();
+  }
+  function inbox() {               // everything that has arrived, newest first
+    const got = G.got || {};
+    return myMessages().filter(m => got[m.id]).map(m => ({ n: -1, day: m.day, minute: hm(m.time, 0), sender: m.sender, kind: m.kind, subject: m.subject, body: personal(m.body), body_ko: m.body_ko, fresh: got[m.id] === 1 }))
+      .concat((G.notes || []).map((n, i) => ({ n: i, day: n.day, minute: n.minute, sender: n.sender, kind: n.kind, body: n.body, body_ko: n.body_ko, fresh: !n.read })))
+      .sort((a, b) => (b.day - a.day) || (b.minute - a.minute) || (b.n - a.n));
+  }
+  function readAll() {
+    Object.keys(G.got || {}).forEach(id => { G.got[id] = 2; });
+    (G.notes || []).forEach(n => { n.read = 1; });
+    phoneBadge();
+  }
+
+  // ---------------------------------------------------------------- the kitchen: what keeps how long, and cooking
+  // What is in your bag is kept package by package: G.lots [{ id, day (bought), left (portions) }]; G.inventory
+  // (id → packages) follows it. A grocery keeps items.shelf_days days after the day it was bought (best by that
+  // day; NULL keeps), then it has gone bad and can only be thrown out. A package has items.uses portions, and
+  // items.cook_only things are not eaten as they are. Recipes (recipes table) take one portion of each
+  // ingredient, the oldest package first, and are cooked in the kitchen at home.
+  const RECIPES = rows('recipes').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const usesOf = (i) => Math.max(1, +(i && i.uses) || 1);
+  const bestBy = (lot) => { const i = ITEMS[lot.id], n = i && i.shelf_days != null ? +i.shelf_days : 0; return n > 0 ? lot.day + n : null; };
+  const gone = (lot) => { const d = bestBy(lot); return d != null && G.day > d; };
+  const shortName = (id) => String((ITEMS[id] || { name: pretty(id) }).name).replace(/\s*\(.*\)\s*/, '').replace(/,.*$/, '');
+  function lots() {
+    if (!Array.isArray(G.lots)) {          // a save from before: everything was bought today
+      G.lots = [];
+      Object.keys(G.inventory || {}).forEach(id => { for (let k = 0; k < G.inventory[id]; k++) G.lots.push({ id, day: G.day, left: usesOf(ITEMS[id]) }); });
+    }
+    return G.lots;
+  }
+  function syncBag() {
+    G.lots = lots().filter(l => l.left > 0);
+    G.inventory = {};
+    G.lots.forEach(l => { G.inventory[l.id] = (G.inventory[l.id] || 0) + 1; });
+  }
+  function addLot(id) { lots().push({ id, day: G.day, left: usesOf(ITEMS[id]) }); syncBag(); }
+  const goodLots = (id) => lots().filter(l => l.id === id && l.left > 0 && !gone(l)).sort((a, b) => a.day - b.day);
+  const portions = (id) => goodLots(id).reduce((n, l) => n + l.left, 0);
+  function useOne(id) { const l = goodLots(id)[0]; if (!l) return false; l.left--; syncBag(); return true; }
+  const needs = (r) => listOf(r.ingredients);
+  const canCook = (r) => needs(r).every(id => portions(id) > 0);
+  const atHome = () => !!G && zoneId === hero().home_zone;
+  function cook(id) {
+    const r = RECIPES.find(x => x.id === id);
+    if (!r || !G) return false;
+    if (!atHome()) { if (!panel.hidden) note('You can only cook in your kitchen at home.', true); return false; }
+    if (!canCook(r)) { if (!panel.hidden) note(`You are missing: ${needs(r).filter(x => !portions(x)).map(shortName).join(', ').toLowerCase()}.`, true); return false; }
+    needs(r).forEach(useOne);
+    G.energy = clamp(G.energy + (+r.energy || 0), 0, E_MAX);
+    G.cooked = (G.cooked || 0) + 1;
+    advanceMinutes(+r.minutes || 15);
+    logEvent('cook', r.name, 0, { id: r.id });
+    if (player) play(player, 'interact-right', { once: true });
+    saveGame();
+    if (!panel.hidden) { renderPanel(); note(`You made ${r.name.toLowerCase()} in ${r.minutes} minutes. Energy +${r.energy}.`); }
+    return true;
+  }
+  function toss(n) {
+    const l = lots()[n];
+    if (!l) return;
+    const name = shortName(l.id);
+    l.left = 0;
+    syncBag();
+    logEvent('toss', name, 0);
+    saveGame();
+    renderPanel();
+    note(`You threw out the ${name.toLowerCase()}.`);
+  }
+  function kitchenNews() {          // in the morning: what went bad overnight, what should be used today
+    const bad = lots().filter(l => bestBy(l) === G.day - 1), last = lots().filter(l => bestBy(l) === G.day);
+    const names = (l) => Array.from(new Set(l.map(x => shortName(x.id).toLowerCase()))).join(', '), out = [];
+    if (bad.length) out.push(`🗑️ Gone bad in your kitchen: <b>${esc(names(bad))}</b>. Throw it out (Inventory).<span class="ko"> 상한 식료품이 있어요. 가방(Inventory)에서 버리세요.</span>`);
+    if (last.length) out.push(`Use it or lose it: the <b>${esc(names(last))}</b> ${last.length > 1 || /s$/.test(names(last)) ? 'are' : 'is'} best by today.<span class="ko"> 오늘까지 먹어야 하는 식료품이 있어요.</span>`);
+    return out;
+  }
+
+  // ---------------------------------------------------------------- the bus timetable
+  // Every bus_every minutes from bus_first to bus_last (bus_every_weekend on weekends and federal holidays): you
+  // wait for the next one, and after the last one you walk.
+  const busEvery = () => +((G && (isWeekend(G.day) || dayOff(G.day)) && CFG.bus_every_weekend) || CFG.bus_every) || 0;
+  function nextBus(min) {          // when the next bus leaves (minutes of the day); null after the last one
+    const every = busEvery(), first = hm(CFG.bus_first, 360), last = hm(CFG.bus_last, 1350);
+    if (!every) return Math.floor(min);
+    if (min <= first) return first;
+    const t = first + Math.ceil((min - first) / every) * every;
+    return t <= last ? t : null;
+  }
+
+  // ---------------------------------------------------------------- rain on you: an umbrella, or getting wet
+  // Outdoors in the rain the people of the game put up umbrellas, and so do you when there is one in your bag
+  // (items kind gear, id umbrella). Without it you get wet (G.wet 0..1; it dries indoors) and lose energy faster
+  // (config rain_energy_per_hour), and people remark on it (smalltalk you:wet). The rain can be heard, muffled indoors.
+  const BROLLY = ['#1f3a5f', '#8a2f3a', '#2f6b4f', '#3a3a44', '#c9a227', '#5a3d7a'];
+  const brollyGeo = { top: new T.ConeGeometry(0.4, 0.15, 8, 1, true), pole: new T.CylinderGeometry(0.008, 0.008, 0.62, 5), tip: new T.CylinderGeometry(0.006, 0.006, 0.07, 4) };
+  const brollyMats = {};
+  function shelter(a, on) {
+    if (!a || !a.holder) return;
+    on = !!on && !a.sit;
+    if (!on) { if (a.brolly && a.brolly.visible) { a.brolly.visible = false; if (a.mark) a.mark.position.y = MARK_Y; } return; }
+    if (!a.brolly) {
+      const c = BROLLY[hash(a.id + a.model) % BROLLY.length];
+      const mat = brollyMats[c] || (brollyMats[c] = litMaterial({ color: new T.Color(c), side: T.DoubleSide }));
+      const g = new T.Group(), top = new T.Mesh(brollyGeo.top, mat), pole = new T.Mesh(brollyGeo.pole, toon('#2a2d35')), tip = new T.Mesh(brollyGeo.tip, toon('#2a2d35'));
+      top.position.set(0.05, 1.235, -0.04); pole.position.y = 0.93; tip.position.set(0.05, 1.33, -0.04);          // the canopy leans over the head
+      top.castShadow = true;
+      g.add(top, pole, tip);
+      g.position.set(-0.13, 0, 0.1);
+      a.holder.add(g);
+      a.brolly = g;
+    }
+    a.brolly.visible = true;
+    if (a.mark) a.mark.position.y = MARK_Y + 0.34;
+  }
+  const soaked = () => !!G && (G.wet || 0) > 0.3;
+  const raining = () => !!Z && !Z.indoor && weatherNow().rain > 0.12;
+  const rainSound = (function () {
+    let src = null, gain = null, filter = null, level = 0, muffled = null;
+    function start() {
+      const c = sound.context();
+      if (!c) return false;
+      try {
+        const len = c.sampleRate * 2, buf = c.createBuffer(1, len, c.sampleRate), d = buf.getChannelData(0);
+        for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+        src = c.createBufferSource(); src.buffer = buf; src.loop = true;
+        const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 700;
+        filter = c.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.value = 6500;
+        gain = c.createGain(); gain.gain.value = 0;
+        src.connect(hp); hp.connect(filter); filter.connect(gain); gain.connect(c.destination);
+        src.start();
+        return true;
+      } catch (e) { src = null; return false; }
+    }
+    return {
+      set(v, indoors) {
+        v = clamp(v, 0, 1) * (indoors ? 0.3 : 1);
+        if (v > 0.02 && !src && !start()) return;
+        if (!src || (Math.abs(v - level) < 0.02 && indoors === muffled)) return;
+        level = v; muffled = indoors;
+        const c = sound.context();
+        try { gain.gain.setTargetAtTime(v * 0.16, c.currentTime, 0.8); filter.frequency.setTargetAtTime(indoors ? 1100 : 6500, c.currentTime, 0.5); } catch (e) { /* closed */ }
+      },
+      get level() { return level; }
+    };
+  })();
+  function wetTick(dt) {
+    const inGame = !!G && !!player && !!Z && state !== 'title' && !jog;
+    const rains = inGame && raining();
+    if (player) shelter(player, rains && !!(G && G.inventory.umbrella));
+    Object.values(npcActors).forEach(a => shelter(a, rains && !a.leaving));
+    if (!inGame || state !== 'play' || busy) return;
+    const mins = dt * (+CFG.minutes_per_second || 1) * debugSpeed, hard = weatherNow().rain;
+    if (rains && !G.inventory.umbrella) {
+      G.wet = clamp((G.wet || 0) + hard * mins / 40, 0, 1);
+      G.energy = clamp(G.energy + (+CFG.rain_energy_per_hour || 0) * hard * mins / 60, 0, E_MAX);
+      if (soaked() && G.wetDay !== G.day) {
+        G.wetDay = G.day;
+        toast("You're getting soaked. An umbrella would help: Fairview Market sells them.", '비에 흠뻑 젖고 있어요. 우산이 있으면 좋겠네요. 페어뷰 마켓에서 팝니다.', 'bad', 5.5);
+      }
+    } else if (G.wet) G.wet = Math.max(0, G.wet - mins / (Z.indoor ? 50 : 120));
+  }
 
   // ---------------------------------------------------------------- HUD: clock, money, energy, objective, next event
   let hudTimer = 0, goalTimer = 0, goalTarget = null;
   function hud() {
     if (!G) return;
-    $('hud-day').textContent = `${weekday(G.day).slice(0, 3)} · Day ${G.day}`;
+    $('hud-day').textContent = dateShort(G.day);
+    const hol = holidayOf(G.day);
+    $('hud-day').title = `${dateLong(G.day)} · Day ${G.day}${hol ? ' · ' + hol.name : ''}`;
     $('hud-time').textContent = clock(G.minute);
     const wx = weatherNow(), hw = $('hud-weather'), dark = G.minute >= 19.5 * 60 || G.minute < 6 * 60;
     const dry = wx.kind === 'rain' && wx.rain < 0.04, lifted = wx.kind === 'fog' && wx.fog < 0.05;
     if (hw) {
-      hw.textContent = `${dry ? '☁️' : lifted ? '⛅' : dark && wx.kind === 'clear' ? '🌙' : WX_ICON[wx.kind] || ''} ${wx.temp}°F`;
-      hw.title = `${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}`;
+      hw.textContent = `${dry ? '☁️' : lifted ? '⛅' : dark && wx.kind === 'clear' ? '🌙' : WX_ICON[wx.kind] || ''} ${wx.temp}°F${soaked() ? ' 💧' : ''}`;
+      hw.title = `${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}${soaked() ? ' You are wet from the rain.' : ''}`;
     }
     const m = $('hud-money');
     m.textContent = usd(G.money);
@@ -1599,12 +1861,19 @@
   function remark(a) {
     a.chatN = (a.chatN || 0) + 1;
     const lines = CHATTER[a.id] || [];
+    // first, what anybody would say at the sight of you: dripping wet indoors, or in late this morning
+    const about = Z.indoor && soaked() ? 'you:wet' : zoneId === 'office' && G.lateDay === G.day && G.minute < 12 * 60 ? 'you:late' : null;
+    if (about && (SMALLTALK[about] || []).length && a.about !== about + G.day) {
+      a.about = about + G.day;
+      return SMALLTALK[about][(hash(a.id) + G.day) % SMALLTALK[about].length];
+    }
     if (a.chatN % 3 === 1 || !lines.length) {
       const wx = weatherNow(), wd = (G.day - 1) % 7, m = G.minute, topics = [];
       if (wx.kind !== 'rain' || wx.rain > 0.04 || Z.indoor) topics.push('weather:' + (wx.kind === 'fog' && wx.fog < 0.05 ? 'partly' : wx.kind));
       if (wd === 0 && m < 12 * 60) topics.push('day:monday');
       if (wd === 4) topics.push('day:friday');
       if (wd >= 5) topics.push('day:weekend');
+      if (dayOff(G.day)) topics.push('holiday');
       if (m < 9 * 60 && Z.indoor) topics.push('time:morning');
       if (m >= 11.5 * 60 && m < 13.5 * 60) topics.push('time:lunch');
       if (m >= 17.5 * 60) topics.push('time:evening');
@@ -1765,7 +2034,7 @@
       return;
     }
     if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
-    const panelKey = { KeyT: 'talks', KeyP: 'talks', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank' }[e.code];
+    const panelKey = { KeyT: 'talks', KeyP: 'phone', KeyN: 'phone', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank' }[e.code];
     if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
   });
@@ -1971,6 +2240,16 @@
     cam.push = null;
     if (await enterZone(z, arrive, at)) cam.pull = { t: 0, dur: 0.75 };
     const zn = zoneName(z);
+    if (z === 'office' && !isWeekend(G.day) && G.inDay !== G.day && G.minute < 17 * 60) {        // the first time in today
+      G.inDay = G.day; G.inAt = Math.floor(G.minute);
+      const start = hm(CFG.work_start, 540);
+      if (G.minute > hm(CFG.late_after, 555) && G.minute < 12 * 60) {
+        G.lateDay = G.day;
+        toast(`You're late: it's ${clock(G.minute)}, and work starts at ${clock(start)}.`, `지각이에요. 지금은 ${hhmm(G.minute)}이고 업무는 ${hhmm(start)}에 시작해요.`, 'bad', 4.5);
+        return;
+      }
+      if (G.minute <= start) { toast(`${zn[0]} · ${clock(G.minute)}. You're on time.`, `${zn[1] || zn[0]} · 제시간에 왔어요.`, 'good', 3); return; }
+    }
     if (z === 'office' && !npcsIn(z).length) {
       if (isWeekend(G.day)) toast("It's the weekend. Nobody is in the office.", '주말이라 사무실에 아무도 없어요.', null, 4);
       else toast('The office is empty. Everyone has gone home.', '사무실이 비었어요. 모두 퇴근했어요.', null, 4);
@@ -2159,18 +2438,23 @@
   let actions = [], actSig = '', actTimer = 0;
   const busItem = (i) => i.kind === 'fare' && /bus/.test(i.id) && !/shuttle|airport/.test(i.id);
   function itemsAt(pid) {
-    return rows('items').filter(i => i.place === pid && /^(grocery|meal|drink)$/.test(i.kind));
+    return rows('items').filter(i => i.place === pid && /^(grocery|meal|drink|gear)$/.test(i.kind));
   }
   const faresAt = (pid) => rows('items').filter(i => i.place === pid && i.kind === 'fare' && !busItem(i));
   function isBusStop(pid) { return pid === 'bus_stop' || rows('items').some(i => i.place === pid && busItem(i)); }
   function placeActions(pid) {
     const out = [], kind = placeKind(pid), pl = place(pid);
     if (kind === 'sleep') out.push({ key: 'sleep:' + pid, label: 'Sleep', run: () => trySleep(pid) });
+    if (kind === 'eat' && atHome() && RECIPES.length) out.push({ key: 'cook:' + pid, label: 'Cook a meal', run: () => openPanel('cook') });
     if (kind === 'eat') out.push({ key: 'eat:' + pid, label: 'Eat something', run: () => openPanel('inventory') });
     const shut = G && (closedNow(pid) ? pid : closedNow(zoneOfPlace(pid)) ? zoneOfPlace(pid) : null);
     if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: `Closed · open ${hoursText(shut)}`, run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${pl.name_ko || pl.name}: 영업시간 ${hoursText(shut)}`, 'bad') });
     else if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
-    if (isBusStop(pid) && zoneId === 'city') out.push({ key: 'bus:' + pid, label: `Take the bus (${usd2(busFare())})`, run: () => openPanel('bus', pid) });
+    if (isBusStop(pid) && zoneId === 'city') {
+      const nb = G ? nextBus(G.minute) : 0;
+      if (nb == null) out.push({ key: 'bus:' + pid, label: 'No more buses tonight', run: () => toast(`The last bus left at ${clock(hm(CFG.bus_last, 1350))}. You'll have to walk.`, '막차가 떠났어요. 걸어가야 해요.', 'bad', 4) });
+      else out.push({ key: 'bus:' + pid, label: `Take the bus · ${busEvery() ? 'next ' + clock(nb) + ' · ' : ''}${usd2(busFare())}`, run: () => openPanel('bus', pid) });
+    }
     if (kind === 'work' || pid === hero().desk) out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
     if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: 'Go for a jog', run: () => startJog(true) });
     if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
@@ -2432,12 +2716,14 @@
     if (panelKind === 'shop') {
       h.textContent = place(panelArg).name;
       body.innerHTML = itemsAt(panelArg).map(i => `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
-        <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
-        <span class="price">${+i.price ? usd2(+i.price) : 'Free'}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? 'Pay' : /meal|drink/.test(i.kind) && !+i.price ? 'Take' : 'Buy'}</button></div>`).join('') || '<p class="empty">Nothing for sale here.</p>';
+        <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.kind === 'gear' && G.inventory[i.id] ? ' · you have one' : ''}${usesOf(i) > 1 ? ` · ${usesOf(i)} portions` : ''}${+i.shelf_days > 0 ? ` · keeps ${+i.shelf_days} days` : ''}${+i.cook_only ? ' · needs cooking' : ''}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
+        <span class="price">${onTheHouse(i) ? `<s>${usd2(+i.price)}</s> Free` : +i.price ? usd2(+i.price) : 'Free'}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? 'Pay' : /meal|drink/.test(i.kind) && !+i.price ? 'Take' : 'Buy'}</button></div>`).join('') || '<p class="empty">Nothing for sale here.</p>';
       const list = itemsAt(panelArg);
       let top = '';
       if (tipAsked(panelArg)) top += `<div class="row tips"><div class="main"><div class="t">Add a tip?</div><div class="s">${tableService(panelArg) ? '15 to 20% is usual when you are served at a table' : 'Up to you at a counter'}<span class="ko"> · ${tableService(panelArg) ? '자리에서 서빙을 받으면 보통 15~20%' : '카운터에서는 선택'}</span></div></div>
         <div class="mode" role="group" aria-label="Tip">${TIPS.map(t => `<button type="button" data-tip="${t}" aria-pressed="${Math.abs(tipRate(panelArg) * 100 - t) < 0.01}">${t ? t + '%' : 'No tip'}</button>`).join('')}</div></div>`;
+      if (list.some(punchable)) { const n = punches(panelArg);
+        top += `<div class="row punch"><div class="main"><div class="t">Punch card <span class="dots">${'●'.repeat(Math.min(n, PUNCH_N - 1))}${'○'.repeat(Math.max(0, PUNCH_N - 1 - n))}</span></div><div class="s">${n >= PUNCH_N - 1 ? 'Your next drink is on the house!' : `Buy ${PUNCH_N - 1} drinks, get the next one free`}<span class="ko"> · ${n >= PUNCH_N - 1 ? '다음 음료는 무료예요!' : `음료 ${PUNCH_N - 1}잔을 사면 다음 한 잔은 무료`}</span></div></div></div>`; }
       if (TAX && list.some(taxed)) top += `<p class="fine">Prices do not include ${pct(TAX)} sales tax.${list.some(i => !taxed(i)) ? ' Groceries are not taxed.' : ''}<span class="ko"> 표시 가격에는 판매세 ${pct(TAX)}가 빠져 있어요.</span></p>`;
       else if (list.length && list.every(i => i.kind === 'grocery')) top += `<p class="fine">No sales tax on groceries in ${esc(CFG.city)}.<span class="ko"> ${esc(CFG.city)}에서는 식료품에 판매세가 없어요.</span></p>`;
       body.innerHTML = top + body.innerHTML;
@@ -2446,19 +2732,43 @@
       const here = panelArg;
       const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || portalsOf(Z).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
       const pass = rows('items').find(i => busItem(i) && /pass/.test(i.id));
-      body.innerHTML = stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')} · about 15 minutes</div></div>
-        <span class="price">${hasPass() ? 'Pass' : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}">Ride</button></div>`).join('') || '<p class="empty">No stops on this line.</p>';
+      const nb = nextBus(G.minute), every = busEvery(), off = isWeekend(G.day) || dayOff(G.day);
+      const times = every ? `<p class="fine">${nb == null ? `No more buses tonight: the last one left at ${clock(hm(CFG.bus_last, 1350))}.` : `Next bus at <b>${clock(nb)}</b>${nb - G.minute >= 1 ? `, in ${Math.ceil(nb - G.minute)} min` : ', boarding now'}.`}
+        Every ${every} minutes ${off ? (dayOff(G.day) ? 'today (holiday timetable)' : 'on weekends') : 'on weekdays'}, ${clock(hm(CFG.bus_first, 360))} – ${clock(hm(CFG.bus_last, 1350))}.<span class="ko"> ${off ? '주말·공휴일' : '평일'}에는 ${every}분마다 다닙니다. 다음 버스를 기다렸다가 탑니다.</span></p>` : '';
+      body.innerHTML = times + stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')} · about 15 minutes</div></div>
+        <span class="price">${hasPass() ? 'Pass' : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}" ${nb == null ? 'disabled' : ''}>Ride</button></div>`).join('') || '<p class="empty">No stops on this line.</p>';
       if (pass && !hasPass()) body.innerHTML += `<div class="row"><div class="main"><div class="t">${esc(pass.name)}</div><div class="s">${esc(pass.name_ko || '')}${pass.note ? ' · ' + esc(pass.note) : ''}</div></div>
         <span class="price">${usd2(+pass.price)}</span><button type="button" data-pass="${esc(pass.id)}">Buy</button></div>`;
     } else if (panelKind === 'inventory') {
       h.textContent = 'Inventory';
       const canEat = zoneId === hero().home_zone || zoneId === 'hotel';
-      const list = Object.keys(G.inventory).filter(id => G.inventory[id] > 0);
-      body.innerHTML = list.map(id => { const i = ITEMS[id] || { id, name: pretty(id), energy: 0 }; return `<div class="row"><div class="main"><div class="t">${esc(i.name)} × ${G.inventory[id]}</div>
-        <div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}</div></div>${i.energy ? `<button type="button" data-eat="${esc(id)}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : ''}</div>`; }).join('')
+      const all = lots().map((l, n) => ({ l, n })).filter(x => x.l.left > 0).sort((a, b) => (gone(b.l) - gone(a.l)) || ((bestBy(a.l) || 999) - (bestBy(b.l) || 999)) || String(a.l.id).localeCompare(b.l.id));
+      sub.textContent = `${all.length} item${all.length === 1 ? '' : 's'}`;
+      const head = RECIPES.length && all.length ? `<p class="fine">${atHome() ? '<button type="button" data-cook-open="1">Cook a meal</button> ' : ''}Groceries keep for a while, then go bad. Some need cooking: use the kitchen at home.<span class="ko"> 식료품은 기한이 지나면 상합니다. 익혀야 먹는 것은 집 부엌에서 요리하세요.</span></p>` : '';
+      body.innerHTML = head + all.map(({ l, n }) => {
+        const i = ITEMS[l.id] || { id: l.id, name: pretty(l.id), energy: 0 }, by = bestBy(l), bad = gone(l), u = usesOf(i);
+        const when = by == null ? '' : bad ? `went bad after ${dateShort(by).replace(/^\w+, /, '')}` : by === G.day ? 'best by today' : by === G.day + 1 ? 'best by tomorrow' : `best by ${dateShort(by)}`;
+        const btn = bad ? `<button type="button" class="danger" data-toss="${n}">Throw out</button>`
+          : +i.cook_only ? '<span class="price">Needs cooking</span>'
+            : i.energy ? `<button type="button" data-eat="${n}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : '';
+        return `<div class="row${bad ? ' bad' : by != null && by <= G.day + 1 ? ' soon' : ''}"><div class="main"><div class="t">${esc(i.name)}</div>
+          <div class="s">${esc(i.name_ko || '')}${u > 1 ? ` · ${l.left} of ${u} portions left` : ''}${i.energy && !bad && !+i.cook_only ? ` · energy +${i.energy}` : ''}${when ? ` · <span class="by">${esc(when)}</span>` : ''}</div></div>${btn}</div>`; }).join('')
         || '<p class="empty">Your bag is empty. Groceries you buy at the market go here.</p>';
+    } else if (panelKind === 'cook') {
+      h.textContent = 'Cook a meal';
+      const able = RECIPES.filter(canCook);
+      sub.textContent = `${able.length} of ${RECIPES.length} recipes`;
+      body.innerHTML = `<p class="fine">A recipe takes one portion of each ingredient, the oldest first. Buy what is missing at Fairview Market.<span class="ko"> 재료마다 1회분씩, 오래된 것부터 씁니다. 없는 재료는 마켓에서 사세요.</span></p>`
+        + RECIPES.slice().sort((a, b) => canCook(b) - canCook(a)).map(r => {
+          const ok = canCook(r), steps = String(r.steps || '').split(' | ').filter(Boolean), ko = String(r.steps_ko || '').split(' | ');
+          return `<div class="row recipe${ok ? '' : ' lack'}"><button type="button" class="play" data-say="${esc(r.name + '. ' + steps.join(' '))}" aria-label="Play">▶</button>
+            <div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.name_ko || '')} · ${r.minutes} min · energy +${r.energy}${r.tool ? ' · ' + esc(r.tool) : ''}</div>
+            <div class="s need">${needs(r).map(id => `<span class="${portions(id) ? 'have' : 'miss'}">${portions(id) ? '✓' : '✗'} ${esc(shortName(id).toLowerCase())}</span>`).join(' ')}</div>
+            ${steps.length ? `<details><summary>How to make it</summary><ol>${steps.map((t, k) => `<li>${esc(t)}<span class="ko"> ${esc(ko[k] || '')}</span></li>`).join('')}</ol></details>` : ''}</div>
+            <button type="button" data-cook="${esc(r.id)}" ${ok && atHome() ? '' : 'disabled'}>${!atHome() ? 'At home' : ok ? 'Cook' : 'Missing'}</button></div>`; }).join('');
     } else if (panelKind === 'calendar') {
       h.textContent = 'Calendar';
+      const up = Object.keys(HOLIDAYS).sort().map(k => [Math.round((Date.parse(k) - START) / 864e5) + 1, HOLIDAYS[k]]).filter(x => START != null && x[0] > Math.floor((G.day - 1) / 7) * 7 + 7).slice(0, 3);
       sub.textContent = `Week ${Math.floor((G.day - 1) / 7) + 1}`;
       const d0 = Math.floor((G.day - 1) / 7) * 7 + 1;
       let html = '';
@@ -2468,14 +2778,27 @@
         if (PAYDAYS.includes(d)) extra.push(`Payday: ${usd(+hero().salary_net)} direct deposit`);
         if (isRentDay(d)) extra.push(`${hero().housing_name || 'Rent'} due: ${usd(+hero().housing)}`);
         billsDue(d).forEach(b => extra.push(`Autopay: ${b.name} ${usd2(+b.amount)}`));
+        const hol = holidayOf(d);
+        if (hol) extra.unshift(`${hol.name}${hol.kind === 'federal' ? ' (federal holiday: banks and post offices closed)' : ''}`);
         if (!evs.length && !extra.length && d !== G.day) continue;
-        html += `<h3>${weekday(d)}, Day ${d}${d === G.day ? ' · today' : ''}</h3>`;
+        html += `<h3>${dateLong(d)} · Day ${d}${d === G.day ? ' · today' : ''}</h3>`;
         html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
         html += evs.map(c => { const done = c.episode && G.done[c.episode]; const past = d < G.day || (d === G.day && hm(c.time, 0) < G.minute - 60);
           return `<div class="row${done ? ' done' : ''}${past && !done ? ' past' : ''}"><span class="when">${esc(c.time)}</span><div class="main"><div class="t">${esc(c.title)}</div><div class="s">${c.place ? esc(place(c.place).name) : ''}${c.title_ko ? ' · ' + esc(c.title_ko) : ''}</div></div></div>`; }).join('');
         if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
       }
+      if (up.length) html += '<h3>Coming up</h3>' + up.map(x => `<div class="row"><span class="when">${esc(dateShort(x[0]).replace(/^\w+, /, ''))}</span><div class="main"><div class="t">${esc(x[1].name)}</div><div class="s">${esc(x[1].note || '')}<span class="ko"> ${esc(x[1].name_ko || '')}: ${esc(x[1].note_ko || '')}</span></div></div></div>`).join('');
       body.innerHTML = html;
+    } else if (panelKind === 'phone') {
+      h.textContent = 'Phone';
+      const list = inbox(), fresh = list.filter(m => m.fresh).length;
+      sub.textContent = fresh ? `${fresh} new` : `${list.length} messages`;
+      const ICON = { text: '💬', email: '✉️', voicemail: '📞', alert: '🔔' };
+      body.innerHTML = list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
+        <div class="main"><div class="s">${ICON[m.kind] || ''} ${esc(MSG_KIND[m.kind] || 'Message')} · ${esc(dateShort(m.day))}, ${clock(m.minute)}</div><div class="t">${esc(senderName(m.sender))}${m.subject ? ` <span class="subj">${esc(m.subject)}</span>` : ''}</div>
+        <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}</div></div>`).join('')
+        || '<p class="empty">No messages yet. Texts, emails and alerts from your bank arrive here.</p>';
+      readAll();
     } else if (panelKind === 'talks' || panelKind === 'phrasebook') {
       // the conversations you have had, newest first: what was said to you, what you answered and the reply, then the
       // expressions the conversation taught (what used to be the Phrasebook); every line can be heard again
@@ -2494,24 +2817,24 @@
         }).join('');
         const learned = G.phrases.map(id => PHRASES[id]).filter(p => p && p.episode === l.id);
         const words = learned.length ? `<h4>Expressions</h4><div class="words">${phraseRows(learned)}</div>` : '';
-        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${weekday(l.day).slice(0, 3)}, Day ${l.day} · ${clock(l.minute)}</span> <b>${esc(ep.title)}</b><span class="with"> with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}</span><span class="ko"> ${esc(ep.title_ko || '')}</span></summary>${lines}${words}</details>`;
+        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${dateShort(l.day)} · ${clock(l.minute)}</span> <b>${esc(ep.title)}</b><span class="with"> with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}</span><span class="ko"> ${esc(ep.title_ko || '')}</span></summary>${lines}${words}</details>`;
       }).join('') || '<p class="empty">Conversations you finish are kept here, so you can read and hear them again.</p>';
     } else if (panelKind === 'bank') {
       h.textContent = 'Bank';
       sub.textContent = 'Checking ···4821';
       const soon = [];
       for (let d = G.day + 1; d <= G.day + 14; d++) {
-        const when = `${weekday(d).slice(0, 3)}, Day ${d}`;
+        const when = dateShort(d);
         if (PAYDAYS.includes(d)) soon.push([when, 'Paycheck (direct deposit)', +hero().salary_net]);
         if (isRentDay(d)) soon.push([when, hero().housing_name || 'Rent', -hero().housing]);
         billsDue(d).forEach(b => soon.push([when, b.name + ' (autopay)', -b.amount]));
       }
-      const KIND = { income: 'Deposit', spend: 'Debit card', bill: 'Autopay' };
+      const KIND = { income: 'Deposit', spend: 'Debit card', bill: 'Autopay', fee: 'Bank fee' };
       const line = (when, text, amount, kind) => `<div class="row"><span class="when">${esc(when)}</span><div class="main"><div class="t">${esc(text)}</div>${kind ? `<div class="s">${esc(kind)}</div>` : ''}</div><span class="price ${amount < 0 ? 'out' : 'in'}">${amount < 0 ? '−' : '+'}${usd2(Math.abs(amount)).replace('−', '')}</span></div>`;
       const past = G.log.filter(l => l.amount).slice().reverse().slice(0, 60);
       body.innerHTML = `<div class="sum"><div><b>${usd2(G.money)}</b>available balance</div></div>
         <h3>Coming up</h3>${soon.map(x => line(x[0], x[1], x[2])).join('') || '<p class="empty">Nothing in the next two weeks.</p>'}
-        <h3>Recent transactions</h3>${past.map(l => line(`Day ${l.day} · ${clock(l.minute)}`, l.text, l.amount,
+        <h3>Recent transactions</h3>${past.map(l => line(`${dateShort(l.day).replace(/^\w+, /, '')} · ${clock(l.minute)}`, l.text, l.amount,
           (/direct deposit/i.test(l.text) ? 'Direct deposit' : KIND[l.type] || '') + (l.tax ? ` · tax ${usd2(l.tax)}` : '') + (l.tip ? ` · tip ${usd2(l.tip)}` : ''))).join('') || '<p class="empty">No transactions yet.</p>'}`;
     } else if (panelKind === 'map') {
       renderMapPanel(h, sub, body);
@@ -2525,6 +2848,9 @@
     if (b.dataset.buy) buy(b.dataset.buy);
     if (b.dataset.tip != null && panelKind === 'shop') { tipChoice[panelArg] = +b.dataset.tip; renderPanel(); }
     if (b.dataset.eat) eat(b.dataset.eat);
+    if (b.dataset.toss) toss(+b.dataset.toss);
+    if (b.dataset.cook) cook(b.dataset.cook);
+    if (b.dataset.cookOpen) openPanel('cook');
     if (b.dataset.ride) ride(b.dataset.ride);
     if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note("You can't afford that.", true); else { pay(-it.price, it.name, 'spend'); G.pass = G.day; saveGame(); renderPanel(); note('Day pass bought. Ride as much as you like today.'); } }
   });
@@ -2830,39 +3156,52 @@
     else if (/^(meal|drink)$/.test(i.kind)) {
       G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
       advanceMinutes(i.kind === 'meal' ? 20 : 5);
-      note(`${i.name}: ${receipt(b)}. Energy +${i.energy || 0}.`);
+      let card = '';
+      if (punchable(i)) {
+        G.punch = G.punch || {};
+        G.punch[i.place] = b.free ? 0 : punches(i.place) + 1;
+        card = b.free ? ' This one was on the house.' : onTheHouse(i) ? ' Your punch card is full: the next drink is free.' : ` Punch card: ${punches(i.place)} of ${PUNCH_N - 1}.`;
+      }
+      note(`${i.name}: ${receipt(b)}. Energy +${i.energy || 0}.${card}`);
       if (player) play(player, 'interact-right', { once: true });
     } else if (i.kind === 'grocery') {
-      G.inventory[id] = (G.inventory[id] || 0) + 1;
-      note(`${i.name} is in your bag (${G.inventory[id]}).`);
+      addLot(id);
+      const by = bestBy({ id, day: G.day });
+      note(`${i.name} is in your bag (${G.inventory[id]}).${by != null ? ` Best by ${dateShort(by)}.` : ''}`);
     } else {
-      G.inventory[id] = (G.inventory[id] || 0) + 1;
+      addLot(id);
       note(`${i.name}: ${receipt(b)}. It is in your bag.`);
     }
     saveGame();
     if (!panel.hidden) { const n = panel.querySelector('.panel-note').textContent; renderPanel(); panel.querySelector('.panel-note').textContent = n; }
     return true;
   }
-  function eat(id) {
-    if (!G.inventory[id]) return;
-    const i = ITEMS[id] || { energy: 0, name: pretty(id) };
-    G.inventory[id]--;
-    if (!G.inventory[id]) delete G.inventory[id];
+  function eat(n) {          // a portion of a package in the bag (its place in G.lots), or of the oldest package of an item (its id)
+    const l = ITEMS[n] ? goodLots(n)[0] : lots()[+n];
+    if (!l || l.left < 1 || gone(l)) return false;
+    const id = l.id, i = ITEMS[id] || { energy: 0, name: pretty(id) };
+    if (+i.cook_only) { if (!panel.hidden) note(`The ${shortName(id).toLowerCase()} needs cooking.`, true); return false; }
+    l.left--;
+    syncBag();
     G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
     advanceMinutes(10);
     logEvent('eat', i.name, 0);
     saveGame();
     renderPanel();
-    note(`You ate the ${i.name.toLowerCase()}. Energy +${i.energy || 0}.`);
+    note(`You had some ${shortName(id).toLowerCase()}. Energy +${i.energy || 0}.`);
+    return true;
   }
   async function ride(pid) {
     const fare = hasPass() ? 0 : busFare();
     if (G.money < fare) { note("You can't afford the fare.", true); return; }
+    const nb = nextBus(G.minute);
+    if (nb == null) { note(`No more buses tonight. The last one left at ${clock(hm(CFG.bus_last, 1350))}.`, true); return; }
+    const waited = Math.max(0, Math.round(nb - G.minute));
     if (fare) pay(-fare, 'Bus fare', 'spend');
     closePanel();
-    advanceMinutes(15);
+    advanceMinutes(waited + 15);
     await enterZone('city', pid);
-    toast(`You ride the bus to ${place(pid).name}.`, `버스를 타고 ${place(pid).name_ko || place(pid).name}에 왔어요.`);
+    toast(`${waited >= 2 ? `You waited ${waited} minutes for the ${clock(nb)} bus and rode` : 'You ride the bus'} to ${place(pid).name}.`, `${waited >= 2 ? `${waited}분을 기다려 ` : ''}버스를 타고 ${place(pid).name_ko || place(pid).name}에 왔어요.`, null, 4);
   }
 
   // ---------------------------------------------------------------- sleep: the end of a day
@@ -2884,29 +3223,39 @@
     const missed = episodes().filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1));
     const away = TRAVEL_ZONES.includes(zoneId);
     logEvent('sleep', late ? 'Fell asleep' : 'Slept', 0);
+    const inAt = G.inDay === day ? G.inAt : null, wasLate = G.lateDay === day;
+    hush = true;
     G.day += 1;
     G.minute = DAY_START;
-    G.energy = E_MAX;
+    G.energy = late ? Math.round(E_MAX * 0.8) : E_MAX;          // asleep on your feet at 11 PM is not a night's rest
+    G.wet = 0;
     const morning = [];
+    if (late) morning.push('You stayed up too late and did not sleep well. You start the day a little tired.<span class="ko"> 너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.</span>');
+    const hol = holidayOf(G.day);
+    if (hol) morning.push(`🗓️ <b>${esc(hol.name)}</b>${hol.kind === 'federal' ? ' (federal holiday)' : ''}. ${esc(hol.note || '')}<span class="ko"> ${esc(hol.name_ko || '')}: ${esc(hol.note_ko || '')}</span>`);
     const me = hero(), housing = me.housing_name || 'Rent';
-    if (PAYDAYS.includes(G.day)) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income'); morning.push(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)}).`); }
-    if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill'); morning.push(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`); }
-    billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill'); morning.push(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.<span class="ko"> 자동이체: ${esc(b.name_ko || b.name)}</span>`); });
+    if (PAYDAYS.includes(G.day)) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income'); notify(CFG.bank_name, `A direct deposit of ${usd2(+me.salary_net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(+me.salary_net)}가 계좌에 입금되었습니다. (post: 입금이 반영되다)`); morning.push(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)}).`); }
+    if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill'); notify(CFG.bank_name, `${housing} payment of ${usd2(+me.housing)} was sent from checking ···4821.`, `${/mortgage/i.test(housing) ? '주택 담보 대출 상환금' : '월세'} ${usd2(+me.housing)}가 계좌에서 나갔습니다.`); morning.push(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`); }
+    billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill'); notify(CFG.bank_name, `Autopay: ${usd2(+b.amount)} was paid to ${b.name} from checking ···4821.`, `자동이체: ${b.name_ko || b.name} ${usd2(+b.amount)}가 빠져나갔습니다.`); morning.push(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.<span class="ko"> 자동이체: ${esc(b.name_ko || b.name)}</span>`); });
+    if (G.feeDay === G.day) morning.push(`The bank charged a <b>${usd2(+CFG.overdraft_fee)}</b> overdraft fee.<span class="ko"> 은행이 초과 인출 수수료 ${usd2(+CFG.overdraft_fee)}를 부과했어요.</span>`);
     if (G.money < 0) morning.push('Your account is <b>overdrawn</b>. Spend carefully until payday.<span class="ko"> 계좌 잔액이 마이너스예요. 월급날까지 아껴 쓰세요.</span>');
+    hush = false;
+    kitchenNews().forEach(m => morning.push(m));
     const wx = weatherOf(G.day);
     morning.unshift(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}<span class="ko"> ${esc(wx.forecast_ko || '')} (최고 ${toC(wx.high_f)}°C)</span>`);
     const cal = calendar().filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
     const body = `<div class="sum"><div><b>${eps.length}</b>conversations</div><div><b>${phrasesToday}</b>new phrases</div><div><b>${usd2(spent)}</b>spent</div><div><b>${usd2(earned)}</b>earned</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(l.text)}</li>`).join('') + '</ul>' : ''}
       ${missed.length ? `<p>Missed: ${missed.map(e => esc(e.title)).join(', ')}</p>` : ''}
-      <h3>${weekday(G.day)}, Day ${G.day}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
+      ${inAt != null ? `<p>You got to work at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.<span class="ko"> ${hhmm(inAt)}에 출근했어요${wasLate ? ' (지각)' : ''}.</span></p>` : ''}
+      <h3>${dateLong(G.day)} · Day ${G.day}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
       ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(c.title)}${c.place ? ' · ' + esc(place(c.place).name) : ''}</li>`).join('') + '</ul>' : `<p>${G.day % 7 === 6 || G.day % 7 === 0 ? 'Weekend. No work today.' : 'Nothing on the calendar.'}</p>`}
       <p>Balance: <b>${usd2(G.money)}</b></p>`;
     saveGame();
     state = 'sleep';
     const wake = pid && zoneId ? [zoneId, pid] : away ? ['hotel', 'hotel_room'] : [hero().home_zone, hero().home_bed];
     const p = enterZone(wake[0], wake[1]).then(() => { if (player) player.heading += 0; saveGame(); });
-    showCard({ kicker: late ? 'You fell asleep' : 'Good night', title: `${weekday(day)}, Day ${day} is over`, body, ok: 'Start the day', state: 'sleep' }, () => { goalTimer = 0; });
+    showCard({ kicker: late ? 'You fell asleep' : 'Good night', title: `${dateLong(day)} is over`, body, ok: 'Start the day', state: 'sleep' }, () => { goalTimer = 0; });
     return p;
   }
 
@@ -3097,9 +3446,10 @@
     $('side').hidden = false;
     goalTimer = 0;
     hud();
+    phoneBadge();
     if (fresh) {
-      if (G.hero === DEFAULT_HERO) toast(`${weekday(G.day)}, Day ${G.day}. Welcome to ${CFG.city}, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
-      else toast(`${weekday(G.day)}, Day ${G.day}. Good morning, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. 좋은 아침이에요, ${G.name}!`, 'good', 4);
+      if (G.hero === DEFAULT_HERO) toast(`${dateLong(G.day)}. Welcome to ${CFG.city}, ${G.name}!`, `${dateKo(G.day)}. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
+      else toast(`${dateLong(G.day)}. Good morning, ${G.name}!`, `${dateKo(G.day)}. 좋은 아침이에요, ${G.name}!`, 'good', 4);
       const wx = weatherOf(G.day);
       if (wx.forecast) setTimeout(() => toast(`${WX_ICON[wx.kind] || ''} ${wx.high_f}°F today. ${wx.forecast}`, `오늘 최고 ${toC(wx.high_f)}°C. ${wx.forecast_ko || ''}`, null, 5), 4200);
       logEvent('start', 'New game', 0);
@@ -3133,6 +3483,7 @@
     get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
     get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get weekend() { return !!G && isWeekend(G.day); },
     get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
+    shelter, get raining() { return raining(); },          // an umbrella over a person (life.js: the passers-by)
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
     loadPack, packReady, findPath: (from, to, opts, cb) => requestPath(from, to, opts, cb),
     blocked: (x, z, r) => solids.some(s => x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r)
@@ -3219,7 +3570,8 @@
     lifeTick(dt);
     portalTick();
     if (Z && Z.update) { try { Z.update(api, dt); } catch (e) { console.error(`zones/${zoneId}.js update:`, e); Z.update = null; } }
-    if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) refreshNpcs(false); updateGoal(); }
+    if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) { refreshNpcs(false); checkPhone(); } updateGoal(); }
+    wetTick(dt);
     if ((actTimer -= dt) <= 0) { actTimer = 0.12; actions = computeActions(); renderActions(); }
     if ((hudTimer -= dt) <= 0) { hudTimer = 0.25; hud(); }
     if (panelKind === 'map' && !panel.hidden && (mapTimer -= dt) <= 0) { mapTimer = 0.5; drawMap(); }     // people move while the map is open
@@ -3402,6 +3754,17 @@
       return G.day;
     },
     buy(itemId) { return buy(itemId); },
+    // the phone, the bus, the rain: what has arrived, when the next bus leaves, how wet you are
+    get inbox() { return G ? inbox() : []; }, get unread() { return unread(); }, checkPhone() { checkPhone(); return unread(); },
+    get date() { return G ? dateLong(G.day) : null; }, get holiday() { const h = G && holidayOf(G.day); return h ? h.name : null; },
+    nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
+    get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },
+    get umbrellas() { return Object.values(npcActors).concat(player ? [player] : []).filter(a => a.brolly && a.brolly.visible).map(a => a.id); },
+    // the kitchen: the packages in the bag, the recipes that can be made now, cook(recipeId), eat(itemId), toss(n)
+    get lots() { return G ? lots().map(l => Object.assign({ bestBy: bestBy(l), gone: gone(l) }, l)) : []; }, get recipes() { return G ? RECIPES.filter(canCook).map(r => r.id) : []; },
+    cook(id) { return cook(id); }, eat(id) { return eat(id); }, toss(n) { toss(n); return G.lots.length; },
+    get punch() { return G ? Object.assign({}, G.punch) : {}; }, pay(amount, text) { pay(+amount, text || 'Test'); return G.money; },
+    arrive(z, place) { return travel(z, place); },
     panel(kind, arg) { openPanel(kind, arg); return state; },
     mapTab(t) { MAP.tab = t === 'room' ? 'room' : 'town'; if (panelKind === 'map') renderPanel(); return MAP.tab; },
     closeCard() { if (!$('card').hidden) closeCard(); if (!panel.hidden) closePanel(); return state; },

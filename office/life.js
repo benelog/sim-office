@@ -533,6 +533,7 @@
       if (face != null) { let d = face - a.heading; d = Math.atan2(Math.sin(d), Math.cos(d)); a.heading += d * (1 - Math.exp(-dt * 7)); }
       a.holder.rotation.y = a.heading;
       if (w.waving <= 0) api.locomotion(a, sp > 0.05 ? sp : 0);
+      if (api.shelter) api.shelter(a, api.raining);          // an umbrella in the rain
       api.animate(a, dt);
       a.mover.x = a.pos.x; a.mover.z = a.pos.z;
     }

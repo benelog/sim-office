@@ -102,7 +102,9 @@ CREATE TABLE IF NOT EXISTS phrases (
   category varchar(40)
 );
 
--- Things money buys. kind: grocery | meal | drink | fare | ticket | rent | other. `model` is a Kenney Food Kit
+-- Things money buys. kind: grocery | meal | drink | gear | fare | ticket | rent | other. shelf_days = how long a
+-- grocery keeps after you buy it (NULL: it keeps), uses = portions in a package, cook_only = not eaten as it is.
+-- `model` is a Kenney Food Kit
 -- node name (apple, burger, cup-coffee …) or empty. energy = how much the energy bar recovers when eaten.
 CREATE TABLE IF NOT EXISTS items (
   id varchar(40) PRIMARY KEY,
@@ -113,7 +115,10 @@ CREATE TABLE IF NOT EXISTS items (
   model varchar(40),
   energy int DEFAULT 0,
   place varchar(32),
-  note varchar(255)
+  note varchar(255),
+  shelf_days int,
+  uses int NOT NULL DEFAULT 1,
+  cook_only tinyint NOT NULL DEFAULT 0
 );
 
 -- The work calendar of each hero (shown in the HUD). day = game day, time = HH:MM.
@@ -200,5 +205,46 @@ CREATE TABLE IF NOT EXISTS heroes (
   housing_name varchar(40) NOT NULL DEFAULT 'Rent',
   level varchar(80),
   level_ko varchar(80),
+  sort int DEFAULT 0
+);
+
+-- What arrives on your phone: texts, emails, voicemails and alerts, on game day `day` at `time`. hero: all, or the
+-- hero who gets it. sender: an npcs id (shown by name, read in their voice) or a name; a message from the hero you
+-- play is left out. {name} in the body is your name. The bank's alerts (deposits, autopay, low balance) are made
+-- by the game, not kept here.
+CREATE TABLE IF NOT EXISTS messages (
+  id varchar(40) PRIMARY KEY,
+  hero varchar(16) NOT NULL DEFAULT 'all',
+  day int NOT NULL,
+  time varchar(5) NOT NULL,
+  kind varchar(12) NOT NULL DEFAULT 'text',
+  sender varchar(60) NOT NULL,
+  subject varchar(120),
+  body text NOT NULL,
+  body_ko text
+);
+
+-- Holidays and days people talk about, by their real date (game day 1 is config start_date, a Monday).
+-- kind: federal (banks and post offices closed, buses on the weekend timetable) | observance.
+CREATE TABLE IF NOT EXISTS holidays (
+  date varchar(10) PRIMARY KEY,
+  name varchar(80) NOT NULL,
+  name_ko varchar(80),
+  kind varchar(12) NOT NULL DEFAULT 'observance',
+  note varchar(255),
+  note_ko varchar(255)
+);
+
+-- What you can cook at home. ingredients = items ids, comma-separated: one portion of each. steps are separated by " | ".
+CREATE TABLE IF NOT EXISTS recipes (
+  id varchar(40) PRIMARY KEY,
+  name varchar(80) NOT NULL,
+  name_ko varchar(80),
+  minutes int NOT NULL DEFAULT 15,
+  energy int NOT NULL DEFAULT 30,
+  ingredients varchar(255) NOT NULL,
+  tool varchar(20),
+  steps text,
+  steps_ko text,
   sort int DEFAULT 0
 );

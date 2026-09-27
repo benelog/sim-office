@@ -318,3 +318,31 @@ body.touring #view { cursor: grab; touch-action: none; }
 @media (pointer: coarse) { #tour .tour-keys kbd { display: none; } }
 details.talk h4 { margin: 12px 0 0; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent-deep); }
 details.talk .words .row { padding: 6px 0; }
+
+/* the phone: unread count on the Menu button, the messages; the punch card */
+#menu-btn { position: relative; }
+#menu-btn[data-n]::after { content: attr(data-n); position: absolute; top: -6px; right: -6px; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box; border-radius: 9px;
+  background: var(--red); color: #fff; font-size: 11px; font-weight: 700; line-height: 17px; text-align: center; }
+.toast.phone { border-radius: 14px; background: #24324fee; text-align: left; }
+.row.msg { align-items: flex-start; }
+.row.msg .main .t .subj { font-weight: 600; color: var(--ink-soft); }
+.row.msg .main .t .subj::before { content: "· "; }
+.row.msg .main .b { margin: 2px 0; }
+.row.msg.new .main .t::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 6px; border-radius: 50%; background: var(--accent); }
+.row.punch .dots { letter-spacing: 3px; color: var(--accent-deep); margin-left: 6px; }
+.row .price s { color: var(--ink-faint); font-weight: 400; margin-right: 4px; }
+
+/* the kitchen: what is about to go bad or has, and the recipes */
+.row.soon .by { color: #b26a00; font-weight: 600; }
+.row.bad .main { opacity: .6; }
+.row.bad .by { color: var(--red); font-weight: 600; }
+.row button.danger { background: #fff; color: var(--red); border-color: var(--red); }
+.row.recipe { align-items: flex-start; }
+.row.recipe.lack .main .t { color: var(--ink-soft); }
+.row.recipe .need span { margin-right: 8px; white-space: nowrap; }
+.row.recipe .need .have { color: var(--ok); }
+.row.recipe .need .miss { color: var(--red); }
+.row.recipe details { margin-top: 4px; font-size: 14px; }
+.row.recipe details summary { cursor: pointer; color: var(--accent-deep); font-size: 13px; }
+.row.recipe details ol { margin: 4px 0 2px; padding-left: 20px; }
+.panel-body .fine button { padding: 5px 12px; font-size: 14px; margin-right: 6px; }

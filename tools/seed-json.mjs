@@ -17,9 +17,9 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'office', 'data', 'db.js'), 'utf8'), ctx);
 const DB = JSON.parse(JSON.stringify(ctx.window.SO_DB));
 const KEYS = { config: ['k'], places: ['id'], npcs: ['id'], chatter: ['npc', 'seq'], episodes: ['id'], turns: ['episode', 'seq'], phrases: ['id'], items: ['id'],
-  calendar: ['hero', 'day', 'time'], schedule: ['npc', 'seq'], weather: ['day'], smalltalk: ['topic', 'seq'], bills: ['id'], heroes: ['id'] };
+  calendar: ['hero', 'day', 'time'], schedule: ['npc', 'seq'], weather: ['day'], smalltalk: ['topic', 'seq'], bills: ['id'], heroes: ['id'], messages: ['id'], holidays: ['date'], recipes: ['id'] };
 const JSON_COLS = { turns: ['answers', 'distractors', 'hints', 'hints_ko'] };
-const DEFAULTS = { episodes: { hero: 'jun' }, calendar: { hero: 'jun' } };
+const DEFAULTS = { episodes: { hero: 'jun' }, calendar: { hero: 'jun' }, messages: { hero: 'all', kind: 'text' }, holidays: { kind: 'observance' } };
 const PAD = 3 + 'sim-office seed '.length * 64 + 1;
 let bad = 0;
 function values(text, where) {            // the tuples of a VALUES list: strings ('' is a quote), numbers, NULL
