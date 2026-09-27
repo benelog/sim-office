@@ -110,7 +110,7 @@
         skyline: { kind: 'city', seed: 31 },
         panels: [
           { kind: 'sign', wall: 'n', along: -4.0, y: 1.0, w: 2.2, h: 0.42, text: 'Summit Retail', sub: 'Head office', bg: '#1f6f5c', fg: '#ffffff', logo: '#f4d35e', frame: '#164f42' },
-          { kind: 'tv', at: [5.774, -2.6], turn: 270, y: 0.595, w: 0.6, h: 0.33, depth: 0, a: '#1f6f5c', b: '#0f3a30', text: 'Summit Retail x Lakeside Labs' },
+          { kind: 'tv', at: [5.774, -2.6], turn: 270, y: 0.595, w: 0.6, h: 0.33, depth: 0, a: '#1f6f5c', b: '#0f3a30', text: 'Summit Retail x Seaside Labs' },
           { kind: 'art', wall: 'n', along: 5.5, y: 0.85, w: 0.6, h: 0.45, frame: '#2e2e33', seed: 8, palette: ['#1f6f5c', '#f4d35e', '#ee964b', '#f95738'] },
           { kind: 'photo', wall: 'w', along: 2.4, y: 0.85, w: 0.8, h: 0.5, frame: '#2e2e33', sky: '#9cc9e8' },
           { kind: 'poster', wall: 's', along: 4.5, y: 0.85, w: 0.45, h: 0.6, frame: '#ffffff', text: 'Store #120', lines: ['Opening soon', 'Ridgeport Mall'], band: '#1f6f5c' }

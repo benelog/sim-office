@@ -2,7 +2,7 @@
    blocks around the crossroads at the origin; Maple Street runs east-west through z = 0 and Lake Avenue
    north-south through x = 0, and both carry on to the edge of town (Lake Avenue crosses the river on a bridge
    to the north). North-west: the homes, with the apartment building (apartment_door) and the bus stop on the
-   Maple Street sidewalk. North-east: the office towers; Lakeside Labs is the tall one (office_door) with a plaza
+   Maple Street sidewalk. North-east: the office towers; Seaside Labs is the tall one (office_door) with a plaza
    and Nina's coffee cart on the corner. South-west: Seaside Park with trees, flower beds, a monument and benches
    (park_bench). South-east: the diner (diner_door) and the grocery store (market_door) face Maple Street, with a
    small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
@@ -70,9 +70,9 @@
 
   var props = [
     // ----- north-west: homes on Maple Street
-    b('building-2-large', -10.3, -7.3, 0, { solid: 'fit', id: 'apartment' }),      // Jun's apartment building (red roof, dormers)
+    b('building-2-large', -10.3, -7.3, 0, { solid: 'fit', id: 'apartment', home: 'jun' }),      // Jun's apartment building (red roof, dormers)
     c('building-type-a', -4.4, -7.0, 0, { solid: 'fit' }),
-    b('house-1', -10, -11.4, 180, { solid: 'fit' }),
+    b('house-1', -10, -11.4, 180, { solid: 'fit', id: 'derek_house', home: 'derek' }),      // Derek's house, its front on River Road
     b('house-2', -4.5, -11.6, 180, { solid: 'fit' }),
     tree('tree-common-1', -13.0, -9.5),
     tree('tree-common-5', -7.2, -9.6),
@@ -96,7 +96,7 @@
     r('light-square', -2.3, -1.75, 180, { solid: [0.2, 0.2] }),
 
     // ----- north-east: offices
-    c('building-skyscraper-b', 8.2, -8, 0, { solid: 'fit', id: 'lakeside_labs' }),
+    c('building-skyscraper-b', 8.2, -8, 0, { solid: 'fit', id: 'seaside_labs' }),
     c('building-skyscraper-a', 4.0, -10.9, 0, { solid: 'fit' }),
     b('building-3-big', 12, -11.6, 0, { solid: 'fit' }),
     b('building-4', 12.2, -6.7, 90, { solid: 'fit' }),
@@ -196,7 +196,7 @@
     food('apple', 9.72, 3.5, 0, { lift: 0.42, scale: 0.8 }),
     food('orange', 9.85, 3.46, 0, { lift: 0.42, scale: 0.8 }),
     r('dumpster', 3.0, 7.4, 90, { solid: 'fit' }),
-    b('building-1-small', 11.8, 11.2, 270, { solid: 'fit' }),
+    b('building-1-small', 11.8, 11.2, 270, { solid: 'fit', id: 'priya_lofts', home: 'priya' }),      // Cedar Street Lofts (Priya), its front on the parking lot
     car('sedan', 3.6, 10.8, 0, { solid: 'fit' }),
     car('suv', 5.2, 10.8, 0, { solid: 'fit' }),
     car('hatchback', 6.8, 10.8, 0, { solid: 'fit' }),
@@ -227,16 +227,16 @@
     { pack: 'box', size: [0.12, 0.42, 6.0], at: [-1.42, -22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },   // the bridge's railings
     { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, -22.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
     // the bank: reeds, rocks, a canoe pulled up on the grass, lilies in the water
-    n('canoe', -13.6, -18.9, 15, { solid: 'fit' }),
-    bit('grass-tall', -11.0, -19.3, 0, 0.6), bit('grass-tall', -3.3, -19.2, 30, 0.6), bit('grass-tall', 5.5, -19.3, 0, 0.6),
-    bit('grass-tall', 12.5, -19.2, 60, 0.6), bit('grass-short', -16.2, -19, 0, 0.6), bit('grass-short', 8.6, -19.1, 0, 0.6), bit('grass-wispy-short', -7.8, -19.3, 0, 0.6),
-    bit('rock-2', -16.0, -19.3, 0, 0.9), n('rock-1', -6.4, -19.1, 10, { solid: 'fit', scale: 0.5 }), bit('rock-1', 3.6, -19.3, 0, 0.9),
-    n('rock-3', 15.2, -19, 50, { solid: 'fit', scale: 0.55 }),
+    n('canoe', -13.6, -17.6, 15, { solid: 'fit' }),
+    bit('grass-tall', -11.0, -19.62, 0, 0.6), bit('grass-tall', -3.3, -19.62, 30, 0.6), bit('grass-tall', 5.5, -19.62, 0, 0.6),
+    bit('grass-tall', 12.5, -19.62, 60, 0.6), bit('grass-short', -16.2, -19.62, 0, 0.6), bit('grass-short', 8.6, -19.62, 0, 0.6), bit('grass-wispy-short', -7.8, -19.62, 0, 0.6),
+    bit('rock-2', -16.0, -19.62, 0, 0.9), bit('rock-1', -6.4, -19.62, 10, 0.5), bit('rock-1', 3.6, -19.62, 0, 0.9),
+    bit('rock-3', 15.2, -19.62, 50, 0.55),
     bit('lily_large', -8.0, -20.4, 0, 0.8), bit('lily_small', -7.3, -20.8, 0, 0.8), bit('lily_large', 4.2, -20.5, 40, 0.8), bit('lily_small', 10.6, -20.3, 0, 0.8),
     bit('lily_small', -14.6, -20.6, 0, 0.8), bit('lily_large', 16.4, -20.7, 0, 0.8),
 
     // ----- scenery at the edge of town
-    tree('tree-pine-4', -18.0, -18.0),
+    tree('tree-pine-4', -18.0, -17.6),
     tree('tree-common-1', -18.2, 9.0),
     tree('tree-pine-1', -17.8, -8.0),
     tree('tree-common-3', 18.0, 18.0),
@@ -244,18 +244,18 @@
     tree('tree-pine-2', 18.2, -12.0),
     tree('tree-common-2', 8.0, 18.2),
     tree('tree-pine-4', -9.0, 18.0),
-    tree('tree-pine-3', -6.0, -18.2),
-    tree('tree-pine-4', 9.0, -18.0),
+    tree('tree-pine-3', -6.0, -17.6),
+    tree('tree-pine-4', 9.0, -17.6),
     tree('tree-pine-1', -18.5, 2.6),
     tree('tree-common-5', -18.4, -13.5),
     tree('tree-common-1', -18.6, 14.6),
     tree('tree-common-2', 18.5, 4.0),
     tree('tree-pine-2', 14.0, 18.3),
     tree('tree-common-5', -14.2, 18.4),
-    tree('tree-common-1', -3.6, -18.4),
-    tree('tree-pine-4', 3.8, -18.3),
-    tree('tree-twisted-1', 15.0, -18.2),
-    tree('tree-common-1', -13.5, -18.3),
+    tree('tree-common-1', -3.6, -17.7),
+    tree('tree-pine-4', 3.8, -17.7),
+    tree('tree-twisted-1', 15.0, -17.5),
+    tree('tree-common-1', -13.5, -17.6),
     n('rock-3', -17.6, 13.2, 0, { solid: 'fit', scale: 0.7 }),
     n('rock-2', 17.3, 12.6, 30, { solid: 'fit', scale: 0.6 }),
     bit('grass-tall', -17.2, -3.0, 0, 0.6), bit('grass-short', 17.6, -6.5, 0, 0.6), bit('grass-tall', 12.0, -17.9, 0, 0.6), bit('grass-short', -11.6, -17.6, 0, 0.6)
@@ -277,11 +277,16 @@
       diner_door: { at: [4.8, 2.2], face: [3.0, 2.0] },
       market_door: { at: [11.0, 2.3], face: [9.0, 2.1] },
       parking: { at: [9.2, 9.0], face: [5.2, 10.8] },
-      airport_shuttle: { at: [18.0, -3.0], face: [18.0, -1.2] }
+      airport_shuttle: { at: [18.0, -3.0], face: [18.0, -1.2] },
+      derek_door: { at: [-10.0, -13.72], face: [-10.0, -15.0] },
+      priya_door: { at: [9.95, 11.2], face: [8.5, 11.2] }
     },
     portals: [
-      { at: [-9.88, -5.05], size: [1.0, 0.6], to: 'home', arrive: 'home_door', label: 'Go home', label_ko: '집에 들어가기' },
-      { at: [8.2, -5.6], size: [1.4, 0.6], to: 'office', arrive: 'office_door', label: 'Enter Lakeside Labs', label_ko: '레이크사이드 랩스에 들어가기' },
+      // the homes: a door is there only in the game of the hero who lives behind it
+      { at: [-9.88, -5.05], size: [1.0, 0.6], to: 'home', arrive: 'home_door', label: 'Go home', label_ko: '집에 들어가기', hero: 'jun' },
+      { at: [-10.0, -13.5], size: [1.0, 0.24], to: 'home_derek', arrive: 'derek_out', label: 'Go home', label_ko: '집에 들어가기', hero: 'derek' },
+      { at: [10.27, 11.2], size: [0.3, 1.0], to: 'home_priya', arrive: 'priya_out', label: 'Go home', label_ko: '집에 들어가기', hero: 'priya' },
+      { at: [8.2, -5.6], size: [1.4, 0.6], to: 'office', arrive: 'office_door', label: 'Enter Seaside Labs', label_ko: '시사이드 랩스에 들어가기' },
       { at: [4.8, 3.05], size: [1.0, 0.6], to: 'diner', arrive: 'diner_door', label: 'Enter the diner', label_ko: '식당에 들어가기' },
       { at: [11.0, 3.35], size: [1.0, 0.6], to: 'market', arrive: 'market_door', label: 'Enter the grocery store', label_ko: '식료품점에 들어가기' },
       { at: [18.0, -1.9], size: [1.2, 0.6], to: 'airport', arrive: 'airport_door', label: 'Take the airport shuttle', label_ko: '공항 셔틀 타기' }
@@ -298,7 +303,7 @@
       areas: [
         { name: 'Seaside Park', name_ko: '시사이드 공원', at: [-11.5, 11.5] },
         { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, -22.4], water: true },
-        { name: 'Lakeside Labs', name_ko: '레이크사이드 랩스', at: [8.2, -8.6] }
+        { name: 'Seaside Labs', name_ko: '시사이드 랩스', at: [8.2, -8.6] }
       ]
     },
     setup: function (api) {
@@ -307,9 +312,10 @@
         // the plains beyond the edge of town (out of reach): woods west and east of town on both banks of the river, north
         // of the river up to the foothills, and south of town down to the beach
         wild: { seed: 11, rects: [[-90, -46, -21.5, -26], [-90, -19, -21.5, 19.5], [21.5, -46, 90, -26], [21.5, -19, 90, 19.5], [-21.5, -46, 21.5, -26], [-90, 21, 90, 27.5]],
-          avoid: [[-90, -3, 90, 3], [-3, -46, 3, 19.5]] },
+          avoid: [[-90, -3, 90, 3], [-3, -46, 3, 19.5],
+            [-22.6, -21, -19.4, 32], [19.4, -21, 22.6, 32], [-24, 27.2, 24, 32]] },          // the running trail (office/jog.js): the sides of town and the beach
         panels: [
-        { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Lakeside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
+        { kind: 'sign', at: [8.2, -5.94], turn: 0, y: 1.75, w: 2.6, h: 0.52, text: 'Seaside Labs', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
         { kind: 'sign', at: [5.4, 3.47], turn: 180, y: 1.55, w: 2.8, h: 0.5, text: 'Sunny Side Diner', bg: '#c0392b', fg: '#fff6d8', border: '#ffd166', frame: '#7e2a23' },
         { kind: 'sign', at: [11.0, 3.77], turn: 180, y: 1.75, w: 2.4, h: 0.48, text: 'Fairview Market', bg: '#3f8f5a', logo: '#ffd166', frame: '#2f6b45' },
         { kind: 'poster', at: [-5.35, -2.81], turn: 0, y: 0.5, w: 0.62, h: 0.8, frame: '#5f6f7f', text: 'Route 5', lines: ['Maple St - Downtown', 'Every 15 min, 6am-11pm', 'Fare $2.00'], band: '#2b5d8a', depth: 0.01 },

@@ -18,7 +18,7 @@
      that size in the model's own axes, centred on at (the engine swaps w and d for turn 90/270). Explicit
      boxes are only used for centred models (trees, poles) and pack: 'box'. */
 window.SO_ZONES = {};
-window.SO_ZONE_FILES = ['home', 'city', 'office', 'diner', 'market', 'airport', 'hotel', 'client'];
+window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'diner', 'market', 'airport', 'hotel', 'client'];
 
 (function () {
   var ORIGIN = 'origin';

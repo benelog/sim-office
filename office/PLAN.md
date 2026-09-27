@@ -5,7 +5,14 @@
 
 ## 1. 게임
 
-- **주인공**: Fairview(가상의 미국 도시)의 IT 회사 **Lakeside Labs**에 막 입사한 개발자(기본 이름 Jun, 시작할 때 이름과 캐릭터 선택).
+- **주인공**(DoltHub `heroes`): Fairview(가상의 미국 바닷가 도시)의 IT 회사 **Seaside Labs**(2026-09-27까지 Lakeside Labs)에서 일하는 세 사람 가운데 하나를 제목 화면에서 고릅니다. 이름은 정해져 있고 고칠 수 없습니다.
+  | id | 이름·역할 | model | 집(존, 시내의 문) | 사무실 자리 | 시작 돈 · 순급여 · 주거비 |
+  |---|---|---|---|---|---|
+  | jun | Jun Kim, 신입 개발자 | man-casual-3 | `home` Maple Street Apartments 원룸 (`apartment_door`) | office_desk | $1,200 · $2,600 · Rent $1,450 |
+  | derek | Derek Alvarez, 시니어 개발자·온보딩 버디 | man-hoodie | `home_derek` River Road의 단독 주택 (`derek_door`) | office_desk_team | $5,400 · $3,900 · Mortgage $2,150 |
+  | priya | Priya Nair, 프로덕트 매니저 | woman-casual-2 | `home_priya` Cedar Street Lofts (`priya_door`) | office_desk_priya | $3,800 · $3,500 · Rent $1,900 |
+
+  주인공마다 에피소드와 달력이 따로 있습니다(`episodes.hero`, `calendar.hero`; Jun 47개 `d…`·`w_…`, Derek 15개 `dk_…`, Priya 15개 `pr_…` — 둘은 1~7일). 다른 두 사람은 내 게임에서 인물(`npcs`의 같은 id)로 나오고, 내가 고른 사람은 인물 목록에서 빠집니다. 존 파일의 포털에 `hero: '<id>'`가 있으면 그 주인공의 게임에만 있는 문(집), 소품에 `home: '<id>'`가 있으면 지도에서 그 주인공의 집으로 칠합니다. 저장은 이름(Jun·Derek·Priya)마다 한 판.
 - **하루**: 07:00 알람 → 출근(버스·도보) → 회의·업무 → 점심 → 퇴근 → 장보기 → 집에서 잠(→ 다음 날). 시간은 걸어 다닐 때만 흐르고(초당 1분, `config.minutes_per_second`) 대화 중에는 멈춥니다. 23:00이 되면 어디에 있든 잠듭니다.
 - **달력**: 1일 = 첫 월요일. 주말(6·7일, 13·14일)은 자유 시간(장보기·공원). 3주(21일) 분량의 에피소드를 목표로 하되 우선 1~2주.
 - **돈**: 시작 $1,200. 격주 금요일(5일, 15일)에 순급여 $2,600이 입금(payday, direct deposit)되고 21일에 월세 $1,450이 빠져나갑니다. 커피·버스·점심·식료품·출장비를 씁니다. 급여명세서(gross, federal withholding, 401(k), net)를 읽는 에피소드가 있습니다.
@@ -23,6 +30,10 @@
 - **잡담**(DoltHub `smalltalk`, topic `weather:<kind>` `day:monday|friday|weekend` `time:morning|lunch|evening`): 인물이 지나가는 말 셋에 하나(첫마디 포함)는 지금 날씨·요일·시간에 맞는 말.
 - **공과금과 은행**(DoltHub `bills`: 자동이체 날짜 `day`, 주기 `every`): 아침에 빠져나가고 아침 카드·달력에 표시. Menu > Bank(`B`): 잔액, 2주 안의 입출금 예정, 최근 거래(세금·팁 포함).
 - **거리의 붐빔**(`office/life.js`): 존에 들어올 때의 시각·요일·날씨로 자동차와 행인 수를 정함(출퇴근 시간 자동차 1.6배, 밤에는 절반, 비 오면 행인 절반, 비 오는 날 공원 벤치에는 아무도 없음).
+- **목소리**: 인물마다 `npcs.voice_like`(목소리 이름 패턴, 미국 영어 목소리에서 먼저 찾음) → 없으면 모델의 성별(`man-`/`woman-`)에 맞는 미국 영어 목소리 중 id로 고른 것 → 그것도 없으면 기본 목소리의 음높이를 남자는 −0.3, 여자는 +0.3. **주인공이 한 말(입력·선택한 답)도 주인공의 목소리로 읽고**, 상대의 답은 그 뒤에 이어집니다.
+- **지난 대화**(Menu > Conversations, `T`): 끝낸 대화를 최근 것부터 다시 읽고 ▶로 들음. 내가 실제로 한 말은 저장의 `said[episodeId]`에 있고, 모범 답과 다르면 모범 답도 보여 줍니다.
+- **조깅**(`office/jog.js`): 시내를 한 바퀴 도는 달리기 길 Fairview Loop(서쪽 가장자리 → 해변 → 동쪽 가장자리 → 강변, 약 175). 집 현관에서 `Go for a jog`(40분 경과, 에너지 −12) 또는 제목 화면의 `Jogging mini-game`(게임 없이 단독). 1인칭 시점으로 저절로 달리고, 박자(0.4초)에 맞춰 왼발·오른발을 번갈아 누릅니다(← → / A D / F J, 터치는 화면 좌우). Perfect·Good·OK에 따라 페이스가 올라 속도 2.2~5.6, 점수는 연속 성공 배수. 다른 주자 셋과 순위를 겨루고, 앞지를 때 "On your left!". 최고 기록은 `localStorage so.v1.jog`. 해변에 가까워지면 파도 소리(Web Audio로 합성, 시내 남쪽을 걸을 때도 들림).
+- **마을 구경**(제목 화면 `Look around town`): 시내를 자유 카메라로 둘러봄. ↑↓/WS 이동, ←→/AD 회전, QE 옆으로, ZX·휠 확대, RF 높이, Shift 빠르게, Space 자동 회전, T 시간대, Y 날씨, Esc 돌아가기, 마우스·터치 끌기.
 - **조작**: 어린 왕자 게임과 같음. ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동. 터치: 왼쪽 아래 조이스틱, 행동 버튼. HUD: 요일·날짜·시각, $잔액, 에너지 막대, 다음 일정, 현재 목표.
 
 ## 2. 파일
@@ -30,12 +41,14 @@
 ```
 office/
   index.html  game.css  game.js        # 엔진·화면 (A1)
+  life.js  jog.js                     # 거리의 자동차·행인 / 조깅 미니 게임
   zones/index.js, zones/<zone>.js     # 존 배치 (A2)
   data/db.js                          # DoltHub에서 내려받은 데이터 (tools/dolt.mjs pull, 생성물)
   models/<pack>.js, models/<character>.js   # base64 .glb (B, 생성물)
   PLAN.md                             # 이 문서
 db/schema.sql, db/seed/NN-*.sql       # DoltHub에 넣는 SQL (C, D)
 tools/dolt.mjs                        # push / query / pull
+tools/seed-json.mjs                   # 시드를 올리기 전에 db.js에 얹어 보기(lint·점검용)
 tools/office-models.py                # Kenney .glb → office/models/*.js (B)
 tools/office-characters.py            # Quaternius → office/models/man-*, woman-*, rig-*.js
 tools/office-check.sh, office-check.mjs   # 헤드리스 Chrome 점검 (A1)
@@ -117,7 +130,7 @@ food: apple banana orange lemon grapes strawberry watermelon pear cherries avoca
 
 ```js
 SO_ZONES.office = {
-  name: 'Lakeside Labs, 3rd floor', name_ko: '레이크사이드 랩스 3층',
+  name: 'Seaside Labs, 3rd floor', name_ko: '시사이드 랩스 3층',
   indoor: true,                       // 실내: 하늘 대신 단색 배경, 벽 안에서만 걸음
   size: [16, 12],                     // 걸을 수 있는 직사각형(x: -8..8, z: -6..6), 원점이 중심
   floor: '#d9d3c7',                   // 바닥 색 (실외 존은 잔디/아스팔트 색)
@@ -158,10 +171,10 @@ SO_ZONES.office = {
 - 시간·돈·에너지·잠·급여·월세·상점·인벤토리·Phrasebook·저장은 1절대로.
 - 카메라: 플레이어 뒤 위(3인칭), 실내에서는 더 가깝게. 벽 뒤로 카메라가 들어가지 않게 바닥 위로 제한만.
 - **지도**(Menu > Map, `M`): 존 데이터로 캔버스에 그립니다 — 도로 타일(보도 딸린 3×3 칸), 소품의 발자국(`SO_ZONE_KIT.BOX`, 건물·나무·차·가구), 장소 핀, 문, 존의 `map`에 적은 거리·구역 이름, 사람(지금 있는 자리, 다른 건물 안이면 그 건물 문 앞에 모아서, 열린 에피소드는 `!`), 목표(점선 원), 나(화살표). 실내에 있으면 Town / 지금 있는 곳 탭. 지도 아래에 사람·행동이 있는 장소 목록과 시외(공항·호텔·고객사)에 있는 사람. 열려 있는 동안 0.5초마다 다시 그립니다.
-- 디버그 API `window.SO.debug`: `ready`, `state`('title'|'play'|'talk'|'shop'|'sleep'|'card'), `day`, `time`, `money`, `energy`, `zone`, `start(name?, model?)`, `goto(zone, placeId?)`, `episodes()`(지금 열 수 있는 것), `startEpisode(id)`, `advance()`(현재 턴에 모범 답 → Continue), `autoplayEpisode(id)`, `sleep()`, `buy(itemId)`, `panel(kind)`, `mapTab('town'|'room')`, `save`(현재 저장 객체), `saves`(저장된 이름들), `reset()`.
+- 디버그 API `window.SO.debug`: `ready`, `state`('title'|'play'|'talk'|'shop'|'sleep'|'card'), `day`, `time`, `money`, `energy`, `zone`, `start(heroId?)`, `hero`, `heroes`, `voice(id)`, `jog.start(story)`·`jog.state`·`jog.press(0|1)`·`jog.stop()`, `tour.start()`·`tour.do(what)`, `goto(zone, placeId?)`, `episodes()`(지금 열 수 있는 것), `startEpisode(id)`, `advance()`(현재 턴에 모범 답 → Continue), `autoplayEpisode(id)`, `sleep()`, `buy(itemId)`, `panel(kind)`, `mapTab('town'|'room')`, `save`(현재 저장 객체), `saves`(저장된 이름들), `reset()`.
 - 점검: `tools/office-check.sh <outdir> [steps.mjs] [w h]` — `tools/game-check.sh`와 같은 방식(bash에서 Chrome 헤드리스 띄우고 node가 CDP로 붙음, `TMPDIR=/tmp/claude-1000`). 기본 시나리오: 제목 화면 → 시작 → 집 → 각 존으로 goto해서 스크린숏 → 열 수 있는 에피소드 전부 autoplay → 잠 → 콘솔 오류 0, `finished: true`.
 - 모델 팩이 아직 없으면(`SO_MODELS[pack]` 없음) 해당 소품은 회색 상자로 대체하고 콘솔 경고 1줄만.
 
 ## 7. 저작권·표기
 
-Kenney 에셋은 CC0(표기 권장: "Kenney (www.kenney.nl)"), Quaternius 인물도 CC0(quaternius.com). three.js MIT. 대사·표현은 전부 자체 저작, 실제 회사·인물 이름을 쓰지 않습니다(Lakeside Labs, Summit Retail, Fairview는 가상). 안내는 영어 기본, 한국어는 `_ko`.
+Kenney 에셋은 CC0(표기 권장: "Kenney (www.kenney.nl)"), Quaternius 인물도 CC0(quaternius.com). three.js MIT. 대사·표현은 전부 자체 저작, 실제 회사·인물 이름을 쓰지 않습니다(Seaside Labs, Summit Retail, Fairview는 가상). 안내는 영어 기본, 한국어는 `_ko`.

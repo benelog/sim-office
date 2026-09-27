@@ -15,7 +15,7 @@ google-chrome --headless=new --remote-debugging-port=$PORT --no-first-run --auto
   --use-angle=swiftshader --enable-unsafe-swiftshader --window-size=$W,$H --user-data-dir="$PROFILE" about:blank >/dev/null 2>&1 &
 CPID=$!
 sleep 1.5
-SO_DB_JSON=$SO_DB_JSON SO_DAYS=$SO_DAYS timeout 900 node tools/office-check.mjs $PORT "$OUT" "$STEPS" $W $H
+SO_DB_JSON=$SO_DB_JSON SO_DAYS=$SO_DAYS SO_HERO=$SO_HERO timeout 900 node tools/office-check.mjs $PORT "$OUT" "$STEPS" $W $H
 CODE=$?
 kill $CPID 2>/dev/null
 sleep 0.5

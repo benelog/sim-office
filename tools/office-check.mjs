@@ -1,10 +1,10 @@
 // Drive Sim Office (office/index.html) in headless Chrome over the DevTools protocol. Used by tools/office-check.sh,
 // which starts Chrome (spawning it from node gets it killed in some sandboxes).
 //   node tools/office-check.mjs <port> <outdir> [steps.mjs] [width height]
-// Default run: title → start('Test', 'man-casual-3') → home → every zone (goto) → for up to 3 days, every
+// Default run: title → start(hero) → home → every zone (goto) → for up to 3 days, every
 // conversation that opens during the day (the clock is stepped by 30 minutes) is autoplayed, then sleep → panels →
 // a phone-sized (390×844) look at the city and a conversation. Prints `finished: true` and the console errors.
-// SO_DAYS=<n> plays n days instead of 3. SO_DB_JSON=<file.json> replaces office/data/db.js with that data (the shape of window.SO_DB), e.g. to try seeds
+// SO_HERO=<jun|derek|priya> plays that hero (jun when not given). SO_DAYS=<n> plays n days instead of 3. SO_DB_JSON=<file.json> replaces office/data/db.js with that data (the shape of window.SO_DB), e.g. to try seeds
 // before they are pushed and pulled.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -76,7 +76,7 @@ try {
     for (let i = 0; i < 120 && !(await ev('window.SO && SO.debug.ready')); i++) await sleep(250);
     await sleep(2500);
     await shot('title');
-    await ev("SO.debug.start('Test', 'man-casual-3')");
+    await ev(`SO.debug.start('${process.env.SO_HERO || 'jun'}')`);
     await sleep(1500);
     await shot('home');
     await ev('SO.keys.ArrowUp = true'); await sleep(1200); await ev('SO.keys.ArrowUp = false');
@@ -115,7 +115,7 @@ try {
         await ev('SO.debug.setTime(18 * 60)');          // while the shops are open
         for (const it of items.slice(0, 3)) log(`buy ${it}:`, await ev(`SO.debug.buy(${JSON.stringify(it)})`), 'money', await ev('SO.debug.money'));
       }
-      const left = await ev(`SO_DB.episodes.filter(e => e.day_to === ${day} && !SO.debug.save.done[e.id]).map(e => e.id)`);
+      const left = await ev(`SO_DB.episodes.filter(e => (e.hero || 'jun') === SO.debug.hero && e.day_to === ${day} && !SO.debug.save.done[e.id]).map(e => e.id)`);
       if (left && left.length) log(`day ${day} not done:`, left.join(' '));
       await ev('SO.debug.setTime(21 * 60)');
       await ev('SO.debug.sleep()');

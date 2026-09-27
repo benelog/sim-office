@@ -37,7 +37,7 @@ REPLACE INTO schedule (npc, seq, days, time_from, time_to, place) VALUES
   ('carl', 4, 'all', '18:30', '21:00', 'apartment_door');
 
 REPLACE INTO weather (day, kind, high_f, low_f, forecast, forecast_ko) VALUES
-  (1, 'clear', 74, 56, 'Sunny and mild. A great day to start a new job.', '맑고 온화합니다. 새 직장을 시작하기 좋은 날이에요.'),
+  (1, 'clear', 74, 56, 'Sunny and mild. A great start to the week.', '맑고 온화합니다. 한 주를 시작하기 좋은 날이에요.'),
   (2, 'partly', 72, 55, 'Partly cloudy with a light breeze.', '구름이 조금 끼고 바람이 살짝 붑니다.'),
   (3, 'rain', 63, 52, 'Rain on and off all day. Bring an umbrella.', '하루 종일 비가 오락가락합니다. 우산을 챙기세요.'),
   (4, 'cloudy', 66, 53, 'Overcast and cool. The rain has moved out.', '흐리고 선선합니다. 비는 지나갔어요.'),

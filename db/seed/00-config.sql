@@ -1,7 +1,7 @@
 -- Game constants. Money is in US dollars.
 REPLACE INTO config (k, v, note) VALUES
   ('player_name', 'Jun', 'default player name; the player can change it'),
-  ('company', 'Lakeside Labs', 'the IT company the player works for'),
+  ('company', 'Seaside Labs', 'the IT company the player works for'),
   ('city', 'Fairview', 'fictional US city'),
   ('start_money', '1200', 'dollars in the bank on day 1'),
   ('salary_net', '2600', 'net pay per paycheck (biweekly, direct deposit on payday Fridays)'),

@@ -25,6 +25,7 @@
   <button type="button" id="menu-btn" aria-haspopup="true" aria-expanded="false" title="Menu">Menu</button>
   <nav id="menu" hidden>
     <button type="button" data-open="phrasebook">Phrasebook</button>
+    <button type="button" data-open="talks">Conversations</button>
     <button type="button" data-open="inventory">Inventory</button>
     <button type="button" data-open="calendar">Calendar</button>
     <button type="button" data-open="bank">Bank</button>
@@ -75,26 +76,42 @@
 
 <div id="title">
   <div class="card">
-    <p class="kicker">Fairview · Lakeside Labs</p>
+    <p class="kicker">Fairview · Seaside Labs</p>
     <h1>Sim Office</h1>
-    <p>You just joined Lakeside Labs as a software developer. Take the bus, grab a coffee, meet your team, and get through the week in English.</p>
-    <p class="ko">레이크사이드 랩스에 막 입사한 개발자가 되어 출퇴근하고, 커피를 사고, 팀을 만나며 영어로 한 주를 보내 보세요.</p>
+    <p>Work at Seaside Labs, a software company in a small American city. Pick who you are: each has a job, a home and conversations of their own. Commute, grab a coffee, and get through the week in English.</p>
+    <p class="ko">미국 소도시의 소프트웨어 회사 시사이드 랩스에서 일합니다. 누가 될지 고르세요. 사람마다 맡은 일과 집, 나누는 대화가 다릅니다.</p>
     <div class="who-row">
       <canvas id="preview" width="180" height="220" aria-label="Your character"></canvas>
       <div class="who-form">
-        <label class="name">Your name <input type="text" id="name-in" maxlength="16" spellcheck="false" autocomplete="off"></label>
-        <div id="chars" role="radiogroup" aria-label="Character"></div>
+        <div id="chars" role="radiogroup" aria-label="Who you play"></div>
+        <div id="hero-info"></div>
       </div>
     </div>
-    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Phrasebook <kbd>P</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd> · Bank <kbd>B</kbd> · Map <kbd>M</kbd><br>
+    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Phrasebook <kbd>P</kbd> · Conversations <kbd>T</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd> · Bank <kbd>B</kbd> · Map <kbd>M</kbd><br>
       <span class="touch-only">On a phone, drag the circle at the bottom left.</span></p>
     <div id="saves" class="saves" hidden aria-label="Saved games"></div>
     <div class="buttons">
       <button type="button" id="new-game" disabled>Loading…</button>
+      <button type="button" id="tour-game" class="ghost" title="Fly over Fairview with the keyboard">Look around town</button>
+      <button type="button" id="jog-game" class="ghost" title="A mini-game on its own: run the Fairview Loop and keep the rhythm of your steps">Jogging mini-game</button>
     </div>
     <p id="new-note" class="note" hidden></p>
     <p class="small">People: Quaternius (quaternius.com), CC0. Props and places: Kenney (www.kenney.nl), CC0. three.js (MIT). All places, companies and people are fictional.</p>
   </div>
+</div>
+
+<div id="tour" hidden>
+  <div class="tour-bar">
+    <b>Fairview</b>
+    <button type="button" data-tour="time">Time: Morning</button>
+    <button type="button" data-tour="weather">Weather: Sunny</button>
+    <button type="button" data-tour="auto">Circling: on</button>
+    <button type="button" data-tour="in" aria-label="Closer">＋</button>
+    <button type="button" data-tour="out" aria-label="Farther">－</button>
+    <button type="button" data-tour="back" class="back">Back</button>
+  </div>
+  <p class="tour-keys"><kbd>↑</kbd><kbd>↓</kbd> / <kbd>W</kbd><kbd>S</kbd> move · <kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> turn · <kbd>Q</kbd><kbd>E</kbd> sideways · <kbd>Z</kbd><kbd>X</kbd> closer, farther · <kbd>R</kbd><kbd>F</kbd> higher, lower · <kbd>Shift</kbd> faster · <kbd>Space</kbd> circling · <kbd>T</kbd> time · <kbd>Y</kbd> weather · <kbd>Esc</kbd> back
+    <span class="touch-only">Drag to turn. </span><span class="ko">방향키·WASD로 이동과 회전, Q E 옆으로, Z X 확대·축소, R F 높이, T 시간대, Y 날씨, Esc 돌아가기. 마우스로 끌어서 돌리고 휠로 확대합니다.</span></p>
 </div>
 
 <div id="card" hidden>
@@ -111,6 +128,7 @@
 <script src="../vendor/yuka.min.js"></script>
 <script src="data/db.js"></script>
 <script src="life.js"></script>
+<script src="jog.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

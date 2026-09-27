@@ -47,8 +47,21 @@ for (const n of rows('npcs')) {
 }
 for (const c of rows('chatter')) if (!npcs.has(c.npc)) bad(`chatter ${c.npc}/${c.seq}`, 'npc does not exist');
 
+const heroes = new Set((DB.heroes || []).map(h => h.id));
+for (const h of DB.heroes || []) {
+  const w = `heroes ${h.id}`;
+  for (const k of ['home_bed', 'home_kitchen', 'home_desk', 'home_door', 'desk']) if (h[k] && !places.has(h[k])) bad(w, `${k} "${h[k]}" not in places`);
+  if (!fs.existsSync(path.join(root, 'office', 'models', h.model + '.js'))) bad(w, `model "${h.model}" is not in office/models`);
+  if (!rows('episodes').some(e => (e.hero || 'jun') === h.id)) warn(w, 'has no episodes');
+}
 for (const e of rows('episodes')) {
   const w = `episodes ${e.id}`;
+  if (heroes.size && !heroes.has(e.hero || 'jun')) bad(w, `hero "${e.hero}" not in heroes`);
+  if (e.npc === (e.hero || 'jun')) bad(w, `the hero ${e.npc} cannot be the person of their own episode`);
+  for (const r of String(e.requires || '').split(',').map(s => s.trim()).filter(Boolean)) {
+    const req = rows('episodes').find(x => x.id === r);
+    if (req && (req.hero || 'jun') !== (e.hero || 'jun')) bad(w, `requires ${r}, an episode of another hero`);
+  }
   if (!places.has(e.place)) bad(w, `place "${e.place}" not in places`);
   if (!npcs.has(e.npc)) bad(w, `npc "${e.npc}" not in npcs`);
   else if (npcById[e.npc].place !== e.place) warn(w, `npc ${e.npc} normally stands at ${npcById[e.npc].place}, episode is at ${e.place}`);
@@ -79,6 +92,8 @@ for (const [ep, list] of Object.entries(turnsBy)) {
   for (const t of list) {
     const w = `turns ${ep}#${t.seq}`;
     for (const who of [t.speaker, t.reply_speaker]) if (who && !npcs.has(who) && who !== 'player') bad(w, `speaker "${who}" not in npcs`);
+    const hero = (rows('episodes').find(e => e.id === ep) || {}).hero || 'jun';
+    for (const who of [t.speaker, t.reply_speaker]) if (who === hero) bad(w, `speaker "${who}" is the hero of this episode (the player)`);
     if (!t.line || !t.prompt || !t.model) bad(w, 'line, prompt and model are required');
     const groups = t.answers;
     if (!Array.isArray(groups) || !groups.length) { bad(w, 'answers is not a non-empty array'); continue; }
@@ -113,13 +128,15 @@ for (const i of rows('items')) {
   if (!(i.price >= 0)) bad(w, `bad price ${i.price}`);
 }
 for (const c of rows('calendar')) {
-  const w = `calendar ${c.day} ${c.time}`;
+  const w = `calendar ${c.hero || 'jun'} ${c.day} ${c.time}`;
   if (!HHMM.test(c.time || '')) bad(w, 'bad time');
   if (c.place && !places.has(c.place)) bad(w, `place "${c.place}" not in places`);
+  if (heroes.size && !heroes.has(c.hero || 'jun')) bad(w, `hero "${c.hero}" not in heroes`);
   if (c.episode) {
     const e = rows('episodes').find(x => x.id === c.episode);
     if (!e) bad(w, `episode "${c.episode}" does not exist`);
     else if (c.day < e.day_from || c.day > e.day_to) bad(w, `episode ${e.id} is not open on day ${c.day}`);
+    else if ((e.hero || 'jun') !== (c.hero || 'jun')) bad(w, `episode ${e.id} belongs to ${e.hero}, the calendar row to ${c.hero}`);
   }
 }
 

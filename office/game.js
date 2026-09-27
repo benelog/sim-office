@@ -25,7 +25,7 @@
 
   // ---------------------------------------------------------------- the rules (config table, with defaults)
   const CFG = Object.assign({
-    player_name: 'Jun', company: 'Lakeside Labs', city: 'Fairview', start_money: 1200, salary_net: 2600, salary_gross: 3654,
+    player_name: 'Jun', company: 'Seaside Labs', city: 'Fairview', start_money: 1200, salary_net: 2600, salary_gross: 3654,
     payday_days: '5,15', rent: 1450, rent_day: 21, bus_fare: 2.5, day_start: '07:00', day_end: '23:00', work_start: '09:00', work_end: '18:00',
     minutes_per_second: 1, energy_max: 100, energy_per_hour: -6,
     sales_tax: 0.0825, tip_options: '0,15,18,20', tip_default: 18
@@ -36,13 +36,22 @@
   const RENT_DAY = +CFG.rent_day || 21;
   const WALK = 1.25, RUN = 2.9, TURN = 2.5, PLAYER_R = 0.2, NPC_R = 0.24, TALK_R = 1.45, PLACE_R = 1.35;
   const PACK_SCALE = { city: 3, roads: 3, cars: 0.5, furniture: 1, food: 0.6, extras: 1, nature: 0.4, park: 2, homeware: 0.4, buildings: 1, wild: 1 };
-  // the player's choices (office/models/<id>.js, tools/office-characters.py): people the cast does not wear
-  const CHARACTER_LABELS = {
-    'man-casual-3': 'Blazer ♂', 'man-hoodie-2': 'Hoodie ♂', 'man-suit-2': 'Suit ♂', 'man-adventurer': 'Jacket ♂',
-    'woman-casual': 'Tee ♀', 'woman-formal': 'Dress ♀', 'woman-adventurer': 'Jacket ♀', 'woman-punk': 'Crop top ♀'
-  };
-  const CHARACTERS = Object.keys(CHARACTER_LABELS), DEFAULT_CHARACTER = 'man-casual-3';
-  const charLabel = (id) => CHARACTER_LABELS[id] || pretty(id);
+  // The people you can play (heroes table): each has a name, a role, a look, a home (a zone with a bed, a kitchen,
+  // a desk and its door in the city), a desk at the office, money of their own, and their own episodes and
+  // calendar (episodes.hero, calendar.hero). The other heroes are in your game as people; you are not.
+  const HEROES = (rows('heroes').length ? rows('heroes').slice() : [{
+    id: 'jun', name: CFG.player_name || 'Jun', full_name: CFG.player_name || 'Jun', role: 'Software developer', model: 'man-casual-3',
+    home_zone: 'home', home_bed: 'home_bed', home_kitchen: 'home_kitchen', home_desk: 'home_desk', home_door: 'apartment_door', desk: 'office_desk',
+    start_money: +CFG.start_money, salary_net: +CFG.salary_net, salary_gross: +CFG.salary_gross, housing: +CFG.rent, housing_name: 'Rent'
+  }]).sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const DEFAULT_HERO = (HEROES.find(h => h.id === 'jun') || HEROES[0]).id;
+  const heroOf = (id) => HEROES.find(h => h.id === id) || HEROES.find(h => h.id === DEFAULT_HERO);
+  const hero = () => heroOf(G ? G.hero : DEFAULT_HERO);
+  const CHARACTERS = Array.from(new Set(HEROES.map(h => h.model))), DEFAULT_CHARACTER = heroOf(DEFAULT_HERO).model;
+  const mine = (r) => (r.hero || DEFAULT_HERO) === (G ? G.hero : DEFAULT_HERO);          // a row of the hero you play
+  const episodes = () => rows('episodes').filter(mine), calendar = () => rows('calendar').filter(mine);
+  const cast = () => rows('npcs').filter(n => !G || n.id !== G.hero);
+  const portalsOf = (spec) => (spec.portals || []).filter(p => !p.hero || (!!G && p.hero === G.hero));     // a home's door is its owner's
   // a person (Quaternius, tools/office-characters.py) is about 0.95 tall with the feet at y=0
   const HEAD_Y = 0.95, BUBBLE_Y = 1.1, MARK_Y = 1.12;
   const INK = 0x1d2433;
@@ -69,7 +78,7 @@
     'hotel:hotel_door': ['client', 'client_door'], 'client:client_door': ['hotel', 'hotel_door']
   };
   const ZONE_NAMES = {
-    home: ['Your apartment', '내 아파트'], city: ['Downtown Fairview', '페어뷰 시내'], office: ['Lakeside Labs', '레이크사이드 랩스'],
+    home: ['Your apartment', '내 아파트'], city: ['Downtown Fairview', '페어뷰 시내'], office: ['Seaside Labs', '시사이드 랩스'],
     diner: ['Maple Street Diner', '메이플 스트리트 다이너'], market: ['Fairview Market', '페어뷰 마켓'], airport: ['Fairview Airport', '페어뷰 공항'],
     hotel: ['Harbor View Hotel', '하버 뷰 호텔'], client: ['Summit Retail HQ', '서밋 리테일 본사']
   };
@@ -90,6 +99,11 @@
   const isWeekend = (d) => (d - 1) % 7 >= 5;
   const builtinZoneOf = (id) => Object.keys(BUILTIN_PLACES).find(z => BUILTIN_PLACES[z].includes(id)) || null;
   function place(id) {
+    const owner = HEROES.find(h => h.desk === id);
+    if (owner && PLACES[id]) {
+      const me = owner.id === (G ? G.hero : DEFAULT_HERO);
+      return Object.assign({}, PLACES[id], me ? { name: 'Your desk', name_ko: '내 자리' } : { name: `${owner.name}'s desk`, name_ko: `${owner.name}의 자리` });
+    }
     if (PLACES[id]) return PLACES[id];
     return { id, name: pretty(id), zone: builtinZoneOf(id) || fileZoneOf(id), kind: BUILTIN_KIND[id] || null };
   }
@@ -98,7 +112,7 @@
   const zoneOfPlace = (id) => place(id).zone;
   function npcRow(id) {
     if (NPCS[id]) return NPCS[id];
-    const ep = rows('episodes').find(e => e.npc === id);
+    const ep = episodes().find(e => e.npc === id);
     return { id, name: pretty(id), model: CHARACTERS[hash(id) % CHARACTERS.length], place: ep ? ep.place : null, voice_pitch: 1, voice_rate: 0.95 };
   }
   const zoneName = (z) => { const s = zoneSpecs[z] || (window.SO_ZONES || {})[z]; return [(s && s.name) || (ZONE_NAMES[z] || [pretty(z)])[0], (s && s.name_ko) || (ZONE_NAMES[z] || [])[1] || '']; };
@@ -129,10 +143,11 @@
     store.del(SAVE_KEY);
   })();
   let G = null;           // the game in progress (what goes into so.v1.saves under its name)
-  function newGame(name, model) {
+  function newGame(heroId) {
+    const h = heroOf(heroId);
     return {
-      name: (name || CFG.player_name || 'Jun').trim().slice(0, 16) || 'Jun', model: CHARACTERS.includes(model) ? model : DEFAULT_CHARACTER,
-      day: 1, minute: DAY_START, money: +CFG.start_money, energy: E_MAX, zone: 'home', at: null, heading: 0,
+      hero: h.id, name: h.name, model: h.model,
+      day: 1, minute: DAY_START, money: +h.start_money, energy: E_MAX, zone: h.home_zone, at: null, heading: 0,
       done: {}, inventory: {}, phrases: [], log: []
     };
   }
@@ -654,7 +669,7 @@
     const seen = new Set([from]), queue = [[from, null]];
     while (queue.length) {
       const [z, first] = queue.shift();
-      for (const p of (zoneSpec(z).portals || [])) {
+      for (const p of portalsOf(zoneSpec(z))) {
         if (!p.to || seen.has(p.to)) continue;
         const f = first || p;
         if (p.to === to) return f;
@@ -791,7 +806,7 @@
     (spec.props || []).forEach(p => addProp(p, false));
     setupLights();
     // portal signs and place labels
-    (spec.portals || []).forEach(p => {
+    portalsOf(spec).forEach(p => {
       addTag(p.label || ('To ' + zoneName(p.to)[0]), new T.Vector3(p.at[0], 1.1, p.at[1]), 'portal', 14, p.label_ko || ('→ ' + zoneName(p.to)[1]));
       const g = new T.PlaneGeometry(p.size ? p.size[0] : 1, p.size ? p.size[1] : 1).rotateX(-Math.PI / 2);
       disposables.push(g);
@@ -828,6 +843,8 @@
     portalArmed = false;
     cam.ready = false;
     if (spec.setup) { try { spec.setup(api); } catch (e) { console.error(`zones/${z}.js setup:`, e); } }
+    if (jogTrail) { jogTrail.dispose(); jogTrail = null; }
+    if (z === 'city' && window.SO_JOG) { try { jogTrail = SO_JOG.trail(api); } catch (e) { console.error('Sim Office jog:', e); } }
     startLife();
     busy = false;
     setTimeout(() => $('fade').classList.remove('on'), 60);
@@ -851,7 +868,7 @@
   const toC = (f) => Math.round((f - 32) * 5 / 9);
   const weatherOf = (day) => WEATHER.length ? WEATHER[(Math.max(1, day) - 1) % WEATHER.length] : { day, kind: 'clear', high_f: 72, low_f: 55, forecast: '' };
   function weatherNow() {
-    const day = G ? G.day : 1, h = (G ? G.minute : 600) / 60, w = weatherOf(day), k = w.kind;
+    const day = G ? G.day : 1, h = hourNow(), w = weatherOf(day), k = !G && state === 'tour' && tour.wx ? tour.wx : w.kind;
     const rain = k === 'rain' ? clamp((0.5 + 0.62 * Math.sin(h * 1.3 + day * 2.1)) * 1.6, 0, 1) : 0;
     const fogged = k === 'fog' ? clamp((11 - h) / 2, 0, 1) : 0;
     const cover = k === 'rain' ? 1 : k === 'cloudy' ? 0.92 : k === 'partly' ? 0.45 : k === 'fog' ? Math.max(0.3, fogged * 0.8) : 0.1;
@@ -1019,7 +1036,7 @@
     cam.updateProjectionMatrix();
   }
   let envTimer = 0, lampTimer = 0;
-  const hourNow = () => (G ? G.minute : 600) / 60;
+  const hourNow = () => (G ? G.minute : state === 'tour' ? tour.minute : 600) / 60;
   function applyEnvironment() {
     if (!Z) return;
     const e = envAt(hourNow()), wx = weatherNow(), day = 1 - e.night;
@@ -1166,7 +1183,7 @@
     const spec = zoneSpec(z);
     const out = [];
     const byPlace = {};
-    rows('npcs').concat(orphanNpcs()).forEach(n => {
+    cast().concat(orphanNpcs()).forEach(n => {
       const pid = npcPlaceNow(n);
       if (!pid || !placeIn(pid, z)) return;
       const pl = spec.places[pid];
@@ -1178,8 +1195,8 @@
     return out;
   }
   function orphanNpcs() {     // people named by episodes but missing from the npcs table
-    const seen = new Set(rows('npcs').map(n => n.id)), out = [];
-    rows('episodes').forEach(e => { if (e.npc && !seen.has(e.npc)) { seen.add(e.npc); out.push(npcRow(e.npc)); } });
+    const seen = new Set(cast().map(n => n.id)), out = [];
+    episodes().forEach(e => { if (e.npc && !seen.has(e.npc)) { seen.add(e.npc); out.push(npcRow(e.npc)); } });
     return out;
   }
   let npcSig = '';
@@ -1269,7 +1286,7 @@
   }
   function leaveZone(a) {             // out through the nearest door; gone when there
     let best = null, bd = Infinity;
-    (Z.portals || []).forEach(p => { const d = Math.hypot(p.at[0] - a.pos.x, p.at[1] - a.pos.z); if (d < bd) { bd = d; best = p; } });
+    (Z.portals || []).filter(p => !p.hero).forEach(p => { const d = Math.hypot(p.at[0] - a.pos.x, p.at[1] - a.pos.z); if (d < bd) { bd = d; best = p; } });
     if (!best || bd > 40) return false;
     a.leaving = true;
     a.place = null;
@@ -1416,7 +1433,7 @@
   }
 
   // ---------------------------------------------------------------- the clock, money and energy
-  const openEpisodes = () => rows('episodes').filter(isOpen).sort(epOrder);
+  const openEpisodes = () => episodes().filter(isOpen).sort(epOrder);
   function epOrder(a, b) { return ((a.sort || 0) - (b.sort || 0)) || (hm(a.time_from, 0) - hm(b.time_from, 0)) || String(a.id).localeCompare(b.id); }
   const isPhone = (ep) => /(^|,)\s*phone\s*(,|$)/.test(ep.tags || '');
   const dayIn = (ep) => (ep.day_from == null || G.day >= ep.day_from) && (ep.day_to == null || G.day <= ep.day_to);
@@ -1523,13 +1540,13 @@
         if (via) goalTarget = { at: via.at, portal: true };
       }
     } else {
-      const later = rows('episodes').filter(laterToday).sort(epOrder)[0];
+      const later = episodes().filter(laterToday).sort(epOrder)[0];
       if (later) {
         en = `Free until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
         ko = `${hhmm(hm(later.time_from, 0))}까지 자유 시간. 다음: ${later.title_ko || later.title}`;
       } else if (G.minute >= 20 * 60) {
-        const home = TRAVEL_ZONES.includes(zoneId) ? 'hotel' : 'home';
-        const bed = home === 'hotel' ? 'hotel_room' : 'home_bed';
+        const home = TRAVEL_ZONES.includes(zoneId) ? 'hotel' : hero().home_zone;
+        const bed = home === 'hotel' ? 'hotel_room' : hero().home_bed;
         if (zoneId === home) { en = 'Time for bed. Go to your bed and sleep.'; ko = '잘 시간이에요. 침대에 가서 주무세요.'; if (Z.places[bed]) goalTarget = { at: Z.places[bed].at }; }
         else { en = `Head ${home === 'hotel' ? 'back to the hotel' : 'home'} and get some sleep.`; ko = home === 'hotel' ? '호텔로 돌아가 잠을 자세요.' : '집에 가서 잠을 자세요.'; const via = routeTo(zoneId, home); if (via) goalTarget = { at: via.at, portal: true }; }
       } else {
@@ -1539,7 +1556,7 @@
     }
     if (G.energy < 30) { warn = true; en += `<br><small>Low energy (${Math.round(G.energy)}). Eat something or rest.</small>`; ko += ' · 에너지가 낮아요. 뭔가 드세요.'; }
     setBox($('goal'), en, ko, warn);
-    const cal = rows('calendar').filter(c => c.day === G.day && hm(c.time, 0) >= G.minute - 30).sort((a, b) => hm(a.time, 0) - hm(b.time, 0))[0];
+    const cal = calendar().filter(c => c.day === G.day && hm(c.time, 0) >= G.minute - 30).sort((a, b) => hm(a.time, 0) - hm(b.time, 0))[0];
     if (cal) setBox($('next'), `Next: <b>${hhmm(hm(cal.time, 0))}</b> ${esc(cal.title)}${cal.place ? ' · ' + esc(place(cal.place).name) : ''}`, `다음 일정: ${cal.time} ${cal.title_ko || cal.title}`);
     else setBox($('next'), null);
     Object.values(npcActors).forEach(a => { if (a.mark) a.mark.visible = open.some(e => e.npc === a.id && !isPhone(e)); });
@@ -1671,21 +1688,40 @@
     usVoices = voices.filter(v => /^en[-_]US/i.test(v.lang));
   }
   if (window.speechSynthesis) { pickVoices(); if (speechSynthesis.addEventListener) speechSynthesis.addEventListener('voiceschanged', pickVoices); }
-  const voiceOf = (n) => n ? { pitch: n.voice_pitch, rate: n.voice_rate, like: n.voice_like } : {};
-  function speak(text, v) {
+  // Everybody has a voice of their own, the hero too (the npcs row with the hero's id). Which of the browser's voices:
+  // the one the person's voice_like names (a pattern, tried on the American voices first), else one of the American
+  // voices of the person's gender (picked by their id, so people differ where the system has several), else the
+  // default American voice with the pitch shifted down for a man or up for a woman. Pitch and rate are the person's.
+  const MALE_VOICE = /\b(male|guy|david|mark|alex|fred|tom|aaron|eric|roger|christopher|brian|andrew|davis|tony|jason|steffan|brandon|ralph|junior|reed|rocko|eddy|albert|bruce|grandpa)\b/i;
+  const FEMALE_VOICE = /\b(female|zira|aria|jenny|samantha|victoria|allison|ava|susan|michelle|ana|sara|nancy|amber|ashley|cora|elizabeth|jane|monica|kathy|nicky|joanna|kendra|kimberly|salli|ivy|emma|flo|sandy|shelley|grandma)\b|Google US English/i;
+  const voiceOf = (n) => n ? { id: n.id, pitch: n.voice_pitch, rate: n.voice_rate, like: n.voice_like, male: /^man-/.test(n.model || '') } : {};
+  const heroVoice = () => G ? voiceOf(NPCS[G.hero] || { id: G.hero, model: G.model, voice_pitch: 1, voice_rate: 0.97 }) : {};
+  function voiceFor(v) {
+    let voice = null, shift = 0;
+    if (v.like) { try { const re = new RegExp('\\b(?:' + v.like + ')\\b', 'i'); voice = usVoices.find(x => re.test(x.name)) || null; } catch (e) { /* bad pattern */ } }
+    if (!voice && v.male != null) {
+      const pool = usVoices.filter(x => (v.male ? MALE_VOICE : FEMALE_VOICE).test(x.name) && !(v.male ? FEMALE_VOICE : MALE_VOICE).test(x.name));
+      if (pool.length) voice = pool[hash(v.id || '') % pool.length];
+    }
+    if (!voice) {
+      voice = usVoices.find(x => /Google US English/i.test(x.name)) || usVoices[0] || voices[0] || null;
+      const isMale = !!voice && MALE_VOICE.test(voice.name) && !FEMALE_VOICE.test(voice.name);
+      if (v.male === true && !isMale) shift = -0.3;
+      if (v.male === false && isMale) shift = 0.3;
+    }
+    return { voice, shift };
+  }
+  function speak(text, v, queue) {          // queue: after what is being said now (the reply to what you just said)
     if (!voiceBox.checked || !window.speechSynthesis || !text) return;
     const clean = String(text).replace(/[…]/g, ',').replace(/^\(.*\)$/, '').trim();
     if (!clean) return;
     v = v || {};
     try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(clean);
-      let voice = null;
-      if (v.like) { try { const re = new RegExp(v.like, 'i'); voice = voices.find(x => re.test(x.name)); } catch (e) { /* bad pattern */ } }
-      voice = voice || usVoices.find(x => /Google US English/i.test(x.name)) || usVoices[0] || voices[0];
-      if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = 'en-US';
+      if (!queue) speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(clean), pick = voiceFor(v);
+      if (pick.voice) { u.voice = pick.voice; u.lang = pick.voice.lang; } else u.lang = 'en-US';
       u.rate = +v.rate || 0.95;
-      u.pitch = +v.pitch || 1;
+      u.pitch = clamp((+v.pitch || 1) + pick.shift, 0.4, 1.8);
       speechSynthesis.speak(u);
     } catch (e) { /* no speech here */ }
   }
@@ -1698,8 +1734,14 @@
     if (typing(e)) return;
     keys[e.code] = true;
     if ((e.code === 'KeyE' || e.code === 'Enter') && state === 'play' && actions.length) { e.preventDefault(); actions[0].run(); }
+    if (state === 'tour') {
+      const what = { Escape: 'back', Space: 'auto', KeyT: 'time', KeyY: 'weather' }[e.code];
+      if (what) { e.preventDefault(); tourDo(what); }
+      if (/Arrow|Space/.test(e.code)) e.preventDefault();
+      return;
+    }
     if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
-    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank' }[e.code];
+    const panelKey = { KeyP: 'phrasebook', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank', KeyT: 'talks' }[e.code];
     if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
   });
@@ -1868,7 +1910,7 @@
   }
   function portalTick() {
     if (!Z || !player || busy || state !== 'play') return;
-    const inside = (Z.portals || []).find(p => {
+    const inside = portalsOf(Z).find(p => {
       const w = (p.size || [1, 1])[0] / 2, d = (p.size || [1, 1])[1] / 2;
       return Math.abs(player.pos.x - p.at[0]) <= w && Math.abs(player.pos.z - p.at[1]) <= d;
     });
@@ -1888,7 +1930,7 @@
     if (zoneId === 'airport' && !TRAVEL_ZONES.includes(inside.to) && G.trip) { flight = 120; G.trip = false; }
     travel(inside.to, inside.arrive, null, flight);
   }
-  function tripToday() { return rows('episodes').some(e => !G.done[e.id] && dayIn(e) && TRAVEL_ZONES.includes(zoneOfPlace(e.place))); }
+  function tripToday() { return episodes().some(e => !G.done[e.id] && dayIn(e) && TRAVEL_ZONES.includes(zoneOfPlace(e.place))); }
   function portalPlace(p) {        // the place a portal belongs to: the nearest one in this zone
     let best = null, bd = 3;
     Object.keys(Z.places).forEach(pid => { const a = Z.places[pid].at; const d = a ? Math.hypot(a[0] - p.at[0], a[1] - p.at[1]) : 9; if (d < bd) { bd = d; best = pid; } });
@@ -1929,8 +1971,86 @@
     v.z = clamp(v.z, -hd, hd);
   }
 
+  // Looking round the town (the title screen's "Look around town"): the camera circles a point you move over the
+  // town. ↑↓ / W S: forward and back, ← → / A D: turn, Q E: sideways, Z X (or the wheel): closer and farther,
+  // R F: higher and lower, Space: the slow circling on and off, T: the time of day, Y: the weather, Esc: back.
+  const tour = { x: 0, z: 0, yaw: 0, dist: 24, pitch: 0.42, auto: true, minute: 600, wx: null, drag: null };
+  const TOUR_TIMES = [[600, 'Morning'], [780, 'Afternoon'], [1105, 'Sunset'], [1290, 'Night'], [400, 'Sunrise']];
+  const TOUR_WX = [null, 'partly', 'cloudy', 'rain', 'fog'];
+  async function startTour() {
+    if (busy || jog) return;
+    if (G) { saveGame(); G = null; }
+    if (player) scene.remove(player.holder);
+    Object.assign(tour, { x: 0, z: 0, yaw: cam.orbit, dist: 24, pitch: 0.42, auto: true, minute: 600, wx: null });
+    $('title').hidden = true;
+    state = 'tour';
+    if (zoneId !== 'city') await enterZone('city');
+    state = 'tour';
+    fadedNow.forEach(h => setFaded(h, false));
+    fadedNow = new Set();
+    marker.group.visible = false;
+    $('tour').hidden = false;
+    document.body.classList.add('touring');
+    tourLabels();
+    envTimer = 0;
+  }
+  function endTour() {
+    if (state !== 'tour') return;
+    $('tour').hidden = true;
+    document.body.classList.remove('touring');
+    cam.orbit = tour.yaw;
+    showTitle();
+    envTimer = 0;
+  }
+  function tourLabels() {
+    const t = TOUR_TIMES.find(x => x[0] === tour.minute) || TOUR_TIMES[0];
+    $('tour').querySelector('[data-tour="time"]').textContent = `Time: ${t[1]}`;
+    $('tour').querySelector('[data-tour="weather"]').textContent = `Weather: ${tour.wx ? WX_NAME[tour.wx] : 'Sunny'}`;
+    $('tour').querySelector('[data-tour="auto"]').textContent = tour.auto ? 'Circling: on' : 'Circling: off';
+  }
+  function tourDo(what) {
+    if (what === 'back') { endTour(); return; }
+    if (what === 'time') tour.minute = TOUR_TIMES[(TOUR_TIMES.findIndex(x => x[0] === tour.minute) + 1) % TOUR_TIMES.length][0];
+    if (what === 'weather') tour.wx = TOUR_WX[(TOUR_WX.indexOf(tour.wx) + 1) % TOUR_WX.length];
+    if (what === 'auto') tour.auto = !tour.auto;
+    if (what === 'in') tour.dist = clamp(tour.dist * 0.8, 5, 70);
+    if (what === 'out') tour.dist = clamp(tour.dist * 1.25, 5, 70);
+    envTimer = 0;
+    tourLabels();
+  }
+  function tourTick(dt) {
+    const k = keys, fwd = (k.ArrowUp || k.KeyW ? 1 : 0) - (k.ArrowDown || k.KeyS ? 1 : 0), turn = (k.ArrowLeft || k.KeyA ? 1 : 0) - (k.ArrowRight || k.KeyD ? 1 : 0);
+    const side = (k.KeyE ? 1 : 0) - (k.KeyQ ? 1 : 0), zoom = (k.KeyX || k.Minus ? 1 : 0) - (k.KeyZ || k.Equal ? 1 : 0), tilt = (k.KeyR ? 1 : 0) - (k.KeyF ? 1 : 0);
+    const fast = k.ShiftLeft || k.ShiftRight ? 2.2 : 1, move = (6 + tour.dist * 0.35) * fast * dt;
+    if (fwd || turn || side || zoom || tilt) { if (tour.auto) { tour.auto = false; tourLabels(); } }
+    if (tour.auto) tour.yaw += dt * 0.06;
+    tour.yaw += turn * 1.3 * dt;
+    // forward is away from the camera, over the ground
+    const fx = -Math.sin(tour.yaw), fz = -Math.cos(tour.yaw);
+    tour.x = clamp(tour.x + (fx * fwd - fz * side) * move, -34, 34);
+    tour.z = clamp(tour.z + (fz * fwd + fx * side) * move, -34, 34);
+    tour.dist = clamp(tour.dist * (1 + zoom * 1.1 * dt), 5, 70);
+    tour.pitch = clamp(tour.pitch + tilt * 0.7 * dt, 0.06, 1.35);
+    const h = Math.cos(tour.pitch) * tour.dist;
+    camera.position.set(tour.x + Math.sin(tour.yaw) * h, Math.max(0.7, Math.sin(tour.pitch) * tour.dist), tour.z + Math.cos(tour.yaw) * h);
+    camera.lookAt(tour.x, 0.8, tour.z);
+    cam.pos.copy(camera.position);
+    cam.look.set(tour.x, 0.8, tour.z);
+  }
+  canvas.addEventListener('pointerdown', (e) => { if (state !== 'tour') return; tour.drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener('pointermove', (e) => {
+    if (state !== 'tour' || !tour.drag || tour.drag.id !== e.pointerId) return;
+    tour.yaw -= (e.clientX - tour.drag.x) * 0.006;
+    tour.pitch = clamp(tour.pitch + (e.clientY - tour.drag.y) * 0.004, 0.06, 1.35);
+    tour.drag.x = e.clientX; tour.drag.y = e.clientY;
+    if (tour.auto) { tour.auto = false; tourLabels(); }
+  });
+  ['pointerup', 'pointercancel'].forEach(n => canvas.addEventListener(n, () => { tour.drag = null; }));
+  canvas.addEventListener('wheel', (e) => { if (state !== 'tour') return; e.preventDefault(); tour.dist = clamp(tour.dist * (e.deltaY > 0 ? 1.1 : 0.9), 5, 70); }, { passive: false });
+
   function cameraTick(dt) {
     if (!Z) { camera.position.set(0, 3, 8); camera.lookAt(0, 1, 0); return; }
+    if (state === 'tour') { tourTick(dt); return; }
     if (state === 'title' || !player) {
       cam.orbit += dt * 0.06;
       const r = Math.max(Z.size[0], Z.size[1]) * 0.45 + 4;
@@ -2028,7 +2148,8 @@
     if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: `Closed · open ${hoursText(shut)}`, run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${pl.name_ko || pl.name}: 영업시간 ${hoursText(shut)}`, 'bad') });
     else if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
     if (isBusStop(pid) && zoneId === 'city') out.push({ key: 'bus:' + pid, label: `Take the bus (${usd2(busFare())})`, run: () => openPanel('bus', pid) });
-    if (kind === 'work' || pid === 'office_desk') out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
+    if (kind === 'work' || pid === hero().desk) out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
+    if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: 'Go for a jog', run: () => startJog(true) });
     if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
     return out;
   }
@@ -2098,7 +2219,7 @@
   // ---------------------------------------------------------------- conversations: an episode's turns
   const dlg = $('dialog');
   let talk = null;          // { ep, turns, idx, actor, misses }
-  const personal = (s) => { if (s == null) return ''; s = String(s).replace(/\{name\}/g, G ? G.name : 'Jun'); return G && G.name !== 'Jun' ? s.replace(/\bJun\b/g, G.name) : s; };
+  const personal = (s) => s == null ? '' : String(s).replace(/\{name\}/g, G ? G.name : heroOf(DEFAULT_HERO).name);
   function speakerOf(id) {
     if (!id) return talk && talk.actor;
     if (id === 'player' || id === 'you') return player;
@@ -2200,9 +2321,11 @@
   let replyTimer = null;
   function answered(text) {
     const t = talk.turns[talk.idx], mine = talk;
+    (talk.said = talk.said || [])[talk.idx] = text;          // kept for Menu > Conversations
     dlg.classList.add('answered');
     dlg.querySelector('.leave').hidden = true;
     say(player, text, null, 3.4);
+    speak(text, heroVoice());          // you say it aloud, in your own voice; the reply waits for you to finish
     play(player, 'emote-yes', { once: true });
     feedback('ok', '✓ ' + text);
     clearTimeout(replyTimer);
@@ -2215,7 +2338,7 @@
         dlg.querySelector('.line-ko').textContent = t.reply_ko || '';
         const who = speakerOf(rs);
         if (who && who !== player) { say(who, personal(t.reply_line), null, 4.5); play(who, 'interact-left', { once: true }); }
-        speak(personal(t.reply_line), voiceOf(npcRow(rs || talk.ep.npc)));
+        speak(personal(t.reply_line), voiceOf(npcRow(rs || talk.ep.npc)), true);
       }
       showNext();
     }, fastMode ? 250 : 1300);
@@ -2235,6 +2358,7 @@
     const ep = talk.ep;
     dlg.hidden = true;
     $('side').hidden = false;
+    if (talk.said && talk.said.length) (G.said = G.said || {})[ep.id] = talk.said.map(x => x == null ? null : String(x).slice(0, 200));
     talk = null;
     G.done[ep.id] = true;
     if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend');
@@ -2297,7 +2421,7 @@
     } else if (panelKind === 'bus') {
       h.textContent = 'Bus';
       const here = panelArg;
-      const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || (Z.portals || []).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
+      const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || portalsOf(Z).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
       const pass = rows('items').find(i => busItem(i) && /pass/.test(i.id));
       body.innerHTML = stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')} · about 15 minutes</div></div>
         <span class="price">${hasPass() ? 'Pass' : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}">Ride</button></div>`).join('') || '<p class="empty">No stops on this line.</p>';
@@ -2305,7 +2429,7 @@
         <span class="price">${usd2(+pass.price)}</span><button type="button" data-pass="${esc(pass.id)}">Buy</button></div>`;
     } else if (panelKind === 'inventory') {
       h.textContent = 'Inventory';
-      const canEat = zoneId === 'home' || zoneId === 'hotel';
+      const canEat = zoneId === hero().home_zone || zoneId === 'hotel';
       const list = Object.keys(G.inventory).filter(id => G.inventory[id] > 0);
       body.innerHTML = list.map(id => { const i = ITEMS[id] || { id, name: pretty(id), energy: 0 }; return `<div class="row"><div class="main"><div class="t">${esc(i.name)} × ${G.inventory[id]}</div>
         <div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}</div></div>${i.energy ? `<button type="button" data-eat="${esc(id)}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : ''}</div>`; }).join('')
@@ -2324,10 +2448,10 @@
       const d0 = Math.floor((G.day - 1) / 7) * 7 + 1;
       let html = '';
       for (let d = d0; d < d0 + 7; d++) {
-        const evs = rows('calendar').filter(c => c.day === d).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
+        const evs = calendar().filter(c => c.day === d).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
         const extra = [];
-        if (PAYDAYS.includes(d)) extra.push(`Payday: ${usd(+CFG.salary_net)} direct deposit`);
-        if (isRentDay(d)) extra.push(`Rent due: ${usd(+CFG.rent)}`);
+        if (PAYDAYS.includes(d)) extra.push(`Payday: ${usd(+hero().salary_net)} direct deposit`);
+        if (isRentDay(d)) extra.push(`${hero().housing_name || 'Rent'} due: ${usd(+hero().housing)}`);
         billsDue(d).forEach(b => extra.push(`Autopay: ${b.name} ${usd2(+b.amount)}`));
         if (!evs.length && !extra.length && d !== G.day) continue;
         html += `<h3>${weekday(d)}, Day ${d}${d === G.day ? ' · today' : ''}</h3>`;
@@ -2337,14 +2461,31 @@
         if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
       }
       body.innerHTML = html;
+    } else if (panelKind === 'talks') {
+      // the conversations you have had, newest first: what was said to you, what you answered, and the reply; every line can be heard again
+      h.textContent = 'Conversations';
+      const had = G.log.filter(l => l.type === 'episode' && l.id && EPISODES[l.id] && G.done[l.id]).slice().reverse();
+      sub.textContent = `${had.length} finished`;
+      const sayBtn = (text, who) => `<button type="button" class="play" data-say="${esc(text)}" data-voice="${esc(who || '')}" aria-label="Play">▶</button>`;
+      body.innerHTML = had.map((l, n) => {
+        const ep = EPISODES[l.id], said = (G.said || {})[l.id] || [];
+        const lines = (TURNS[l.id] || []).map((t, i) => {
+          const who = t.speaker || ep.npc, mine = personal(said[i] || t.model), rs = t.reply_speaker || who;
+          return `${t.situation ? `<p class="scene">${esc(personal(t.situation))}<span class="ko"> ${esc(t.situation_ko || '')}</span></p>` : ''}
+            <div class="said">${sayBtn(personal(t.line), who)}<div><b>${esc(npcRow(who).name.split(' ')[0])}</b> ${esc(personal(t.line))}</div></div>
+            ${mine ? `<div class="said me">${sayBtn(mine, G.hero)}<div><b>${esc(G.name)}</b> ${esc(mine)}${said[i] && M.normalize(said[i]) !== M.normalize(personal(t.model)) ? `<span class="model">Example: ${esc(personal(t.model))}</span>` : ''}</div></div>` : ''}
+            ${t.reply_line ? `<div class="said">${sayBtn(personal(t.reply_line), rs)}<div><b>${esc(npcRow(rs).name.split(' ')[0])}</b> ${esc(personal(t.reply_line))}<span class="ko"> ${esc(t.reply_ko || '')}</span></div></div>` : ''}`;
+        }).join('');
+        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${weekday(l.day).slice(0, 3)}, Day ${l.day} · ${clock(l.minute)}</span> <b>${esc(ep.title)}</b><span class="with"> with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}</span><span class="ko"> ${esc(ep.title_ko || '')}</span></summary>${lines}</details>`;
+      }).join('') || '<p class="empty">Conversations you finish are kept here, so you can read and hear them again.</p>';
     } else if (panelKind === 'bank') {
       h.textContent = 'Bank';
       sub.textContent = 'Checking ···4821';
       const soon = [];
       for (let d = G.day + 1; d <= G.day + 14; d++) {
         const when = `${weekday(d).slice(0, 3)}, Day ${d}`;
-        if (PAYDAYS.includes(d)) soon.push([when, 'Paycheck (direct deposit)', +CFG.salary_net]);
-        if (isRentDay(d)) soon.push([when, 'Rent', -CFG.rent]);
+        if (PAYDAYS.includes(d)) soon.push([when, 'Paycheck (direct deposit)', +hero().salary_net]);
+        if (isRentDay(d)) soon.push([when, hero().housing_name || 'Rent', -hero().housing]);
         billsDue(d).forEach(b => soon.push([when, b.name + ' (autopay)', -b.amount]));
       }
       const KIND = { income: 'Deposit', spend: 'Debit card', bill: 'Autopay' };
@@ -2362,7 +2503,7 @@
   panel.addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    if (b.dataset.say) speak(b.dataset.say);
+    if (b.dataset.say) speak(b.dataset.say, b.dataset.voice ? voiceOf(NPCS[b.dataset.voice] || npcRow(b.dataset.voice)) : undefined);
     if (b.dataset.buy) buy(b.dataset.buy);
     if (b.dataset.tip != null && panelKind === 'shop') { tipChoice[panelArg] = +b.dataset.tip; renderPanel(); }
     if (b.dataset.eat) eat(b.dataset.eat);
@@ -2385,7 +2526,7 @@
     pin: '#2f7d7a', pinEdge: '#215c5a', door: '#7b5a3e', label: '#1d2433', labelBox: 'rgba(255,255,255,0.88)', street: '#7a7366', area: '#3f6b3a',
     you: '#16233b', person: '#e0a33a', personEdge: '#8a5f12', bang: '#c24a3d', goal: '#e0a33a'
   };
-  const KEY_BUILDINGS = { apartment: 'home', lakeside_labs: 'office', diner: 'diner', market: 'market' };
+  const KEY_BUILDINGS = { seaside_labs: 'office', diner: 'diner', market: 'market' };      // a prop with home: '<hero>' is that hero's home
   const OPEN_DIRS = { straight: [0, 2], crossing: [0, 2], bend: [2, 1], end: [2], square: [], all: [0, 1, 2, 3] };     // east, south, west, north at turn 0
   function mapZone() { return MAP.tab === 'room' && zoneId && zoneId !== 'city' ? zoneId : 'city'; }
   // world-axis rectangle of a prop's footprint, from the zone kit's bounding boxes (like the engine's solids)
@@ -2511,7 +2652,7 @@
       }
       if (p.pack === 'city' || p.pack === 'buildings') {
         if (/^building-skyscraper/.test(node)) rect(r, MAPC.tower, MAPC.towerEdge, 1.2);
-        else if (/^(building|house|low-detail)/.test(node)) { const key = KEY_BUILDINGS[p.id]; rect(r, key ? MAPC[key] : MAPC.building, MAPC.buildingEdge, 1.2); }
+        else if (/^(building|house|low-detail)/.test(node)) { const key = p.home ? (G && p.home === G.hero ? 'home' : null) : KEY_BUILDINGS[p.id]; rect(r, key ? MAPC[key] : MAPC.building, MAPC.buildingEdge, 1.2); }
         else if (/^tree/.test(node)) disc(p.at[0], p.at[1], Math.max(3, 0.55 * s), MAPC.tree, MAPC.treeEdge);
         else if (/^fence/.test(node)) rect(r, MAPC.fence);
         else if (/^planter/.test(node)) rect(r, MAPC.planter);
@@ -2565,7 +2706,7 @@
       if (ko) halo(a.name_ko, X(a.at[0]), Y(a.at[1]) + 7, '10px ' + getComputedStyle(document.body).fontFamily, a.water ? '#2f6f9f' : MAPC.area);
     });
     // ----- doors (portals) and places
-    (spec.portals || []).forEach(p => {
+    portalsOf(spec).forEach(p => {
       const w = Math.max(6, (p.size ? p.size[0] : 1) * s), d = Math.max(4, (p.size ? p.size[1] : 0.6) * s);
       g.fillStyle = MAPC.door; g.fillRect(X(p.at[0]) - w / 2, Y(p.at[1]) - d / 2, w, d);
       g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(X(p.at[0]) - w / 2, Y(p.at[1]) - d / 2, w, d);
@@ -2574,7 +2715,7 @@
     const labels = [];
     Object.keys(spec.places).forEach(pid => {
       const pl = spec.places[pid];
-      if (!pl || !pl.at || pl.guessed) return;
+      if (!pl || !pl.at || pl.guessed || HEROES.some(h => h.home_door === pid && h.id !== G.hero)) return;
       const info = place(pid), isDoor = placeKind(pid) === 'door' || /_door$/.test(pid);
       const x = X(pl.at[0]), y = Y(pl.at[1]);
       if (isDoor) { g.fillStyle = MAPC.pin; g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); }
@@ -2586,7 +2727,7 @@
     if (goal) { g.setLineDash([3, 3]); disc(goal[0], goal[1], 12, null, MAPC.goal, 2.5); g.setLineDash([]); }
     const open = openEpisodes();
     const seen = {};
-    rows('npcs').forEach(n => {
+    cast().forEach(n => {
       const at = personOnMap(n, mz, spec);
       if (!at) return;
       const k = at.at[0].toFixed(1) + ',' + at.at[1].toFixed(1), j = (seen[k] = (seen[k] || 0) + 1) - 1;
@@ -2595,7 +2736,7 @@
       if (open.some(e => e.npc === n.id && !isPhone(e))) { g.beginPath(); g.arc(x + 4, y - 5, 5, 0, Math.PI * 2); g.fillStyle = MAPC.bang; g.fill(); halo('!', x + 4, y - 5, 'bold 8px ' + font, '#fff'); g.lineWidth = 1; }
       if (!at.inside) labels.push({ x: x + 7, y, text: String(n.name).split(' ')[0], person: true, left: true });
       else if (j === 0) {
-        const names = rows('npcs').filter(m => { const q = personOnMap(m, mz, spec); return q && q.inside === at.inside; }).map(m => String(m.name).split(' ')[0]);
+        const names = cast().filter(m => { const q = personOnMap(m, mz, spec); return q && q.inside === at.inside; }).map(m => String(m.name).split(' ')[0]);
         const where = TRAVEL_ZONES.includes(at.inside) ? ` · ${zoneName(at.inside)[0].split(',')[0]}` : '';      // by the shuttle: say where they are
         labels.push({ x: x + 12, y: y + 4, text: (names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}` : names.join(', ')) + where, person: true, left: true });
       }
@@ -2642,14 +2783,14 @@
       Object.keys(spec.places).forEach(pid => {
         const pl = spec.places[pid];
         if (!pl || pl.guessed) return;
-        const people = rows('npcs').filter(n => { const at = personOnMap(n, mz, spec); return at && !at.inside && Math.hypot(at.at[0] - pl.at[0], at.at[1] - pl.at[1]) < 2.2; }).map(n => String(n.name).split(' ')[0]);
+        const people = cast().filter(n => { const at = personOnMap(n, mz, spec); return at && !at.inside && Math.hypot(at.at[0] - pl.at[0], at.at[1] - pl.at[1]) < 2.2; }).map(n => String(n.name).split(' ')[0]);
         const acts = placeActions(pid).map(a => a.label.replace(/ \(.*\)$/, ''));
-        const talk = open.filter(e => (isPhone(e) ? e.place === pid : rows('npcs').some(n => n.id === e.npc && (npcPlaceNow(n) === pid)))).map(e => e.title);
+        const talk = open.filter(e => (isPhone(e) ? e.place === pid : cast().some(n => n.id === e.npc && (npcPlaceNow(n) === pid)))).map(e => e.title);
         if (!people.length && !acts.length && !talk.length) return;
         items.push(`<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')}${people.length ? ' · ' + esc(people.join(', ')) : ''}${acts.length ? ' · ' + esc(acts.join(', ')) : ''}</div>${talk.length ? `<div class="s talk">! ${esc(talk.join(' · '))}</div>` : ''}</div></div>`);
       });
       if (mz === 'city') {
-        const gone = rows('npcs').filter(n => !personOnMap(n, mz, spec));
+        const gone = cast().filter(n => !personOnMap(n, mz, spec));
         const away = gone.filter(n => npcPlaceNow(n)).map(n => `${String(n.name).split(' ')[0]} (${zoneName(zoneOfPlace(npcPlaceNow(n)))[0]})`);
         const off = gone.filter(n => !npcPlaceNow(n)).map(n => String(n.name).split(' ')[0]);
         if (off.length) items.push(`<div class="row"><div class="main"><div class="t">Off today or gone home</div><div class="s">${esc(off.join(', '))}</div></div></div>`);
@@ -2722,20 +2863,21 @@
     const spent = -today.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0);
     const earned = today.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0);
     const phrasesToday = eps.reduce((n, l) => n + rows('phrases').filter(p => p.episode === l.id).length, 0);
-    const missed = rows('episodes').filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1));
+    const missed = episodes().filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1));
     const away = TRAVEL_ZONES.includes(zoneId);
     logEvent('sleep', late ? 'Fell asleep' : 'Slept', 0);
     G.day += 1;
     G.minute = DAY_START;
     G.energy = E_MAX;
     const morning = [];
-    if (PAYDAYS.includes(G.day)) { pay(+CFG.salary_net, 'Paycheck (direct deposit)', 'income'); morning.push(`Payday: <b>${usd2(+CFG.salary_net)}</b> was deposited to your account (gross ${usd(+CFG.salary_gross)}).`); }
-    if (isRentDay(G.day)) { pay(-CFG.rent, 'Rent', 'bill'); morning.push(`Rent: <b>${usd2(+CFG.rent)}</b> was paid to your landlord.`); }
+    const me = hero(), housing = me.housing_name || 'Rent';
+    if (PAYDAYS.includes(G.day)) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income'); morning.push(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)}).`); }
+    if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill'); morning.push(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`); }
     billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill'); morning.push(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.<span class="ko"> 자동이체: ${esc(b.name_ko || b.name)}</span>`); });
     if (G.money < 0) morning.push('Your account is <b>overdrawn</b>. Spend carefully until payday.<span class="ko"> 계좌 잔액이 마이너스예요. 월급날까지 아껴 쓰세요.</span>');
     const wx = weatherOf(G.day);
     morning.unshift(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}<span class="ko"> ${esc(wx.forecast_ko || '')} (최고 ${toC(wx.high_f)}°C)</span>`);
-    const cal = rows('calendar').filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
+    const cal = calendar().filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
     const body = `<div class="sum"><div><b>${eps.length}</b>conversations</div><div><b>${phrasesToday}</b>new phrases</div><div><b>${usd2(spent)}</b>spent</div><div><b>${usd2(earned)}</b>earned</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(l.text)}</li>`).join('') + '</ul>' : ''}
       ${missed.length ? `<p>Missed: ${missed.map(e => esc(e.title)).join(', ')}</p>` : ''}
@@ -2744,7 +2886,7 @@
       <p>Balance: <b>${usd2(G.money)}</b></p>`;
     saveGame();
     state = 'sleep';
-    const wake = pid && zoneId ? [zoneId, pid] : away ? ['hotel', 'hotel_room'] : ['home', 'home_bed'];
+    const wake = pid && zoneId ? [zoneId, pid] : away ? ['hotel', 'hotel_room'] : [hero().home_zone, hero().home_bed];
     const p = enterZone(wake[0], wake[1]).then(() => { if (player) player.heading += 0; saveGame(); });
     showCard({ kicker: late ? 'You fell asleep' : 'Good night', title: `${weekday(day)}, Day ${day} is over`, body, ok: 'Start the day', state: 'sleep' }, () => { goalTimer = 0; });
     return p;
@@ -2801,25 +2943,33 @@
 
   // ---------------------------------------------------------------- title: name, character, continue / new game
   let state = 'title';
-  let chosen = settings.model && CHARACTERS.includes(settings.model) ? settings.model : DEFAULT_CHARACTER;
-  const nameIn = $('name-in');
-  nameIn.value = settings.name || CFG.player_name || 'Jun';
+  let chosen = heroOf(settings.hero).id;          // the hero picked on the title card
   const charBox = $('chars');
-  CHARACTERS.forEach(id => {
+  HEROES.forEach(h => {
     const b = document.createElement('button');
     b.type = 'button';
     b.setAttribute('role', 'radio');
-    b.dataset.model = id;
-    b.textContent = charLabel(id);
-    b.addEventListener('click', () => { chosen = id; markChosen(); });
+    b.dataset.hero = h.id;
+    b.innerHTML = `<b></b><span></span><span class="ko"></span>`;
+    b.querySelector('b').textContent = h.name;
+    b.querySelector('span').textContent = h.role;
+    b.querySelector('.ko').textContent = h.role_ko || '';
+    b.addEventListener('click', () => { chosen = h.id; replaceArmed = false; markChosen(); newGameLabel(); });
     charBox.appendChild(b);
   });
   function markChosen() {
+    const h = heroOf(chosen);
     charBox.querySelectorAll('button').forEach(b => {
-      b.setAttribute('aria-checked', String(b.dataset.model === chosen));
-      b.classList.toggle('nomodel', packs[b.dataset.model] && packs[b.dataset.model].status === 'missing');
+      b.setAttribute('aria-checked', String(b.dataset.hero === chosen));
+      const m = heroOf(b.dataset.hero).model;
+      b.classList.toggle('nomodel', !!packs[m] && packs[m].status === 'missing');
     });
-    setPreview(chosen);
+    const info = $('hero-info');
+    if (info) info.innerHTML = `<p class="who"><b>${esc(h.full_name || h.name)}</b> · ${esc(h.role)}</p><p>${esc(h.bio || '')}</p><p class="ko">${esc(h.bio_ko || '')}</p>
+      <dl><dt>Home</dt><dd>${esc(h.home_name || zoneName(h.home_zone)[0])}<span class="ko"> ${esc(h.home_name_ko || '')}</span></dd>
+      <dt>English</dt><dd>${esc(h.level || '')}<span class="ko"> ${esc(h.level_ko || '')}</span></dd>
+      <dt>Money</dt><dd>${usd(+h.start_money)} to start · ${usd(+h.salary_net)} every other Friday · ${esc(String(h.housing_name || 'Rent').toLowerCase())} ${usd(+h.housing)}</dd></dl>`;
+    setPreview(h.model);
   }
   const preview = { renderer: null, scene: null, camera: null, actor: null, model: null };
   function setPreview(model) {
@@ -2879,7 +3029,7 @@
       go.className = 'go';
       go.innerHTML = `<b></b><span></span>`;
       go.querySelector('b').textContent = g.name;
-      go.querySelector('span').textContent = `${charLabel(g.model)} · ${weekday(g.day).slice(0, 3)} Day ${g.day}, ${clock(g.minute)} · ${usd(g.money)}`;
+      go.querySelector('span').textContent = `${heroOf(g.hero).role} · ${weekday(g.day).slice(0, 3)} Day ${g.day}, ${clock(g.minute)} · ${usd(g.money)}`;
       go.addEventListener('click', () => continueGame(g.name));
       const del = document.createElement('button');
       del.type = 'button';
@@ -2902,43 +3052,47 @@
   }
   let replaceArmed = false;
   function newGameLabel() {         // 'New game', or a warning when the name is taken by a saved game
-    const name = (nameIn.value || '').trim().slice(0, 16), taken = !!(name && allSaves()[name]);
+    const name = heroOf(chosen).name, taken = !!allSaves()[name];
     const btn = $('new-game'), note = $('new-note');
     if (btn.disabled) return;
-    btn.textContent = taken ? `New game as ${name}` : 'New game';
+    btn.textContent = `New game as ${name}`;
     note.hidden = !(taken && replaceArmed);
-    if (taken && replaceArmed) note.textContent = `${name} already has a saved game. Click again to replace it, or use another name.`;
+    if (taken && replaceArmed) note.textContent = `${name} already has a saved game (continue it from the list above). Click again to start over and replace it.`;
   }
-  nameIn.addEventListener('input', () => { replaceArmed = false; newGameLabel(); });
   function continueGame(name) {
     const s = allSaves()[name];
     if (!s) return;
-    const g = Object.assign(newGame(s.name, s.model), s);
-    if (!CHARACTERS.includes(g.model)) g.model = DEFAULT_CHARACTER;     // a save from before (the Kenney character-male-a …)
+    // a save from before there were heroes is Jun's game, under the name and the look it was played with
+    const g = Object.assign(newGame(s.hero), s, { hero: heroOf(s.hero).id });
+    if (!/^(man|woman)-/.test(g.model || '')) g.model = heroOf(g.hero).model;
     startGame(g, false);
   }
   async function startGame(g, fresh) {
     G = g;
-    settings.name = G.name; settings.model = G.model;
+    settings.hero = G.hero;
     saveSettings();
     $('title').hidden = true;
     state = 'play';
     busy = true;
-    if (G.at && !fresh) await enterZone(G.zone || 'home', null, G.at, G.heading);
-    else await enterZone(G.zone || 'home', 'home_bed');
+    if (G.at && !fresh) await enterZone(G.zone || hero().home_zone, null, G.at, G.heading);
+    else await enterZone(hero().home_zone, hero().home_bed);
     $('side').hidden = false;
     goalTimer = 0;
     hud();
     if (fresh) {
-      toast(`${weekday(G.day)}, Day ${G.day}. Welcome to ${CFG.city}, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
+      if (G.hero === DEFAULT_HERO) toast(`${weekday(G.day)}, Day ${G.day}. Welcome to ${CFG.city}, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
+      else toast(`${weekday(G.day)}, Day ${G.day}. Good morning, ${G.name}!`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${G.day}일째. 좋은 아침이에요, ${G.name}!`, 'good', 4);
       const wx = weatherOf(G.day);
       if (wx.forecast) setTimeout(() => toast(`${WX_ICON[wx.kind] || ''} ${wx.high_f}°F today. ${wx.forecast}`, `오늘 최고 ${toC(wx.high_f)}°C. ${wx.forecast_ko || ''}`, null, 5), 4200);
       logEvent('start', 'New game', 0);
       saveGame();
     }
   }
+  if ($('jog-game')) $('jog-game').addEventListener('click', () => startJog(false));
+  if ($('tour-game')) $('tour-game').addEventListener('click', () => startTour());
+  if ($('tour')) $('tour').addEventListener('click', (e) => { const b = e.target.closest('button[data-tour]'); if (b) { tourDo(b.dataset.tour); b.blur(); } });
   $('new-game').addEventListener('click', () => {
-    const g = newGame(nameIn.value, chosen);
+    const g = newGame(chosen);
     if (allSaves()[g.name] && !replaceArmed) { replaceArmed = true; newGameLabel(); return; }
     replaceArmed = false;
     startGame(g, true);
@@ -2951,7 +3105,7 @@
     T, scene, camera, renderer, toon, litMaterial, shadows, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
     get zone() { return zoneId; }, get spec() { return Z; }, get group() { return zoneGroup; }, get player() { return player; },
     get npcs() { return npcActors; }, get props() { return zoneProps; }, get game() { return G; }, get state() { return state; },
-    get day() { return G ? G.day : 0; }, get minute() { return G ? G.minute : 600; }, isDone: (id) => !!(G && G.done[id]),
+    get day() { return G ? G.day : 0; }, get minute() { return hourNow() * 60; }, isDone: (id) => !!(G && G.done[id]),
     solid: (x0, z0, x1, z1) => solids.push({ x0, z0, x1, z1 }),
     occlude: (obj) => { occluders.push(obj); occluderSet.add(obj); },     // see-through when it hides a person from the camera
     // for office/life.js (and zone files): every placed prop and tile ({ spec, holder, object }), the static solids, people
@@ -2959,12 +3113,59 @@
     // colliders that move (circles { x, z, r } the player is pushed out of), the light and the graphics setting
     get propList() { return zoneAll; }, get solids() { return solids; }, get movers() { return movers; },
     get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
-    get weather() { return weatherNow(); }, get weekend() { return !!G && isWeekend(G.day); },
+    get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get weekend() { return !!G && isWeekend(G.day); },
     get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
     loadPack, packReady, findPath: (from, to, opts, cb) => requestPath(from, to, opts, cb),
     blocked: (x, z, r) => solids.some(s => x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r)
   };
+
+  // ---------------------------------------------------------------- jogging (office/jog.js): a run round the Fairview Loop, seen through your own eyes
+  // From the door of your home (story: the run takes 40 minutes of the day and some energy, and you come back home), or
+  // from the title screen as a game of its own (nobody's day: a clear morning, no clock).
+  let jog = null, jogTrail = null;
+  async function startJog(story) {
+    if (!window.SO_JOG || jog || busy) return;
+    if (story) {
+      if (G.energy < 15) { toast("You're too tired to run. Eat something first.", '달리기엔 너무 지쳤어요. 먼저 뭘 좀 드세요.', 'bad'); return; }
+      if (G.minute >= 21.5 * 60) { toast("It's too late for a run.", '달리기엔 너무 늦었어요.'); return; }
+    }
+    const from = story ? { zone: zoneId, place: Object.keys(Z.places).find(p => placeKind(p) === 'door') } : null;
+    const who = story ? hero() : heroOf(chosen);
+    if (!story) { if (G) { saveGame(); G = null; } if (player) scene.remove(player.holder); }
+    state = 'jog';
+    $('title').hidden = true;
+    $('side').hidden = true;
+    toggleMenu(false);
+    await enterZone('city', null, SO_JOG.route.pts[0]);
+    state = 'jog';
+    if (player) player.holder.visible = false;
+    marker.group.visible = false;
+    jog = SO_JOG.create(Object.assign(Object.create(api), {
+      place(x, z, heading) { if (player) { player.pos.set(x, 0, z); player.heading = heading; } cam.pos.copy(camera.position); cam.look.set(x, 0.7, z); }
+    }), {
+      name: who.name, model: who.model, voice: voiceOf(NPCS[who.id] || { id: who.id, model: who.model }),
+      onEnd(result, again) {
+        jog = null;
+        if (player) player.holder.visible = true;
+        resize();
+        if (story && result) {
+          advanceMinutes(40);
+          G.energy = clamp(G.energy - 12, 0, E_MAX);
+          logEvent('jog', `Jog: ${result.time.toFixed(2)} s, ${result.score} points`, 0, { time: result.time, score: result.score });
+        }
+        if (again && (!story || (G.energy >= 15 && G.minute < 21.5 * 60))) { state = story ? 'play' : 'title'; startJog(story); return; }
+        if (story) {
+          state = 'play';
+          enterZone(from.zone, from.place).then(() => {
+            $('side').hidden = false;
+            if (result) toast(`Good run: ${result.time.toFixed(2)} s. You feel great.`, `잘 달렸어요: ${result.time.toFixed(2)}초. 기분이 상쾌해요.`, 'good', 4);
+            saveGame();
+          });
+        } else showTitle();
+      }
+    });
+  }
 
   // ---------------------------------------------------------------- the life of a zone (office/life.js): cars, passers-by, traffic lights, trees
   let life = null, lifePaused = false, lifeBroken = false, lifeMs = 0;
@@ -3006,7 +3207,8 @@
     if (panelKind === 'map' && !panel.hidden && (mapTimer -= dt) <= 0) { mapTimer = 0.5; drawMap(); }     // people move while the map is open
     envTick(dt);
     markerTick(elapsed);
-    cameraTick(dt);
+    if (jog) jog.update(dt); else cameraTick(dt);
+    if (window.SO_JOG && !jog) SO_JOG.sea.near(Z && zoneId === 'city' && player && state !== 'title' ? player.pos.z : -99);          // the surf, south of town
     placeBubbles();
     placeTags();
     renderer.render(scene, camera);
@@ -3072,11 +3274,22 @@
     get models() { const o = {}; Object.keys(packs).forEach(k => { o[k] = packs[k].status; }); return o; },
     set speed(v) { debugSpeed = +v || 1; }, set fast(v) { fastMode = !!v; },
     get gfx() { return gfxHigh() ? 'high' : 'low'; }, set gfx(v) { settings.gfx = v === 'low' ? 'low' : 'high'; applyQuality(); },
-    async start(name, model) {
+    get hero() { return G ? G.hero : null; }, get heroes() { return HEROES.map(h => h.id); },
+    tour: { async start() { await startTour(); return state; }, do(what) { tourDo(what); return Object.assign({}, tour); }, get view() { return Object.assign({}, tour); } },
+    // the jogging game: jog.start(story) and what a run says about itself; jog.press(0 | 1) steps, jog.auto(n) lands the next n steps on the beat
+    jog: {
+      async start(story) { await startJog(!!story); return !!jog; },
+      get on() { return !!jog; }, get state() { return jog ? jog.state : null; },
+      press(foot) { if (jog) jog.press(foot); },
+      stop() { if (jog) jog.stop(); },
+      records() { return window.SO_JOG ? SO_JOG.records() : null; }
+    },
+    voice(id) { const p = voiceFor(voiceOf(NPCS[id] || {})); return { name: p.voice ? p.voice.name : null, shift: p.shift }; },
+    async start(heroId) {          // a new game as that hero (anything else: the first hero)
       await until(() => ready, 20000);
       if (talk) endTalk();
       $('card').hidden = true; panel.hidden = true;
-      await startGame(newGame(name || CFG.player_name, model || DEFAULT_CHARACTER), true);
+      await startGame(newGame(heroId), true);
       return true;
     },
     async goto(zone, placeId) {

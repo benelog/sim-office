@@ -1,4 +1,4 @@
-/* Office: Lakeside Labs on the 3rd floor, one open floor of 18 x 12. You come in through the door at the
+/* Office: Seaside Labs on the 3rd floor, one open floor of 18 x 12. You come in through the door at the
    west end of the south wall into the lobby, where Tom sits behind the reception desk (office_lobby). The
    open-plan area in the middle has two rows of three desks back to back; yours (office_desk) and Derek's
    (office_desk_team) face the south aisle. Along the north wall: Maya's manager corner in the north-west
@@ -202,7 +202,7 @@
   ]);
 
   SO_ZONES.office = {
-    name: 'Lakeside Labs, 3rd floor', name_ko: '레이크사이드 랩스 3층',
+    name: 'Seaside Labs, 3rd floor', name_ko: '시사이드 랩스 3층',
     indoor: true,
     size: [18, 12],
     floor: '#d9d3c7',
@@ -211,6 +211,7 @@
       office_lobby: { at: [-6.5, 2.0], face: [-6.5, 3.3] },
       office_desk: { at: [0.3, 2.75], face: [0.3, 2.2], sit: true },
       office_desk_team: { at: [2.2, 2.75], face: [2.2, 2.2], sit: true },
+      office_desk_priya: { at: [-1.6, 2.75], face: [-1.6, 2.2], sit: true },
       office_kitchen: { at: [8.0, 3.3], face: [8.8, 3.3] },
       office_meeting: { at: [7.1, -3.25], face: [7.1, -3.8], sit: true },
       office_manager: { at: [-7.0, -4.85], face: [-7.0, -3.6], sit: true },
@@ -248,7 +249,7 @@
           { pattern: 'road', rect: [10.4, -80, 13.4, 80], dir: 'z' }, { pattern: 'road', rect: [-13.4, -80, -10.4, 80], dir: 'z' }] },
         skyline: { kind: 'downtown', seed: 7, y: STREET, h: 13 },
         panels: [
-          { kind: 'sign', at: [-6.5, 1.34], turn: 0, y: 0.95, w: 1.7, h: 0.42, text: 'Lakeside Labs', sub: 'Welcome, new hires!', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
+          { kind: 'sign', at: [-6.5, 1.34], turn: 0, y: 0.95, w: 1.7, h: 0.42, text: 'Seaside Labs', sub: 'Welcome, new hires!', bg: '#1d4e6b', logo: '#7fd1c7', frame: '#12303f' },
           { kind: 'board', wall: 'n', along: 7.5, y: 0.78, w: 1.5, h: 0.72, text: 'Sprint 14', frame: '#9aa3ad', rim: 0.03 },
           { kind: 'tv', at: [8.853, -3.8], turn: 270, y: 0.735, w: 0.6, h: 0.33, depth: 0, a: '#2b4c7e', b: '#0f1f3a', text: 'Q3 roadmap: Summit Retail pilot' },
           { kind: 'art', wall: 'n', along: -4.5, y: 0.85, w: 0.62, h: 0.44, frame: '#2e2e33', seed: 2, palette: ['#264653', '#2a9d8f', '#e9c46a', '#f4a261'] },

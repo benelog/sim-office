@@ -1,6 +1,6 @@
 # Sim Office
 
-미국의 작은 도시 Fairview에 있는 IT 회사 **Lakeside Labs**에 막 입사한 개발자가 되어, 출퇴근하고 회의하고 점심을 먹고 장을 보며 **미국 일상·직장 영어**를 배우는 오픈 월드 3D 게임입니다.
+미국의 작은 바닷가 도시 Fairview에 있는 IT 회사 **Seaside Labs**에서 일하는 세 사람(신입 개발자 Jun, 시니어 개발자 Derek, 프로덕트 매니저 Priya) 가운데 하나가 되어, 출퇴근하고 회의하고 점심을 먹고 장을 보며 **미국 일상·직장 영어**를 배우는 오픈 월드 3D 게임입니다.
 정적 웹이고 빌드가 없으며, `office/index.html`을 직접 열어도(`file://`) 동작합니다. 루트 `index.html`은 거기로 넘겨 줍니다.
 
 **플레이: https://benelog.github.io/sim-office/** (GitHub Pages, main 브랜치 루트 그대로) · 소스: https://github.com/benelog/sim-office
@@ -11,21 +11,27 @@ google-chrome "file://$PWD/office/index.html"
 
 ## 게임
 
+- **주인공 셋**: Jun(신입 개발자, 원룸 아파트), Derek(시니어 개발자, River Road의 주택), Priya(프로덕트 매니저, 시내 로프트). 이름은 정해져 있고, 사람마다 집·사무실 자리·돈·**대화 세트**가 다릅니다(Jun 15일치 47개, Derek·Priya 첫 주 15개씩). 고르지 않은 두 사람은 동료로 나옵니다.
 - **하루**: 07:00 알람 → 버스나 걸어서 출근 → 스탠드업·1:1·스프린트 플래닝·고객 협상 → 다이너 점심 → 퇴근 → 장보기 → 잠(다음 날). 시간은 걸어 다닐 때 흐르고(초당 1분) 대화 중에는 멈춥니다. 23:00이면 어디서든 잠듭니다.
 - **에피소드**: 장소와 인물에서 열리는 대화(머리 위 `!`). 인물의 대사를 듣고(브라우저 TTS, 미국 영어 목소리 우선) 안내에 맞춰 **직접 입력**하거나 **보기에서 고릅니다**. 세 번 틀리면 모범 답을 보여 줍니다. 끝나면 그 대화의 표현이 **Phrasebook**에 쌓이고(▶로 다시 듣기) Korean help를 켜면 한국어 뜻이 보입니다.
-- **15일치 47개 에피소드**: 출입증 받기, 온보딩, 스탠드업, 코드 리뷰, 회의 옮기기, IT 헬프데스크, 1:1, 스프린트 플래닝, 마감 협의, HR 서류(W-4·PPO/HMO·401(k)), 급여명세서 읽기, 해피아워 거절, 다이너 주문과 팁, 식료품 계산, 집주인에게 수리 요청, 고객 킥오프, 범위·가격·지급 조건(Net 30/45)·SLA 협상, 출장 승인과 per diem, 항공권·호텔 예약, 공항 체크인·보안 검색·지연, 호텔 체크인·체크아웃, 고객사 방문, 고객과 저녁, 계약 서명, 초과 예약 바우처 협상, 경비 정산, 연봉 인상 요청, 병가 전화 등.
+- **Jun의 15일치 47개 에피소드**: 출입증 받기, 온보딩, 스탠드업, 코드 리뷰, 회의 옮기기, IT 헬프데스크, 1:1, 스프린트 플래닝, 마감 협의, HR 서류(W-4·PPO/HMO·401(k)), 급여명세서 읽기, 해피아워 거절, 다이너 주문과 팁, 식료품 계산, 집주인에게 수리 요청, 고객 킥오프, 범위·가격·지급 조건(Net 30/45)·SLA 협상, 출장 승인과 per diem, 항공권·호텔 예약, 공항 체크인·보안 검색·지연, 호텔 체크인·체크아웃, 고객사 방문, 고객과 저녁, 계약 서명, 초과 예약 바우처 협상, 경비 정산, 연봉 인상 요청, 병가 전화 등.
 - **돈**: 시작 $1,200. 격주 금요일(5일·19일)에 순급여 $2,600이 입금되고 21일에 월세 $1,450이 빠집니다. 커피·버스·점심·식료품·출장비를 씁니다.
+- **현실감**: 날마다 다른 날씨(비·안개·°F 기온), 세전 가격에 판매세와 팁, 가게 영업시간, 인물의 하루 일과(주말 사무실은 비어 있음), 자동이체 공과금과 은행 내역(B), 출퇴근 시간에 붐비는 거리.
+- **목소리와 지난 대화**: 인물마다 다른 목소리로 읽고, 내가 한 말도 주인공의 목소리로 읽습니다. 끝낸 대화는 Menu > Conversations(T)에서 다시 읽고 듣습니다.
+- **조깅 미니 게임**: 집 현관이나 제목 화면에서 시작. 시내를 도는 Fairview Loop를 1인칭으로 달리며 두 발의 박자(← →)를 맞추면 빨라지고 점수가 오릅니다. 해변에서는 파도 소리가 들립니다.
+- **마을 구경**: 제목 화면의 Look around town으로 시내를 키보드·마우스로 둘러봅니다(시간대 T, 날씨 Y).
 - **에너지**: 깨어 있으면 시간당 6씩 줄고 먹으면 회복됩니다. 30 아래면 경고, 20 아래면 느려집니다.
-- **조작**: ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동, P Phrasebook, I 인벤토리, C 달력, M 지도(마을 전체와 지금 있는 곳: 장소·문·사람·목표·거리 이름). 휴대폰은 왼쪽 아래 조이스틱과 행동 버튼. 진행은 캐릭터 이름마다 `localStorage`(`so.v1.saves`)에 저장되고, 시작 화면의 목록에서 골라 이어가거나 지웁니다. 같은 이름으로 새 게임을 시작하면 그 이름의 저장을 덮어씁니다(두 번 눌러 확인).
+- **조작**: ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동, P Phrasebook, I 인벤토리, C 달력, M 지도(마을 전체와 지금 있는 곳: 장소·문·사람·목표·거리 이름). 휴대폰은 왼쪽 아래 조이스틱과 행동 버튼. 진행은 주인공마다 `localStorage`(`so.v1.saves`)에 저장되고, 시작 화면의 목록에서 골라 이어가거나 지웁니다. 같은 주인공으로 새 게임을 시작하면 그 저장을 덮어씁니다(두 번 눌러 확인).
 
 ## 파일
 
 | 경로 | 내용 |
 |---|---|
 | `office/index.html`, `game.css`, `game.js` | 엔진: 존·인물·대화·TTS·시간·돈·상점·Phrasebook·저장·디버그 API(`SO.debug`) |
-| `office/zones/<zone>.js` | 존 8개의 배치(home, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
+| `office/zones/<zone>.js` | 존 10개의 배치(home, home_derek, home_priya, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
 | `office/data/db.js` | DoltHub에서 내려받은 데이터(`window.SO_DB`). **생성물** |
 | `office/life.js` | 거리의 삶: 걷는 행인·앉은 사람, 달리는 차, 신호등 |
+| `office/jog.js` | 조깅 미니 게임: 달리기 길, 박자 판정, 경쟁 주자, 파도 소리 |
 | `office/models/*.js` | 모델(base64 .glb): Kenney 소품 팩, Quaternius 인물(`man-*`, `woman-*`)과 리그(`rig-*`). **생성물**, 목록은 `office/models/README.md` |
 | `office/PLAN.md` | 설계서: 규칙, 데이터 모양, 장소·인물 id, 존 파일 명세, 엔진 요구사항 |
 | `db/schema.sql`, `db/seed/*.sql` | DoltHub에 넣는 스키마와 시드(대화·인물·물품·달력) |
@@ -86,5 +92,5 @@ SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office
 - 인물: [Quaternius](https://quaternius.com) — [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularmen.html), [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html)(원본 Google Drive가 다운로드 한도로 막혀 [poly.pizza 묶음](https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN)의 glb를 씀) — CC0.
 - 소품: [Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial), [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban), [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Car Kit](https://kenney.nl/assets/car-kit)(달리는 차와 주차된 차 전부), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit), [Nature Kit](https://kenney.nl/assets/nature-kit) — CC0.
 - three.js — MIT (`vendor/three.LICENSE`).
-- 대사·표현·인물·회사(Lakeside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
+- 대사·표현·인물·회사(Seaside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
 - 이 저장소는 2026-09-26 어린 왕자 3D 게임으로 시작했다가 같은 날 Sim Office로 바꿨습니다(이전 게임은 커밋 609621f).

@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS chatter (
   PRIMARY KEY (npc, seq)
 );
 
--- An episode: a conversation with one npc at one place, available on days day_from..day_to (game day 1 = first Monday)
+-- An episode: a conversation of one hero (heroes.id: whose game it belongs to) with one npc at one place, available on days day_from..day_to (game day 1 = first Monday)
 -- between time_from and time_to (HH:MM, 24h). `requires` = comma-separated episode ids that must be done first.
 -- reward = dollars paid at the end (0 for most; used for bonuses), energy = change to the energy bar.
 CREATE TABLE IF NOT EXISTS episodes (
@@ -63,7 +63,8 @@ CREATE TABLE IF NOT EXISTS episodes (
   reward int DEFAULT 0,
   energy int DEFAULT 0,
   sort int DEFAULT 0,
-  tags varchar(120)
+  tags varchar(120),
+  hero varchar(16) NOT NULL DEFAULT 'jun'
 );
 
 -- One turn of an episode. The npc (or `speaker`) says `line`; `prompt` tells the player what to say;
@@ -115,7 +116,7 @@ CREATE TABLE IF NOT EXISTS items (
   note varchar(255)
 );
 
--- The player's work calendar (shown in the HUD). day = game day, time = HH:MM.
+-- The work calendar of each hero (shown in the HUD). day = game day, time = HH:MM.
 CREATE TABLE IF NOT EXISTS calendar (
   day int NOT NULL,
   time varchar(5) NOT NULL,
@@ -123,7 +124,8 @@ CREATE TABLE IF NOT EXISTS calendar (
   title_ko varchar(120),
   place varchar(32),
   episode varchar(40),
-  PRIMARY KEY (day, time)
+  hero varchar(16) NOT NULL DEFAULT 'jun',
+  PRIMARY KEY (hero, day, time)
 );
 
 -- Where a person is through the day. days: weekday | weekend | all. A person with rows here is at the place of the
@@ -169,4 +171,34 @@ CREATE TABLE IF NOT EXISTS bills (
   day int NOT NULL,
   every int NOT NULL DEFAULT 30,
   note varchar(255)
+);
+
+-- The people you can play. Each has a home of their own (a zone, with a bed, a kitchen, a desk and the door in
+-- the city), a desk at the office, their own money, and their own episodes and calendar (episodes.hero,
+-- calendar.hero). The other heroes are in the game as people (npcs rows with the same id); the one you play is not.
+CREATE TABLE IF NOT EXISTS heroes (
+  id varchar(16) PRIMARY KEY,
+  name varchar(40) NOT NULL,
+  full_name varchar(80) NOT NULL,
+  role varchar(80) NOT NULL,
+  role_ko varchar(80),
+  model varchar(32) NOT NULL,
+  bio text,
+  bio_ko text,
+  home_zone varchar(32) NOT NULL,
+  home_name varchar(80),
+  home_name_ko varchar(80),
+  home_bed varchar(32) NOT NULL,
+  home_kitchen varchar(32),
+  home_desk varchar(32),
+  home_door varchar(32) NOT NULL,
+  desk varchar(32) NOT NULL,
+  start_money int NOT NULL,
+  salary_net int NOT NULL,
+  salary_gross int NOT NULL,
+  housing int NOT NULL,
+  housing_name varchar(40) NOT NULL DEFAULT 'Rent',
+  level varchar(80),
+  level_ko varchar(80),
+  sort int DEFAULT 0
 );
