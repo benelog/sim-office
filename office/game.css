@@ -346,3 +346,13 @@ details.talk .words .row { padding: 6px 0; }
 .row.recipe details summary { cursor: pointer; color: var(--accent-deep); font-size: 13px; }
 .row.recipe details ol { margin: 4px 0 2px; padding-left: 20px; }
 .panel-body .fine button { padding: 5px 12px; font-size: 14px; margin-right: 6px; }
+
+/* replying to a message, calling back a voicemail */
+.row.msg .reply { margin-top: 6px; display: flex; flex-direction: column; gap: 5px; }
+.row.msg .reply .ask { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+.row.msg .reply > button { text-align: left; background: #fff; color: var(--accent-deep); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 13px; line-height: 1.35; }
+.row.msg .reply > button .ko { display: block; font-size: 12px; color: var(--ink-soft); }
+.row.msg .reply .said-me { display: flex; gap: 8px; align-items: flex-start; margin: 3px 0; background: var(--accent-soft); border-radius: 10px; padding: 4px 10px; }
+.row.msg .reply .said-me .play { flex: none; padding: 3px 8px; font-size: 12px; }
+.row.msg .reply .tone { font-size: 12px; color: var(--ink-soft); }
+.row.msg .reply .tone.poor { color: #b3402a; }

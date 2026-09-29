@@ -118,6 +118,8 @@
   const holidayOf = (d) => { const t = dateOf(d); return (t && HOLIDAYS[t.toISOString().slice(0, 10)]) || null; };
   const dayOff = (d) => { const h = holidayOf(d); return !!h && h.kind === 'federal'; };
   const MESSAGES = rows('messages').slice().sort((a, b) => (a.day - b.day) || (hm(a.time, 0) - hm(b.time, 0)));
+  const REPLIES = rows('replies').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const MAIL = rows('mail').slice().sort((a, b) => a.day - b.day);
   const builtinZoneOf = (id) => Object.keys(BUILTIN_PLACES).find(z => BUILTIN_PLACES[z].includes(id)) || null;
   function place(id) {
     const owner = HEROES.find(h => h.desk === id);
@@ -1579,7 +1581,8 @@
         o.start(t); o.stop(t + dur + 0.02);
       } catch (e) { /* no sound */ }
     }
-    return { context, chime() { tone(1318.5, 0, 0.22, 0.07); tone(1760, 0.11, 0.3, 0.06); } };
+    return { context, chime() { tone(1318.5, 0, 0.22, 0.07); tone(1760, 0.11, 0.3, 0.06); },
+      ring() { [0, 0.5, 1.4, 1.9].forEach(t => { tone(440, t, 0.4, 0.05); tone(480, t, 0.4, 0.05); }); } };
   })();
   function phoneBadge() {
     const n = unread(), b = $('menu-btn'), p = document.querySelector('#menu button[data-open="phone"]');
@@ -1590,8 +1593,8 @@
   function ping(sender, kind, text, ko) {
     if (state !== 'play' || hush) return;
     const short = String(text).length > 84 ? String(text).slice(0, 82).replace(/\s+\S*$/, '') + '…' : String(text);
-    toast(`📱 ${MSG_KIND[kind] || 'Message'} from ${senderName(sender)}: ${short}`, ko && String(ko).length > 70 ? String(ko).slice(0, 68) + '…' : ko, 'phone', 6);
-    sound.chime();
+    toast(kind === 'voicemail' ? `📞 Missed call from ${senderName(sender)}. Voicemail: ${short}` : `📱 ${MSG_KIND[kind] || 'Message'} from ${senderName(sender)}: ${short}`, ko && String(ko).length > 70 ? String(ko).slice(0, 68) + '…' : ko, 'phone', 6);
+    if (kind === 'voicemail') sound.ring(); else sound.chime();
   }
   function notify(sender, body, ko, kind) {
     if (!G) return;
@@ -1602,8 +1605,14 @@
   function checkPhone() {          // what has come in by now (only while you are walking about: not in the middle of a conversation)
     if (!G || state !== 'play') return;
     G.got = G.got || {};
+    const now = G.day * 1440 + G.minute;
+    const back = (G.later || []).filter(x => x.at <= now);
+    if (back.length) {           // the answers to your replies
+      G.later = G.later.filter(x => x.at > now);
+      back.forEach(x => notify(x.sender, x.body, x.body_ko, x.kind));
+    }
     const due = myMessages().filter(m => !G.got[m.id] && (m.day < G.day || (m.day === G.day && hm(m.time, 0) <= G.minute)));
-    if (!due.length) return;
+    if (!due.length) { if (back.length) saveGame(); return; }
     due.forEach(m => { G.got[m.id] = 1; });
     const fresh = due.filter(m => m.day === G.day && G.minute - hm(m.time, 0) < 120).pop();
     if (fresh) ping(fresh.sender, fresh.kind, fresh.subject || personal(fresh.body), fresh.subject ? '' : fresh.body_ko);
@@ -1611,7 +1620,7 @@
   }
   function inbox() {               // everything that has arrived, newest first
     const got = G.got || {};
-    return myMessages().filter(m => got[m.id]).map(m => ({ n: -1, day: m.day, minute: hm(m.time, 0), sender: m.sender, kind: m.kind, subject: m.subject, body: personal(m.body), body_ko: m.body_ko, fresh: got[m.id] === 1 }))
+    return myMessages().filter(m => got[m.id]).map(m => ({ n: -1, id: m.id, day: m.day, minute: hm(m.time, 0), sender: m.sender, kind: m.kind, subject: m.subject, body: personal(m.body), body_ko: m.body_ko, fresh: got[m.id] === 1 }))
       .concat((G.notes || []).map((n, i) => ({ n: i, day: n.day, minute: n.minute, sender: n.sender, kind: n.kind, body: n.body, body_ko: n.body_ko, fresh: !n.read })))
       .sort((a, b) => (b.day - a.day) || (b.minute - a.minute) || (b.n - a.n));
   }
@@ -1620,6 +1629,43 @@
     (G.notes || []).forEach(n => { n.read = 1; });
     phoneBadge();
   }
+
+  // Answering a message: a text or email goes out and the answer comes back a few minutes later (G.later), a
+  // voicemail is called back and the call is heard at once. G.replied { messageId: replyId } keeps what you said.
+  const repliesTo = (id) => REPLIES.filter(r => r.msg === id);
+  function replyTo(msgId, replyId) {
+    const m = MESSAGES.find(x => x.id === msgId), r = REPLIES.find(x => x.id === replyId && x.msg === msgId);
+    if (!G || !m || !r || (G.replied || {})[msgId] || !(G.got || {})[msgId]) return false;
+    (G.replied = G.replied || {})[msgId] = r.id;
+    const call = m.kind === 'voicemail';
+    if (call) advanceMinutes(5);
+    else if (r.answer) (G.later = G.later || []).push({ at: G.day * 1440 + Math.floor(G.minute) + Math.max(1, +r.delay || 10), sender: r.answer_from || m.sender,
+      kind: m.kind === 'email' ? 'email' : 'text', body: personal(r.answer), body_ko: r.answer_ko || '' });
+    logEvent('reply', call ? `Called back ${senderName(m.sender)}` : `Replied to ${senderName(m.sender)}`, 0);
+    saveGame();
+    return true;
+  }
+  const TONE = { good: ['👍', 'Natural'], ok: ['🙂', 'Understood, but stiff'], poor: ['😬', 'Awkward'] };
+  function replyBox(m) {
+    if (m.n !== -1 || !m.id) return '';
+    const opts = repliesTo(m.id);
+    if (!opts.length) return '';
+    const call = m.kind === 'voicemail', done = (G.replied || {})[m.id], mine = opts.find(o => o.id === done);
+    if (!mine) return `<div class="reply"><span class="ask">${call ? '📞 Call back and say:' : '↩︎ Reply:'}</span>${opts.map(o => `<button type="button" data-reply="${esc(m.id)}|${esc(o.id)}">${esc(personal(o.label))}<span class="ko">${esc(personal(o.label_ko || ''))}</span></button>`).join('')}</div>`;
+    const t = TONE[mine.tone] || TONE.good, from = mine.answer_from || m.sender;
+    return `<div class="reply done"><div class="said-me"><button type="button" class="play" data-say="${esc(personal(mine.label))}" data-voice="${esc(G.hero)}" aria-label="Play">▶</button><div><b>You${call ? ' (call)' : ''}:</b> ${esc(personal(mine.label))}<span class="ko"> ${esc(personal(mine.label_ko || ''))}</span></div></div>
+      ${call && mine.answer ? `<div class="said-me"><button type="button" class="play" data-say="${esc(personal(mine.answer))}" data-voice="${NPCS[from] ? esc(from) : ''}" aria-label="Play">▶</button><div><b>${esc(senderName(from))}:</b> ${esc(personal(mine.answer))}<span class="ko"> ${esc(personal(mine.answer_ko || ''))}</span></div></div>` : ''}
+      <div class="tone ${esc(mine.tone)}">${t[0]} ${t[1]}${mine.tip_ko ? ' · ' + esc(mine.tip_ko) : ''}</div></div>`;
+  }
+
+  // ---------------------------------------------------------------- the mailbox at home: what the post brings
+  // Mail (mail table) comes Monday to Saturday after config mail_time, but not on federal holidays; G.mailGot { id: 1 }
+  // is what you have taken out of the mailbox. Check it outside your front door (the city map, at your building).
+  const mailTime = () => hm(CFG.mail_time, 13 * 60);
+  const mailDay = (d) => (d - 1) % 7 !== 6 && !dayOff(d);
+  const myMail = () => MAIL.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && (m.day < G.day || (m.day === G.day && G.minute >= mailTime())));
+  const newMail = () => !G ? [] : myMail().filter(m => !(G.mailGot || {})[m.id]);
+  const MAIL_ICON = { junk: '🗑️', bill: '🧾', letter: '✉️', notice: '📋', card: '💌' }, MAIL_KIND = { junk: 'Junk mail', bill: 'Bill', letter: 'Letter', notice: 'Notice', card: 'Card' };
 
   // ---------------------------------------------------------------- the kitchen: what keeps how long, and cooking
   // What is in your bag is kept package by package: G.lots [{ id, day (bought), left (portions) }]; G.inventory
@@ -2456,6 +2502,7 @@
       else out.push({ key: 'bus:' + pid, label: `Take the bus · ${busEvery() ? 'next ' + clock(nb) + ' · ' : ''}${usd2(busFare())}`, run: () => openPanel('bus', pid) });
     }
     if (kind === 'work' || pid === hero().desk) out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
+    if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: n ? `Check the mailbox (${n})` : 'Check the mailbox', run: () => openPanel('mailbox') }); }
     if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: 'Go for a jog', run: () => startJog(true) });
     if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
     return out;
@@ -2796,9 +2843,19 @@
       const ICON = { text: '💬', email: '✉️', voicemail: '📞', alert: '🔔' };
       body.innerHTML = list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
         <div class="main"><div class="s">${ICON[m.kind] || ''} ${esc(MSG_KIND[m.kind] || 'Message')} · ${esc(dateShort(m.day))}, ${clock(m.minute)}</div><div class="t">${esc(senderName(m.sender))}${m.subject ? ` <span class="subj">${esc(m.subject)}</span>` : ''}</div>
-        <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}</div></div>`).join('')
+        <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}${replyBox(m)}</div></div>`).join('')
         || '<p class="empty">No messages yet. Texts, emails and alerts from your bank arrive here.</p>';
       readAll();
+    } else if (panelKind === 'mailbox') {
+      h.textContent = 'Mailbox';
+      const got = G.mailGot = G.mailGot || {}, list = myMail().slice().reverse(), fresh = list.filter(m => !got[m.id]).map(m => m.id);
+      sub.textContent = fresh.length ? `${fresh.length} new` : `${list.length} kept`;
+      body.innerHTML = (list.map(m => `<div class="row msg${fresh.includes(m.id) ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" aria-label="Play">▶</button>
+        <div class="main"><div class="s">${MAIL_ICON[m.kind] || ''} ${esc(MAIL_KIND[m.kind] || 'Mail')} · ${esc(dateShort(m.day))}</div><div class="t">${esc(m.sender)}${m.subject ? ` <span class="subj">${esc(m.subject)}</span>` : ''}</div>
+        <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}</div></div>`).join('')
+        || `<p class="empty">The mailbox is empty. The mail comes after ${clock(mailTime())}, Monday to Saturday.</p>`)
+        + (list.length && !fresh.length ? `<p class="fine">${mailDay(G.day) ? (G.minute < mailTime() ? `Nothing new yet. Today's mail comes after ${clock(mailTime())}.` : 'Nothing new today.') : 'No mail on Sundays and federal holidays.'}<span class="ko"> 우편은 일요일과 연방 공휴일에는 오지 않아요.</span></p>` : '');
+      fresh.forEach(id => { got[id] = 1; });
     } else if (panelKind === 'talks' || panelKind === 'phrasebook') {
       // the conversations you have had, newest first: what was said to you, what you answered and the reply, then the
       // expressions the conversation taught (what used to be the Phrasebook); every line can be heard again
@@ -2845,6 +2902,7 @@
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.say) speak(b.dataset.say, b.dataset.voice ? voiceOf(NPCS[b.dataset.voice] || npcRow(b.dataset.voice)) : undefined);
+    if (b.dataset.reply && panelKind === 'phone') { const [mid, rid] = b.dataset.reply.split('|'); const y = panel.querySelector('.panel-body').scrollTop; if (replyTo(mid, rid)) { renderPanel(); panel.querySelector('.panel-body').scrollTop = y; } }
     if (b.dataset.buy) buy(b.dataset.buy);
     if (b.dataset.tip != null && panelKind === 'shop') { tipChoice[panelArg] = +b.dataset.tip; renderPanel(); }
     if (b.dataset.eat) eat(b.dataset.eat);
@@ -3756,6 +3814,8 @@
     buy(itemId) { return buy(itemId); },
     // the phone, the bus, the rain: what has arrived, when the next bus leaves, how wet you are
     get inbox() { return G ? inbox() : []; }, get unread() { return unread(); }, checkPhone() { checkPhone(); return unread(); },
+    reply(msgId, replyId) { return replyTo(msgId, replyId); }, get replied() { return G ? Object.assign({}, G.replied) : {}; }, get later() { return G ? (G.later || []).slice() : []; },
+    get mail() { return G ? myMail().map(m => ({ id: m.id, day: m.day, kind: m.kind, fresh: !(G.mailGot || {})[m.id] })) : []; }, get newMail() { return newMail().length; },
     get date() { return G ? dateLong(G.day) : null; }, get holiday() { const h = G && holidayOf(G.day); return h ? h.name : null; },
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
     get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },

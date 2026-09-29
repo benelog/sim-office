@@ -248,3 +248,33 @@ CREATE TABLE IF NOT EXISTS recipes (
   steps_ko text,
   sort int DEFAULT 0
 );
+
+-- Answers to a message. For a text or email the reply goes out and answer (from answer_from, else the sender) comes
+-- back `delay` minutes later, or nothing when answer is NULL. For a voicemail the reply is what you say when you
+-- call back, and answer is what you hear, right away. tone: good | ok | poor (tip_ko says why). {name} = your name.
+CREATE TABLE IF NOT EXISTS replies (
+  id varchar(50) PRIMARY KEY,
+  msg varchar(40) NOT NULL,
+  sort int DEFAULT 0,
+  label varchar(255) NOT NULL,
+  label_ko varchar(255),
+  tone varchar(8) NOT NULL DEFAULT 'good',
+  tip_ko varchar(255),
+  answer text,
+  answer_ko text,
+  answer_from varchar(60),
+  delay int NOT NULL DEFAULT 10
+);
+
+-- What comes in the mailbox at home: on game day `day` (not on Sundays and federal holidays) after config mail_time.
+-- kind: junk | bill | letter | notice | card. hero: all, or the hero who gets it.
+CREATE TABLE IF NOT EXISTS mail (
+  id varchar(40) PRIMARY KEY,
+  hero varchar(16) NOT NULL DEFAULT 'all',
+  day int NOT NULL,
+  kind varchar(12) NOT NULL DEFAULT 'junk',
+  sender varchar(60) NOT NULL,
+  subject varchar(120),
+  body text NOT NULL,
+  body_ko text
+);

@@ -176,8 +176,30 @@ for (const r of DB.recipes || []) {
 }
 for (const i of rows('items')) if (i.cook_only && !(DB.recipes || []).some(r => String(r.ingredients).split(',').map(x => x.trim()).includes(i.id))) bad(`items ${i.id}`, 'cook_only but in no recipe');
 
+
+const MAIL_KINDS = new Set(['junk', 'bill', 'letter', 'notice', 'card']), msgIds = new Set((DB.messages || []).map(m => m.id));
+for (const r of DB.replies || []) {
+  const w = `replies ${r.id}`, m = (DB.messages || []).find(x => x.id === r.msg);
+  if (!m) { bad(w, `message "${r.msg}" does not exist`); continue; }
+  if (!/^(good|ok|poor)$/.test(r.tone || '')) bad(w, `tone "${r.tone}" is not good/ok/poor`);
+  if (!r.label) bad(w, 'no label');
+  if (r.answer && !r.answer_ko) warn(w, 'no answer_ko');
+  if (!r.tip_ko) warn(w, 'no tip_ko');
+  if (m.kind === 'alert') bad(w, 'an alert cannot be answered');
+}
+for (const m of DB.messages || []) if (/^(text|email|voicemail)$/.test(m.kind) && !(DB.replies || []).some(r => r.msg === m.id) && /reply|RSVP|call (us|me|back)/i.test(m.body) && !/^(alert)$/.test(m.kind)) warn(`messages ${m.id}`, 'asks for an answer but has no replies');
+const holidayDates = new Set((DB.holidays || []).filter(h => h.kind === 'federal').map(h => h.date));
+for (const m of DB.mail || []) {
+  const w = `mail ${m.id}`, t = start ? new Date(new Date(start + 'T00:00:00Z').getTime() + (m.day - 1) * 864e5) : null;
+  if (m.hero && m.hero !== 'all' && heroes.size && !heroes.has(m.hero)) bad(w, `hero "${m.hero}" not in heroes`);
+  if (!MAIL_KINDS.has(m.kind)) bad(w, `kind "${m.kind}" is not one of ${[...MAIL_KINDS].join('/')}`);
+  if (!m.sender || !m.body) bad(w, 'sender and body are required');
+  if (!m.body_ko) warn(w, 'no body_ko');
+  if (t && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
+}
+
 const count = (t) => `${t} ${Array.isArray(DB[t]) ? DB[t].length : 0}`;
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes'].map(count).join(', '));
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);
