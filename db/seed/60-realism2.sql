@@ -20,7 +20,6 @@ REPLACE INTO items (id, name, name_ko, kind, price, model, energy, place, note) 
 REPLACE INTO holidays (date, name, name_ko, kind, note, note_ko) VALUES
   ('2026-10-12', 'Columbus Day / Indigenous Peoples'' Day', '콜럼버스 데이 · 원주민의 날', 'federal', 'Banks and post offices are closed. Most offices and stores stay open, and buses run on the weekend timetable.', '은행과 우체국은 쉽니다. 회사와 상점은 대부분 문을 열고, 버스는 주말 시간표로 다닙니다.'),
   ('2026-10-31', 'Halloween', '핼러윈', 'observance', 'Kids go trick-or-treating in costume. It is not a day off.', '아이들이 분장을 하고 사탕을 받으러 다닙니다. 쉬는 날은 아닙니다.'),
-  ('2026-11-01', 'Daylight saving time ends', '서머타임 종료', 'observance', 'Clocks fall back one hour at 2 AM.', '새벽 2시에 시계를 한 시간 뒤로 돌립니다.'),
   ('2026-11-03', 'Election Day', '선거일', 'observance', 'Not a federal holiday, but many employers give time off to vote.', '연방 공휴일은 아니지만 투표할 시간을 주는 회사가 많습니다.'),
   ('2026-11-11', 'Veterans Day', '재향군인의 날', 'federal', 'Banks and post offices are closed. Many offices stay open.', '은행과 우체국은 쉽니다. 문을 여는 회사도 많습니다.'),
   ('2026-11-26', 'Thanksgiving Day', '추수감사절', 'federal', 'Almost everything is closed. Families get together for a turkey dinner.', '거의 모든 곳이 문을 닫습니다. 가족이 모여 칠면조 요리를 먹습니다.'),
