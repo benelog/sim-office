@@ -1734,6 +1734,65 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- TV at home: real American news and tech news on YouTube
+  // Sit on the sofa at home (places of kind tv) and pick a channel (tv table: YouTube channel id, live = the channel
+  // streams live). It plays in the YouTube player with English captions: the channel's live stream, or its latest
+  // uploads (the channel's uploads playlist, UU + the id after UC). It needs the internet, and YouTube does not play
+  // in a page opened as a file (no referrer): there the channels open on youtube.com instead. The game clock stands
+  // still while the TV is on; when you turn it off, the time you watched passes (5 minutes to 3 hours).
+  const TV = rows('tv').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const TV_KIND = { news: ['US news', '미국 뉴스'], tech: ['Tech news', 'IT 뉴스'] };
+  const fileMode = location.protocol === 'file:';
+  const tvEmbed = (c, live) => 'https://www.youtube.com/embed/' + (live ? `live_stream?channel=${encodeURIComponent(c.channel)}&` : `videoseries?list=UU${encodeURIComponent(String(c.channel).slice(2))}&`)
+    + 'autoplay=1&cc_load_policy=1&cc_lang_pref=en&hl=en&rel=0&playsinline=1';
+  const tvLink = (c, live) => `https://www.youtube.com/channel/${encodeURIComponent(c.channel)}/${live ? 'live' : 'videos'}`;
+  const tvNow = { id: null, live: false, since: 0 };
+  function tvOn(id, live) {
+    const c = TV.find(x => x.id === id);
+    if (!c) return false;
+    if (!tvNow.since) tvNow.since = performance.now();
+    tvNow.id = id; tvNow.live = !!live;
+    if (window.speechSynthesis) speechSynthesis.cancel();
+    return true;
+  }
+  function tvOff() {               // the panel closes: the video stops and the time you watched passes
+    const body = panel.querySelector('.panel-body');
+    body.querySelectorAll('iframe').forEach(f => f.remove());
+    if (!tvNow.since || !G) { tvNow.id = null; tvNow.since = 0; return; }
+    const c = TV.find(x => x.id === tvNow.id), mins = clamp(Math.round((performance.now() - tvNow.since) / 60000), 5, 180);
+    tvNow.id = null; tvNow.since = 0;
+    if (!c) return;
+    logEvent('tv', `Watched TV: ${c.name}`, 0, { minutes: mins });
+    advanceMinutes(mins);
+    saveGame();
+    toast(`You watched ${c.name} for ${mins} minutes.`, `${c.name}을(를) ${mins}분 동안 봤어요.`, null, 3);
+  }
+  function tvPanel(h, sub, body) {
+    h.textContent = 'TV';
+    const c = TV.find(x => x.id === tvNow.id);
+    sub.textContent = c ? `${c.name}${tvNow.live ? ' · LIVE' : ' · latest videos'}` : 'Pick a channel';
+    const screen = !c ? `<div class="tv-screen off"><p>Pick a channel below. News plays live, tech channels play their latest videos, with English captions.<span class="ko"> 아래에서 채널을 고르세요. 뉴스는 생방송, IT 채널은 최신 영상이 영어 자막과 함께 나옵니다.</span></p></div>`
+      : fileMode ? `<div class="tv-screen off"><p>YouTube does not play inside a game opened from a file. <a href="${esc(tvLink(c, tvNow.live))}" target="_blank" rel="noopener">Watch ${esc(c.name)} on YouTube ↗</a>, or play the web version of the game.<span class="ko"> 파일로 연 게임 안에서는 YouTube가 재생되지 않아요. YouTube에서 보거나 웹 버전(GitHub Pages)에서 하세요.</span></p></div>`
+        : `<div class="tv-screen"><iframe src="${esc(tvEmbed(c, tvNow.live))}" title="${esc(c.name)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
+        <p class="fine">${esc(c.note || '')}<span class="ko"> ${esc(c.note_ko || '')}</span> <a href="${esc(tvLink(c, tvNow.live))}" target="_blank" rel="noopener">Open on YouTube ↗</a>${tvNow.live ? ' · Not live right now? Try <b>Latest</b>.' : ''}</p>`;
+    body.innerHTML = screen + Object.keys(TV_KIND).map(k => {
+      const list = TV.filter(x => x.kind === k);
+      if (!list.length) return '';
+      return `<h3 class="tv-kind">${TV_KIND[k][0]}<span class="ko"> ${TV_KIND[k][1]}</span></h3><div class="tv-list">${list.map(x => `<div class="tv-ch${x.id === tvNow.id ? ' on' : ''}"><div class="t">${esc(x.name)}</div>
+        <div class="b">${+x.live ? `<button type="button" data-tv="${esc(x.id)}|1"${x.id === tvNow.id && tvNow.live ? ' aria-pressed="true"' : ''}>Live</button>` : ''}<button type="button" data-tv="${esc(x.id)}|0"${x.id === tvNow.id && !tvNow.live ? ' aria-pressed="true"' : ''}>Latest</button></div></div>`).join('')}</div>`;
+    }).join('');
+  }
+  function sitForTv(pid) {           // sit down on the sofa, facing the TV
+    const pl = Z && Z.places[pid];
+    if (player && pl && pl.at) {
+      player.pos.set(pl.at[0], 0, pl.at[1]);
+      if (pl.face) player.heading = Math.atan2(pl.face[0] - pl.at[0], pl.face[1] - pl.at[1]);
+      player.sit = true;
+      play(player, 'sit');
+    }
+    openPanel('tv');
+  }
+
   // ---------------------------------------------------------------- laundry: clean clothes, detergent, the laundry room
   // G.clean is how many clean outfits are in your closet (config closet_outfits, 5 at the start). Every morning you
   // put one on; with none left you wear yesterday's clothes and people notice (smalltalk you:laundry). Do a load at
@@ -2660,6 +2719,7 @@
     }
     if (kind === 'work' || pid === hero().desk) out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
     if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: n ? `Check the mailbox (${n})` : 'Check the mailbox', run: () => openPanel('mailbox') }); }
+    if (TV.length && G && kind === 'tv' && atHome()) out.push({ key: 'tv:' + pid, label: 'Watch TV', run: () => sitForTv(pid) });
     if (RADIO.length && G && kind === 'desk' && atHome()) out.push({ key: 'radio:' + pid, label: `Turn on the radio (${STATION})`, run: () => openPanel('radio') });
     if (G && zoneId === hero().home_zone && kind === 'door' && ITEMS.detergent) out.push({ key: 'laundry:' + pid + cleanClothes(), label: laundryLabel(), run: () => doLaundry() });
     if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: 'Go for a jog', run: () => startJog(true) });
@@ -2896,6 +2956,7 @@
     toggleMenu(false);
     if (!G) return;
     if (state === 'talk' || state === 'sleep' || state === 'title') return;
+    if (panelKind === 'tv' && kind !== 'tv' && !panel.hidden) tvOff();          // the phone or the map over the TV turns it off
     panelKind = kind; panelArg = arg;
     if (state !== 'shop' && state !== 'card') panelBack = state;
     state = kind === 'shop' || kind === 'bus' ? 'shop' : 'card';
@@ -2905,10 +2966,12 @@
     renderPanel();
   }
   function closePanel() {
+    const wasTv = panelKind === 'tv';
     panel.hidden = true;
     panelKind = null;
     if (state === 'shop' || state === 'card') state = panelBack === 'talk' ? 'play' : (panelBack || 'play');
     goalTimer = 0;
+    if (wasTv) tvOff();
   }
   panel.querySelector('.close').addEventListener('click', closePanel);
   function note(text, bad) { const n = panel.querySelector('.panel-note'); n.textContent = text; n.className = 'panel-note' + (bad ? ' bad' : ''); }
@@ -2919,6 +2982,7 @@
   function renderPanel() {
     const h = panel.querySelector('h2'), sub = panel.querySelector('.sub'), body = panel.querySelector('.panel-body');
     sub.textContent = 'Balance ' + usd2(G.money);
+    panel.classList.toggle('wide', panelKind === 'tv');
     if (panelKind === 'shop') {
       h.textContent = place(panelArg).name;
       body.innerHTML = itemsAt(panelArg).map(i => `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
@@ -3006,6 +3070,8 @@
         <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}${replyBox(m)}</div></div>`).join('')
         || '<p class="empty">No messages yet. Texts, emails and alerts from your bank arrive here.</p>';
       readAll();
+    } else if (panelKind === 'tv') {
+      tvPanel(h, sub, body);
     } else if (panelKind === 'radio') {
       h.textContent = 'Radio';
       const show = radioShow();
@@ -3074,6 +3140,7 @@
     if (b.dataset.tip != null && panelKind === 'shop') { tipChoice[panelArg] = +b.dataset.tip; renderPanel(); }
     if (b.dataset.eat) eat(b.dataset.eat);
     if (b.dataset.toss) toss(+b.dataset.toss);
+    if (b.dataset.tv && panelKind === 'tv') { const [id, live] = b.dataset.tv.split('|'); if (tvOn(id, live === '1')) renderPanel(); }
     if (b.dataset.cook) cook(b.dataset.cook);
     if (b.dataset.cookOpen) openPanel('cook');
     if (b.dataset.ride) ride(b.dataset.ride);
@@ -3988,7 +4055,7 @@
     get inbox() { return G ? inbox() : []; }, get unread() { return unread(); }, checkPhone() { checkPhone(); return unread(); },
     reply(msgId, replyId) { return replyTo(msgId, replyId); }, get replied() { return G ? Object.assign({}, G.replied) : {}; }, get later() { return G ? (G.later || []).slice() : []; },
     get sun() { const s = sunOf(G ? G.day : 1); return s ? { rise: hhmm(s.rise), set: hhmm(s.set), dark: darkAt(hourNow() * 60), solar: +solarHour(hourNow(), sunDay()).toFixed(2) } : null; },
-    get radio() { return G ? radioShow() : []; }, get clean() { return cleanClothes(); }, set clean(v) { if (G) G.clean = +v; }, laundry() { return doLaundry(); },
+    get radio() { return G ? radioShow() : []; }, tv(id, live) { return tvOn(id, !!live) && (renderPanel(), true); }, get tvNow() { return Object.assign({ file: fileMode, src: tvNow.id ? tvEmbed(TV.find(x => x.id === tvNow.id), tvNow.live) : null }, tvNow); }, get clean() { return cleanClothes(); }, set clean(v) { if (G) G.clean = +v; }, laundry() { return doLaundry(); },
     get street() { return G ? Object.assign({}, G.street) : {}; }, get walkSign() { return life && life.walkSign ? life.walkSign() : null; },
     get mail() { return G ? myMail().map(m => ({ id: m.id, day: m.day, kind: m.kind, fresh: !(G.mailGot || {})[m.id] })) : []; }, get newMail() { return newMail().length; },
     get date() { return G ? dateLong(G.day) : null; }, get holiday() { const h = G && holidayOf(G.day); return h ? h.name : null; },

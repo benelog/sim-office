@@ -12,7 +12,7 @@ import { pathToFileURL } from 'node:url';
 
 const [port, outdir, stepsFile, W, H] = process.argv.slice(2);
 const here = path.dirname(new URL(import.meta.url).pathname);
-const page = pathToFileURL(path.join(here, '..', 'office', 'index.html')).href;
+const page = process.env.SO_URL || pathToFileURL(path.join(here, '..', 'office', 'index.html')).href;          // SO_URL: the game served over http (YouTube plays only there)
 fs.mkdirSync(outdir, { recursive: true });
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let ws;

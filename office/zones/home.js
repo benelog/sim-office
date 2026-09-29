@@ -82,7 +82,8 @@
       home_bed: { at: [-2.42, -1.55], face: [-1.4, -1.55], sit: true },
       home_desk: { at: [-0.8, -1.7], face: [-0.8, -2.2], sit: true },
       home_kitchen: { at: [2.36, -1.5], face: [2.36, -2.3] },
-      home_door: { at: [3.0, 1.0], face: [2.6, -0.2] }
+      home_door: { at: [3.0, 1.0], face: [2.6, -0.2] },
+      home_tv: { at: [-3.05, 1.2], face: [-1.6, 1.2], sit: true }
     },
     portals: [
       { at: [3.0, 2.25], size: [0.9, 0.5], to: 'city', arrive: 'apartment_door', label: 'Go outside', label_ko: '밖으로 나가기' }

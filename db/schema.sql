@@ -290,3 +290,17 @@ CREATE TABLE IF NOT EXISTS radio (
   text_ko text,
   sort int DEFAULT 0
 );
+
+-- TV channels (watch on the sofa at home): real YouTube channels shown in the YouTube player with English captions.
+-- channel: the YouTube channel id (UC…); live = 1: it streams live (a Live button besides Latest, the uploads).
+-- kind: news | tech.
+CREATE TABLE IF NOT EXISTS tv (
+  id varchar(24) PRIMARY KEY,
+  name varchar(60) NOT NULL,
+  kind varchar(8) NOT NULL DEFAULT 'news',
+  channel varchar(32) NOT NULL,
+  live tinyint NOT NULL DEFAULT 0,
+  note varchar(255),
+  note_ko varchar(255),
+  sort int DEFAULT 0
+);

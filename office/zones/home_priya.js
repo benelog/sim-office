@@ -106,7 +106,8 @@
       priya_bed: { at: [-2.45, -1.8], face: [-1.8, -1.0], sit: true },
       priya_kitchen: { at: [2.07, -2.05], face: [2.07, -2.8] },
       priya_desk: { at: [-0.6, -2.27], face: [-0.6, -2.8], sit: true },
-      priya_out: { at: [2.5, 1.9], face: [2.0, 0.5] }
+      priya_out: { at: [2.5, 1.9], face: [2.0, 0.5] },
+      priya_tv: { at: [-1.38, 1.5], face: [-3.85, 1.5], sit: true }
     },
     portals: [
       { at: [2.5, 2.75], size: [0.9, 0.5], to: 'city', arrive: 'priya_door', label: 'Go outside', label_ko: '밖으로 나가기' }

@@ -10,5 +10,5 @@ Sim Office — 미국 IT 회사의 개발자로 출퇴근하며 미국 일상·�
 - 원격 git 저장소: `git@github.com:benelog/sim-office.git`(공개, origin/main). `git push origin main`. GitHub Pages가 main 루트를 https://benelog.github.io/sim-office/ 로 배포합니다(`.nojekyll`).
 - 엔진은 three.js(MIT, `vendor/three-game.min.js`) 위에 직접 짠 것이고, 자동차·행인 조향은 Yuka(MIT, `vendor/yuka.min.js`)의 Vehicle·FollowPath·Separation·ObstacleAvoidance를 씁니다. 길찾기는 자체 격자 A*(three-pathfinding은 구역마다 메시 생성에 1~3초가 걸려 뺐음).
 - **주인공은 셋**(Jun·Derek·Priya, DoltHub `heroes`): 에피소드와 달력은 `hero` 열로 나뉩니다. 시드를 올리기 전에 `node tools/seed-json.mjs <시드.sql> --out <db.js>` → `node tools/db-lint.mjs <db.js>`로 확인하고, 점검은 `SO_HERO=derek tools/office-check.sh …`처럼 주인공을 고릅니다.
-- 저작권: Kenney·Quaternius 에셋은 CC0(표기 권장), three.js·Yuka는 MIT. 대사·표현은 자체 저작이고 실존 회사·인물 이름을 쓰지 않습니다(Seaside Labs, Summit Retail, Fairview는 가상). 영어 기본, 한국어는 `_ko`.
+- 저작권: Kenney·Quaternius 에셋은 CC0(표기 권장), three.js·Yuka는 MIT. 대사·표현은 자체 저작이고 실존 회사·인물 이름을 쓰지 않습니다(Seaside Labs, Summit Retail, Fairview는 가상). 예외: 집 TV(`tv` 표)는 사용자 요청으로 실제 미국 뉴스·IT 뉴스 YouTube 채널을 공식 임베드 플레이어로 보여 줍니다(인터넷 필요, `file://`에서는 YouTube 링크만). 영어 기본, 한국어는 `_ko`.
 - 2026-09-26 이전에 있던 어린 왕자 3D 게임은 이 저장소에서 지웠습니다(git 이력의 커밋 609621f에 남아 있음).

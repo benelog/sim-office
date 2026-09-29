@@ -208,8 +208,16 @@ for (const r of DB.radio || []) {
 }
 if ((DB.radio || []).length && !(DB.radio || []).some(r => r.day == null && r.kind === 'traffic')) warn('radio', 'no traffic report for any day');
 
+for (const c of DB.tv || []) {
+  const w = `tv ${c.id}`;
+  if (!/^(news|tech)$/.test(c.kind)) bad(w, `kind "${c.kind}" is not news/tech`);
+  if (!/^UC[\w-]{22}$/.test(c.channel || '')) bad(w, `channel "${c.channel}" is not a YouTube channel id (UC + 22)`);
+  if (!c.note_ko) warn(w, 'no note_ko');
+}
+for (const p of rows('places')) if (p.kind === 'tv' && !/^home/.test(p.zone)) warn(`places ${p.id}`, 'a TV outside a home: Watch TV is only offered at home');
+
 const count = (t) => `${t} ${Array.isArray(DB[t]) ? DB[t].length : 0}`;
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio'].map(count).join(', '));
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);

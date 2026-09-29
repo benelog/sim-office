@@ -141,7 +141,8 @@
       derek_bed: { at: [-2.85, -2.2], face: [-1.9, -2.2], sit: true },
       derek_kitchen: { at: [3.5, -2.45], face: [3.5, -3.3] },
       derek_desk: { at: [0.5, -2.73], face: [0.5, -3.3], sit: true },
-      derek_out: { at: [1.5, 2.4], face: [1.2, 1.0] }
+      derek_out: { at: [1.5, 2.4], face: [1.2, 1.0] },
+      derek_tv: { at: [-3.6, 2.3], face: [-3.6, -0.33], sit: true }
     },
     portals: [
       { at: [1.5, 3.25], size: [0.9, 0.5], to: 'city', arrive: 'derek_door', label: 'Go outside', label_ko: '밖으로 나가기' }

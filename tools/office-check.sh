@@ -4,6 +4,7 @@
 #   tools/office-check.sh <outdir> [steps.mjs] [width height]
 # A steps.mjs exports default async ({ ev, shot, sleep, log, send }) => {} for custom checks.
 # Rendering is software (SwiftShader), so it is slower than a real browser.
+# SO_URL=http://…/office/index.html checks the game served over http (YouTube on the TV plays only there).
 # Keep TMPDIR short (e.g. TMPDIR=/tmp/claude-1000): Chrome aborts at once when its profile's socket path passes 107 bytes.
 cd "$(dirname "$0")/.." || exit 1
 OUT=${1:-${TMPDIR:-/tmp}/office-check}
