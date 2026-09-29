@@ -880,8 +880,8 @@
   const portalMat = new T.MeshBasicMaterial({ color: 0x3fb5ad, transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false });
 
   // ---------------------------------------------------------------- environment: sun, sky and street lamps by the clock outdoors; window and ceiling light indoors
-  // Outdoors the clock drives everything: the sun rises in the east (+x) at 06:00, stands in the south (+z) at noon
-  // and sets in the west at 18:30; from dusk the moon (blue, from the south-west) takes over and the street lamps
+  // Outdoors the clock drives everything: the sun rises in the east (+x), stands in the south (+z) at noon and sets in
+  // the west, at the day's own sunrise and sunset (sunOf, solarHour below); from dusk the moon (blue, from the south-west) takes over and the street lamps
   // (roads light-square / light-curved props) glow, lighting the ground with a few point lights that follow you.
   // Indoors the light does not change with the clock: a window light (from the side with the most windows) with
   // the one shadow map, ceiling lights (the zone's lights, or a grid), a warm fill; only the backdrop darkens at night.
@@ -900,6 +900,33 @@
     const temp = Math.round(w.low_f + (w.high_f - w.low_f) * Math.max(0, Math.sin(Math.PI * (h - 5) / 20)));
     return { kind: k, rain, fog: fogged, cover, dark: k === 'rain' ? 0.6 + 0.4 * rain : k === 'cloudy' ? 0.35 : 0, temp, high: w.high_f, low: w.low_f, row: w };
   }
+  // Sunrise and sunset go by the real date at Fairview (config latitude, longitude, utc_offset; the NOAA formulas):
+  // later sunrises and earlier sunsets as autumn goes on. The clock stays on one offset (no daylight saving change).
+  // The light of the day (KEYS below, made for a sunrise at 6:30 and a sunset at 7 PM) is stretched to the day's own
+  // sunrise and sunset (solarHour).
+  const LAT = +CFG.latitude || 37.6, LON = CFG.longitude == null ? -122.4 : +CFG.longitude, UTC_OFF = CFG.utc_offset == null ? -7 : +CFG.utc_offset, SUN_TPL = [6.5, 19];
+  const sunMemo = {};
+  function sunOf(day) {             // { rise, set } in minutes of the local day, or null without a start date
+    if (sunMemo[day] !== undefined) return sunMemo[day];
+    const t = dateOf(day);
+    if (!t) return (sunMemo[day] = null);
+    const doy = Math.round((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5), g = 2 * Math.PI / 365 * doy, rad = Math.PI / 180;
+    const eq = 229.18 * (0.000075 + 0.001868 * Math.cos(g) - 0.032077 * Math.sin(g) - 0.014615 * Math.cos(2 * g) - 0.040849 * Math.sin(2 * g));
+    const dec = 0.006918 - 0.399912 * Math.cos(g) + 0.070257 * Math.sin(g) - 0.006758 * Math.cos(2 * g) + 0.000907 * Math.sin(2 * g) - 0.002697 * Math.cos(3 * g) + 0.00148 * Math.sin(3 * g);
+    const ha = Math.acos(clamp(Math.cos(90.833 * rad) / (Math.cos(LAT * rad) * Math.cos(dec)) - Math.tan(LAT * rad) * Math.tan(dec), -1, 1)) / rad;
+    const off = UTC_OFF * 60;
+    return (sunMemo[day] = { rise: Math.round(720 - 4 * (LON + ha) - eq + off), set: Math.round(720 - 4 * (LON - ha) - eq + off) });
+  }
+  const sunDay = () => G ? G.day : 1;
+  function solarHour(h, day) {       // the hour of the day's light: the clock stretched so the sun rises at 6:30 and sets at 7 PM
+    const s = sunOf(day);
+    h = ((h % 24) + 24) % 24;
+    if (!s) return h;
+    const r = s.rise / 60, t = s.set / 60, [R, S] = SUN_TPL;
+    return h < r ? h * R / r : h < t ? R + (h - r) * (S - R) / (t - r) : S + (h - t) * (24 - S) / (24 - t);
+  }
+  const darkAt = (min, day) => { const h = solarHour(min / 60, day == null ? sunDay() : day); return h >= 19.4 || h < 6.1; };
+  const sunText = (d) => { const s = sunOf(d); return s ? `Sunrise ${clock(s.rise)}, sunset ${clock(s.set)}` : ''; };
   const zoneBox = new T.Box3(), lamps = [], zoneLights = [];
   let lampPool = [], windowDir = new T.Vector3(0.45, 0.78, 0.45).normalize();
   const KEYS = [          // hour, sun colour, sun, fill sky, fill ground, fill, sky top, sky horizon, lamps, exposure
@@ -1064,7 +1091,7 @@
   const hourNow = () => (G ? G.minute : state === 'tour' ? tour.minute : 600) / 60;
   function applyEnvironment() {
     if (!Z) return;
-    const e = envAt(hourNow()), wx = weatherNow(), day = 1 - e.night;
+    const e = envAt(solarHour(hourNow(), sunDay())), wx = weatherNow(), day = 1 - e.night;
     rainShow(!Z.indoor && state !== 'title' ? wx.rain : 0);
     if (Z.indoor) {
       sky.visible = false;
@@ -1568,21 +1595,25 @@
       if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
       return ctx;
     }
-    function tone(freq, at, dur, vol) {
+    function tone(freq, at, dur, vol, type, cut) {
       const c = context();
       if (!c || c.state !== 'running') return;
       try {
         const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + at;
-        o.type = 'sine'; o.frequency.value = freq;
+        o.type = type || 'sine'; o.frequency.value = freq;
         g.gain.setValueAtTime(0.0001, t);
         g.gain.exponentialRampToValueAtTime(vol, t + 0.015);
+        g.gain.exponentialRampToValueAtTime(vol * 0.8, t + dur * 0.8);
         g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-        o.connect(g); g.connect(c.destination);
+        let out = o;
+        if (cut) { const f = c.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = cut; o.connect(f); out = f; }
+        out.connect(g); g.connect(c.destination);
         o.start(t); o.stop(t + dur + 0.02);
       } catch (e) { /* no sound */ }
     }
     return { context, chime() { tone(1318.5, 0, 0.22, 0.07); tone(1760, 0.11, 0.3, 0.06); },
-      ring() { [0, 0.5, 1.4, 1.9].forEach(t => { tone(440, t, 0.4, 0.05); tone(480, t, 0.4, 0.05); }); } };
+      ring() { [0, 0.5, 1.4, 1.9].forEach(t => { tone(440, t, 0.4, 0.05); tone(480, t, 0.4, 0.05); }); },
+      honk(vol) { [[0, 0.16], [0.24, 0.42]].forEach(([t, d]) => { tone(415, t, d, 0.05 * vol, 'sawtooth', 1400); tone(523, t, d, 0.04 * vol, 'sawtooth', 1400); }); } };
   })();
   function phoneBadge() {
     const n = unread(), b = $('menu-btn'), p = document.querySelector('#menu button[data-open="phone"]');
@@ -1666,6 +1697,90 @@
   const myMail = () => MAIL.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && (m.day < G.day || (m.day === G.day && G.minute >= mailTime())));
   const newMail = () => !G ? [] : myMail().filter(m => !(G.mailGot || {})[m.id]);
   const MAIL_ICON = { junk: '🗑️', bill: '🧾', letter: '✉️', notice: '📋', card: '💌' }, MAIL_KIND = { junk: 'Junk mail', bill: 'Bill', letter: 'Letter', notice: 'Notice', card: 'Card' };
+
+  // ---------------------------------------------------------------- the radio at home: the local station
+  // Turn it on at the desk at home (Menu is not needed): the station, the time and the date said the American way, the
+  // weather from the weather table with the sunset, traffic in the rush hours of a working day, the day's local news
+  // (radio table: day = that game day, NULL = any day, taken in turn), a holiday, and an ad. Every part can be heard.
+  const RADIO = rows('radio').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const STATION = CFG.radio_station || 'KFVW 88.5';
+  const RADIO_KIND = { station: 'On the air', weather: 'Weather', traffic: 'Traffic', news: 'Local news', community: 'Around town', sports: 'Sports', holiday: 'Today', ad: 'A word from our sponsors' };
+  const ordinal = (n) => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
+  const spokenDate = (d) => { const t = dateOf(d); return t ? `${weekday(d)}, ${MONTHS[t.getUTCMonth()]} ${ordinal(t.getUTCDate())}` : weekday(d); };
+  const SKY = { clear: 'clear skies', partly: 'a few clouds', cloudy: 'cloudy skies', rain: 'gray skies', fog: 'some fog' };
+  const rotate = (list, n, seed) => list.length ? Array.from({ length: Math.min(n, list.length) }, (_, i) => list[(seed + i) % list.length]) : [];
+  function radioShow() {
+    const d = G.day, m = Math.floor(G.minute), wx = weatherNow(), sun = sunOf(d), out = [];
+    const hello = m < 12 * 60 ? 'Good morning' : m < 17 * 60 ? 'Good afternoon' : 'Good evening';
+    out.push({ kind: 'station', en: `${hello}, ${CFG.city}! You're listening to ${STATION}, ${CFG.city} Community Radio. It's ${clock(m)} on ${spokenDate(d)}.`,
+      ko: `${STATION} ${CFG.city} 커뮤니티 라디오입니다. 지금은 ${dateKo(d)} ${hhmm(m)}이에요.` });
+    const w = wx.row, next = weatherOf(d + 1), wet = wx.rain > 0.12, sunNext = sunOf(d + 1);
+    const sky = wx.kind === 'fog' && wx.fog < 0.05 ? 'partly' : wx.kind;         // the morning fog has lifted
+    const now = `Right now it's ${wx.temp} degrees${wet ? ' and raining' : wx.kind === 'fog' && wx.fog > 0.2 ? ' and foggy' : darkAt(m) ? '' : ` with ${SKY[sky] || 'mild weather'}`}.`;
+    const brolly = (w.kind === 'rain' || (m >= 15 * 60 && next.kind === 'rain')) && !/umbrella/i.test(m < 15 * 60 ? w.forecast : next.forecast);
+    const day = m < 15 * 60 ? `Today: ${w.forecast || ''} A high of ${w.high_f}, and tonight a low of ${w.low_f}.` : `Tonight, a low of ${w.low_f}. Tomorrow: ${next.forecast || ''} A high of ${next.high_f}.`;
+    const light = sun ? (m < sun.set ? ` Sunset this evening is at ${clock(sun.set)}.` : sunNext ? ` Sunrise tomorrow is at ${clock(sunNext.rise)}.` : '') : '';
+    out.push({ kind: 'weather', en: `${now} ${day}${light}${brolly ? " Don't forget your umbrella." : ''}`,
+      ko: `지금 기온 ${toC(wx.temp)}°C(${wx.temp}°F). ${m < 15 * 60 ? `${w.forecast_ko || ''} 최고 ${toC(w.high_f)}°C, 밤 최저 ${toC(w.low_f)}°C.` : `밤 최저 ${toC(w.low_f)}°C. 내일: ${next.forecast_ko || ''} 최고 ${toC(next.high_f)}°C.`}${sun ? (m < sun.set ? ` 오늘 해넘이 ${hhmm(sun.set)}.` : sunNext ? ` 내일 해돋이 ${hhmm(sunNext.rise)}.` : '') : ''} (degrees는 화씨 °F)` });
+    const rush = !isWeekend(d) && !dayOff(d) && ((m >= 6 * 60 && m < 10 * 60) || (m >= 15.5 * 60 && m < 19 * 60));
+    const pool = (k) => RADIO.filter(r => r.kind === k && r.day == null);
+    if (rush) rotate(RADIO.filter(r => r.kind === 'traffic' && r.day === d).concat(pool('traffic')), 1, d * 2 + (m >= 12 * 60 ? 1 : 0)).forEach(r => out.push({ kind: 'traffic', en: r.text, ko: r.text_ko }));
+    const hol = holidayOf(d);
+    if (hol) out.push({ kind: 'holiday', en: `Today is ${hol.name}. ${hol.note || ''}`, ko: `오늘은 ${hol.name_ko || hol.name}. ${hol.note_ko || ''}` });
+    const today = RADIO.filter(r => r.day === d && r.kind !== 'traffic' && r.kind !== 'ad');
+    (today.length ? today : rotate(RADIO.filter(r => r.day == null && /^(news|community|sports)$/.test(r.kind)), 2, d * 2)).forEach(r => out.push({ kind: r.kind, en: r.text, ko: r.text_ko }));
+    rotate(pool('ad'), 1, d).forEach(r => out.push({ kind: 'ad', en: r.text, ko: r.text_ko }));
+    out.push({ kind: 'station', en: `That's the news at ${clock(m - m % 30)}. Stay with us: more music is coming up on ${STATION}.`, ko: `${hhmm(m - m % 30)} 뉴스였습니다. 채널 고정하세요.` });
+    return out;
+  }
+
+  // ---------------------------------------------------------------- laundry: clean clothes, detergent, the laundry room
+  // G.clean is how many clean outfits are in your closet (config closet_outfits, 5 at the start). Every morning you
+  // put one on; with none left you wear yesterday's clothes and people notice (smalltalk you:laundry). Do a load at
+  // the door of your home: renters use the building's laundry room (items laundry_load, open config laundry_hours),
+  // a house has its own washer and dryer. Either way it takes a detergent pod (items detergent) and 90 minutes.
+  const CLOSET = +CFG.closet_outfits || 7, LAUNDRY_MIN = 90;
+  const cleanClothes = () => G ? (G.clean == null ? 5 : G.clean) : 0;
+  const ownWasher = () => /mortgage/i.test(hero().housing_name || '');
+  const laundryHours = () => String(CFG.laundry_hours || '07:00-22:00').split('-').map(x => hm(x, 0));
+  function laundryLabel() {
+    const n = cleanClothes();
+    return `Do laundry · ${n} clean outfit${n === 1 ? '' : 's'} left`;
+  }
+  function doLaundry() {
+    if (!G) return false;
+    const [open, close] = laundryHours(), load = ITEMS.laundry_load, fee = ownWasher() ? 0 : +(load && load.price) || 0;
+    const where = ownWasher() ? 'your washer and dryer' : 'the laundry room';
+    if (cleanClothes() >= CLOSET) { toast('All your clothes are clean. No laundry today.', '옷이 다 깨끗해요. 오늘은 빨래할 게 없어요.'); return false; }
+    if (!ownWasher() && (G.minute < open || G.minute + LAUNDRY_MIN > close)) {
+      toast(`The laundry room is open ${clock(open)} to ${clock(close)}. Start your last load by ${clock(close - LAUNDRY_MIN)}.`, `세탁실은 ${hhmm(open)}~${hhmm(close)}에 열어요. 마지막 빨래는 ${hhmm(close - LAUNDRY_MIN)}까지 시작하세요.`, 'bad', 5);
+      return false;
+    }
+    if (ownWasher() && (G.minute < 6 * 60 || G.minute + LAUNDRY_MIN > DAY_END - 30)) {
+      toast(`It's too late to start a load tonight: the washer and the dryer take an hour and a half. Start by ${clock(DAY_END - 30 - LAUNDRY_MIN)}.`, `오늘 밤 빨래를 시작하기엔 너무 늦었어요. 세탁과 건조에 1시간 반이 걸려요. ${hhmm(DAY_END - 30 - LAUNDRY_MIN)}까지 시작하세요.`, 'bad', 5);
+      return false;
+    }
+    if (!portions('detergent')) { toast("You're out of laundry detergent. Fairview Market sells detergent pods.", '세탁 세제가 없어요. 페어뷰 마켓에서 세제 캡슐을 팝니다.', 'bad', 5); return false; }
+    if (fee && G.money < fee) { toast(`You need ${usd2(fee)} for the washer and the dryer.`, `세탁기와 건조기에 ${usd2(fee)}가 필요해요.`, 'bad'); return false; }
+    useOne('detergent');
+    if (fee) pay(-fee, 'Laundry room (wash and dry)', 'spend');
+    advanceMinutes(LAUNDRY_MIN);
+    G.clean = CLOSET;
+    logEvent('laundry', 'Did the laundry', 0);
+    if (player) play(player, 'interact-right', { once: true });
+    saveGame();
+    toast(`You washed, dried and folded a load in ${where}${fee ? ` (${usd2(fee)})` : ''}. ${CLOSET} clean outfits. ${portions('detergent')} detergent pod${portions('detergent') === 1 ? '' : 's'} left.`,
+      `${ownWasher() ? '집 세탁기와 건조기로' : '세탁실에서'} 빨래를 빨고 말려서 갰어요. 깨끗한 옷 ${CLOSET}벌.`, 'good', 5);
+    return true;
+  }
+  function wakeDressed() {            // in the morning: put on a clean outfit (what the morning card says about it)
+    const n = cleanClothes();
+    if (n > 0) { G.clean = n - 1; G.dirtyDay = null; }
+    else G.dirtyDay = G.day;
+    if (G.dirtyDay === G.day) return `👕 You're out of clean clothes, so you put on yesterday's. <b>Do laundry</b> at home${portions('detergent') ? '' : ' (buy detergent at Fairview Market first)'}.<span class="ko"> 깨끗한 옷이 없어서 어제 옷을 입었어요. 집에서 빨래하세요${portions('detergent') ? '' : '(먼저 마켓에서 세제를 사세요)'}.</span>`;
+    if (G.clean <= 1) return `👕 ${G.clean ? 'Only one clean outfit left after today' : "You're wearing your last clean outfit"}. Time to do laundry${portions('detergent') ? '' : ': buy detergent at Fairview Market first'}.<span class="ko"> 깨끗한 옷이 ${G.clean}벌 남았어요. 빨래할 때예요${portions('detergent') ? '' : '. 먼저 마켓에서 세제를 사세요'}.</span>`;
+    return null;
+  }
 
   // ---------------------------------------------------------------- the kitchen: what keeps how long, and cooking
   // What is in your bag is kept package by package: G.lots [{ id, day (bought), left (portions) }]; G.inventory
@@ -1816,6 +1931,45 @@
     } else if (G.wet) G.wet = Math.max(0, G.wet - mins / (Z.indoor ? 50 : 120));
   }
 
+  // ---------------------------------------------------------------- on the street: horns, jaywalking, the walk signal
+  // office/life.js tells (api.street) when a car honks at you, when you walk on the road away from a crosswalk
+  // (jaywalking: against the law in many American cities, and a ticket if the police see it) and when you step onto a
+  // crosswalk against a steady DON'T WALK. Each is explained once a game day; G.street counts them.
+  const STREET = {
+    honk: ['A driver honks at you. Get out of the road and keep to the sidewalk.', '운전자가 경적을 울려요(honk). 차도에서 나와 인도로 다니세요.'],
+    jaywalk: ["That's jaywalking: crossing in the middle of the block. In many US cities it can get you a ticket. Cross at the crosswalk.", '무단횡단(jaywalking)이에요. 미국의 많은 도시에서는 벌금 딱지를 받을 수 있어요. 횡단보도로 건너세요.'],
+    dontwalk: ["The signal said DON'T WALK. Wait for the white walking person (WALK) before you cross.", "신호가 DON'T WALK(건너지 마시오)였어요. 흰색 걷는 사람 표시(WALK)가 켜지면 건너세요."]
+  };
+  function street(kind, at) {
+    if (!G || state !== 'play' || !STREET[kind]) return;
+    G.street = G.street || {};
+    G.street[kind] = (G.street[kind] || 0) + 1;
+    if (kind === 'honk') { const d = player && at ? Math.hypot(at.x - player.pos.x, at.z - player.pos.z) : 3; sound.honk(clamp(1.6 - d / 8, 0.4, 1.2)); }
+    if (G.streetDay && G.streetDay[kind] === G.day) return;
+    (G.streetDay = G.streetDay || {})[kind] = G.day;
+    toast((kind === 'honk' ? '📯 Beep beep! ' : '🚸 ') + STREET[kind][0], STREET[kind][1], 'bad', 5.5);
+  }
+  // the pedestrian signal across the crosswalk near you: a white walking person, or an orange hand (flashing, with
+  // the seconds left, when it is too late to start crossing)
+  const walkEl = document.createElement('div');
+  walkEl.className = 'walk-sign';
+  walkEl.hidden = true;
+  $('tags').appendChild(walkEl);
+  const walkV = new T.Vector3();
+  function walkSignTick() {
+    const w = life && life.walkSign && state === 'play' && !jog ? life.walkSign() : null;
+    const p = w ? project(walkV.set(w.x, 1.25, w.z)) : null;
+    if (!p || !p.ok) { walkEl.hidden = true; return; }
+    walkEl.hidden = false;
+    walkEl.style.left = p.x + 'px';
+    walkEl.style.top = p.y + 'px';
+    const sig = w.state + w.secs;
+    if (walkEl.dataset.sig === sig) return;
+    walkEl.dataset.sig = sig;
+    walkEl.className = 'walk-sign ' + w.state;
+    walkEl.innerHTML = w.state === 'walk' ? '<b>🚶</b> WALK' : `<b>✋</b> DON'T WALK${w.secs ? ` <i>${w.secs}</i>` : ''}`;
+  }
+
   // ---------------------------------------------------------------- HUD: clock, money, energy, objective, next event
   let hudTimer = 0, goalTimer = 0, goalTarget = null;
   function hud() {
@@ -1824,11 +1978,11 @@
     const hol = holidayOf(G.day);
     $('hud-day').title = `${dateLong(G.day)} · Day ${G.day}${hol ? ' · ' + hol.name : ''}`;
     $('hud-time').textContent = clock(G.minute);
-    const wx = weatherNow(), hw = $('hud-weather'), dark = G.minute >= 19.5 * 60 || G.minute < 6 * 60;
+    const wx = weatherNow(), hw = $('hud-weather'), dark = darkAt(G.minute);
     const dry = wx.kind === 'rain' && wx.rain < 0.04, lifted = wx.kind === 'fog' && wx.fog < 0.05;
     if (hw) {
       hw.textContent = `${dry ? '☁️' : lifted ? '⛅' : dark && wx.kind === 'clear' ? '🌙' : WX_ICON[wx.kind] || ''} ${wx.temp}°F${soaked() ? ' 💧' : ''}`;
-      hw.title = `${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}${soaked() ? ' You are wet from the rain.' : ''}`;
+      hw.title = `${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}${sunOf(G.day) ? ' ' + sunText(G.day) + '.' : ''}${soaked() ? ' You are wet from the rain.' : ''}`;
     }
     const m = $('hud-money');
     m.textContent = usd(G.money);
@@ -1908,7 +2062,8 @@
     a.chatN = (a.chatN || 0) + 1;
     const lines = CHATTER[a.id] || [];
     // first, what anybody would say at the sight of you: dripping wet indoors, or in late this morning
-    const about = Z.indoor && soaked() ? 'you:wet' : zoneId === 'office' && G.lateDay === G.day && G.minute < 12 * 60 ? 'you:late' : null;
+    const about = Z.indoor && soaked() ? 'you:wet' : zoneId === 'office' && G.lateDay === G.day && G.minute < 12 * 60 ? 'you:late'
+      : zoneId === 'office' && G.dirtyDay === G.day && (hash(a.id) + G.day) % 2 === 0 ? 'you:laundry' : null;
     if (about && (SMALLTALK[about] || []).length && a.about !== about + G.day) {
       a.about = about + G.day;
       return SMALLTALK[about][(hash(a.id) + G.day) % SMALLTALK[about].length];
@@ -1923,7 +2078,9 @@
       if (m < 9 * 60 && Z.indoor) topics.push('time:morning');
       if (m >= 11.5 * 60 && m < 13.5 * 60) topics.push('time:lunch');
       if (m >= 17.5 * 60) topics.push('time:evening');
-      const pool = topics.reduce((l, t) => l.concat(SMALLTALK[t] || []), []).filter(c => !(m >= 19.5 * 60 && /weather:(clear|partly)/.test(c.topic)));
+      const sun = sunOf(G.day);
+      if (sun && sun.set <= 18.6 * 60 && m >= sun.set - 20) topics.push('time:dark');         // autumn: dark before you leave work
+      const pool = topics.reduce((l, t) => l.concat(SMALLTALK[t] || []), []).filter(c => !(darkAt(m) && /weather:(clear|partly)/.test(c.topic)));
       if (pool.length) return pool[(hash(a.id) + G.day * 7 + a.chatN) % pool.length];
     }
     if (!lines.length) return { line: 'Hi there!', line_ko: '안녕하세요!' };
@@ -2503,6 +2660,8 @@
     }
     if (kind === 'work' || pid === hero().desk) out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
     if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: n ? `Check the mailbox (${n})` : 'Check the mailbox', run: () => openPanel('mailbox') }); }
+    if (RADIO.length && G && kind === 'desk' && atHome()) out.push({ key: 'radio:' + pid, label: `Turn on the radio (${STATION})`, run: () => openPanel('radio') });
+    if (G && zoneId === hero().home_zone && kind === 'door' && ITEMS.detergent) out.push({ key: 'laundry:' + pid + cleanClothes(), label: laundryLabel(), run: () => doLaundry() });
     if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: 'Go for a jog', run: () => startJog(true) });
     if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
     return out;
@@ -2763,7 +2922,7 @@
     if (panelKind === 'shop') {
       h.textContent = place(panelArg).name;
       body.innerHTML = itemsAt(panelArg).map(i => `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
-        <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.kind === 'gear' && G.inventory[i.id] ? ' · you have one' : ''}${usesOf(i) > 1 ? ` · ${usesOf(i)} portions` : ''}${+i.shelf_days > 0 ? ` · keeps ${+i.shelf_days} days` : ''}${+i.cook_only ? ' · needs cooking' : ''}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
+        <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.kind === 'gear' && G.inventory[i.id] ? ' · you have one' : ''}${usesOf(i) > 1 ? ` · ${usesOf(i)} ${i.kind === 'gear' ? 'uses' : 'portions'}` : ''}${+i.shelf_days > 0 ? ` · keeps ${+i.shelf_days} days` : ''}${+i.cook_only ? ' · needs cooking' : ''}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
         <span class="price">${onTheHouse(i) ? `<s>${usd2(+i.price)}</s> Free` : +i.price ? usd2(+i.price) : 'Free'}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? 'Pay' : /meal|drink/.test(i.kind) && !+i.price ? 'Take' : 'Buy'}</button></div>`).join('') || '<p class="empty">Nothing for sale here.</p>';
       const list = itemsAt(panelArg);
       let top = '';
@@ -2791,7 +2950,8 @@
       const canEat = zoneId === hero().home_zone || zoneId === 'hotel';
       const all = lots().map((l, n) => ({ l, n })).filter(x => x.l.left > 0).sort((a, b) => (gone(b.l) - gone(a.l)) || ((bestBy(a.l) || 999) - (bestBy(b.l) || 999)) || String(a.l.id).localeCompare(b.l.id));
       sub.textContent = `${all.length} item${all.length === 1 ? '' : 's'}`;
-      const head = RECIPES.length && all.length ? `<p class="fine">${atHome() ? '<button type="button" data-cook-open="1">Cook a meal</button> ' : ''}Groceries keep for a while, then go bad. Some need cooking: use the kitchen at home.<span class="ko"> 식료품은 기한이 지나면 상합니다. 익혀야 먹는 것은 집 부엌에서 요리하세요.</span></p>` : '';
+      const closet = ITEMS.detergent ? `<p class="fine">👕 Clean clothes: <b>${cleanClothes()} of ${CLOSET}</b> outfits${G.dirtyDay === G.day ? " (you're wearing yesterday's)" : ''}. Do laundry at the door of your home.<span class="ko"> 깨끗한 옷 ${cleanClothes()}벌. 빨래는 집 현관에서 합니다.</span></p>` : '';
+      const head = closet + (RECIPES.length && all.length ? `<p class="fine">${atHome() ? '<button type="button" data-cook-open="1">Cook a meal</button> ' : ''}Groceries keep for a while, then go bad. Some need cooking: use the kitchen at home.<span class="ko"> 식료품은 기한이 지나면 상합니다. 익혀야 먹는 것은 집 부엌에서 요리하세요.</span></p>` : '');
       body.innerHTML = head + all.map(({ l, n }) => {
         const i = ITEMS[l.id] || { id: l.id, name: pretty(l.id), energy: 0 }, by = bestBy(l), bad = gone(l), u = usesOf(i);
         const when = by == null ? '' : bad ? `went bad after ${dateShort(by).replace(/^\w+, /, '')}` : by === G.day ? 'best by today' : by === G.day + 1 ? 'best by tomorrow' : `best by ${dateShort(by)}`;
@@ -2799,7 +2959,7 @@
           : +i.cook_only ? '<span class="price">Needs cooking</span>'
             : i.energy ? `<button type="button" data-eat="${n}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : '';
         return `<div class="row${bad ? ' bad' : by != null && by <= G.day + 1 ? ' soon' : ''}"><div class="main"><div class="t">${esc(i.name)}</div>
-          <div class="s">${esc(i.name_ko || '')}${u > 1 ? ` · ${l.left} of ${u} portions left` : ''}${i.energy && !bad && !+i.cook_only ? ` · energy +${i.energy}` : ''}${when ? ` · <span class="by">${esc(when)}</span>` : ''}</div></div>${btn}</div>`; }).join('')
+          <div class="s">${esc(i.name_ko || '')}${u > 1 ? ` · ${l.left} of ${u} ${i.kind === 'gear' ? 'uses' : 'portions'} left` : ''}${i.energy && !bad && !+i.cook_only ? ` · energy +${i.energy}` : ''}${when ? ` · <span class="by">${esc(when)}</span>` : ''}</div></div>${btn}</div>`; }).join('')
         || '<p class="empty">Your bag is empty. Groceries you buy at the market go here.</p>';
     } else if (panelKind === 'cook') {
       h.textContent = 'Cook a meal';
@@ -2846,6 +3006,13 @@
         <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}${replyBox(m)}</div></div>`).join('')
         || '<p class="empty">No messages yet. Texts, emails and alerts from your bank arrive here.</p>';
       readAll();
+    } else if (panelKind === 'radio') {
+      h.textContent = 'Radio';
+      const show = radioShow();
+      sub.textContent = `${STATION} · ${clock(G.minute)}`;
+      body.innerHTML = `<p class="fine"><button type="button" data-say="${esc(show.map(x => x.en).join(' '))}">▶ Listen to it all</button> Local radio: the weather in Fahrenheit, traffic, the news of the town.<span class="ko"> 지역 라디오: 화씨 날씨, 교통, 동네 소식.</span></p>`
+        + show.map(x => `<div class="row msg"><button type="button" class="play" data-say="${esc(x.en)}" aria-label="Play">▶</button><div class="main"><div class="s">📻 ${esc(RADIO_KIND[x.kind] || pretty(x.kind))}</div>
+        <div class="b">${esc(x.en)}</div>${x.ko ? `<div class="s ko">${esc(x.ko)}</div>` : ''}</div></div>`).join('');
     } else if (panelKind === 'mailbox') {
       h.textContent = 'Mailbox';
       const got = G.mailGot = G.mailGot || {}, list = myMail().slice().reverse(), fresh = list.filter(m => !got[m.id]).map(m => m.id);
@@ -3299,8 +3466,10 @@
     if (G.money < 0) morning.push('Your account is <b>overdrawn</b>. Spend carefully until payday.<span class="ko"> 계좌 잔액이 마이너스예요. 월급날까지 아껴 쓰세요.</span>');
     hush = false;
     kitchenNews().forEach(m => morning.push(m));
+    if (ITEMS.detergent) { const w = wakeDressed(); if (w) morning.push(w); }
     const wx = weatherOf(G.day);
-    morning.unshift(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}<span class="ko"> ${esc(wx.forecast_ko || '')} (최고 ${toC(wx.high_f)}°C)</span>`);
+    const sun = sunOf(G.day);
+    morning.unshift(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}${sun ? ` ${sunText(G.day)}.` : ''}<span class="ko"> ${esc(wx.forecast_ko || '')} (최고 ${toC(wx.high_f)}°C${sun ? `, 해돋이 ${hhmm(sun.rise)} · 해넘이 ${hhmm(sun.set)}` : ''})</span>`);
     const cal = calendar().filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
     const body = `<div class="sum"><div><b>${eps.length}</b>conversations</div><div><b>${phrasesToday}</b>new phrases</div><div><b>${usd2(spent)}</b>spent</div><div><b>${usd2(earned)}</b>earned</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(l.text)}</li>`).join('') + '</ul>' : ''}
@@ -3539,12 +3708,14 @@
     // colliders that move (circles { x, z, r } the player is pushed out of), the light and the graphics setting
     get propList() { return zoneAll; }, get solids() { return solids; }, get movers() { return movers; },
     get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
+    get dark() { return darkAt(hourNow() * 60); }, get solarMinute() { return solarHour(hourNow(), sunDay()) * 60; },
     get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get weekend() { return !!G && isWeekend(G.day); },
     get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
     shelter, get raining() { return raining(); },          // an umbrella over a person (life.js: the passers-by)
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
     loadPack, packReady, findPath: (from, to, opts, cb) => requestPath(from, to, opts, cb),
-    blocked: (x, z, r) => solids.some(s => x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r)
+    blocked: (x, z, r) => solids.some(s => x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r),
+    street: (kind, at) => street(kind, at)          // life.js: a horn, jaywalking, crossing against the signal
   };
 
   // ---------------------------------------------------------------- jogging (office/jog.js): a run round the Fairview Loop, seen through your own eyes
@@ -3639,6 +3810,7 @@
     if (window.SO_JOG && !jog) SO_JOG.sea.near(Z && zoneId === 'city' && player && state !== 'title' ? player.pos.z : -99);          // the surf, south of town
     placeBubbles();
     placeTags();
+    walkSignTick();
     renderer.render(scene, camera);
     if (state === 'title') renderPreview(dt);
   }
@@ -3815,6 +3987,9 @@
     // the phone, the bus, the rain: what has arrived, when the next bus leaves, how wet you are
     get inbox() { return G ? inbox() : []; }, get unread() { return unread(); }, checkPhone() { checkPhone(); return unread(); },
     reply(msgId, replyId) { return replyTo(msgId, replyId); }, get replied() { return G ? Object.assign({}, G.replied) : {}; }, get later() { return G ? (G.later || []).slice() : []; },
+    get sun() { const s = sunOf(G ? G.day : 1); return s ? { rise: hhmm(s.rise), set: hhmm(s.set), dark: darkAt(hourNow() * 60), solar: +solarHour(hourNow(), sunDay()).toFixed(2) } : null; },
+    get radio() { return G ? radioShow() : []; }, get clean() { return cleanClothes(); }, set clean(v) { if (G) G.clean = +v; }, laundry() { return doLaundry(); },
+    get street() { return G ? Object.assign({}, G.street) : {}; }, get walkSign() { return life && life.walkSign ? life.walkSign() : null; },
     get mail() { return G ? myMail().map(m => ({ id: m.id, day: m.day, kind: m.kind, fresh: !(G.mailGot || {})[m.id] })) : []; }, get newMail() { return newMail().length; },
     get date() { return G ? dateLong(G.day) : null; }, get holiday() { const h = G && holidayOf(G.day); return h ? h.name : null; },
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },

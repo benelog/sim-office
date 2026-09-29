@@ -198,8 +198,18 @@ for (const m of DB.mail || []) {
   if (t && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
 }
 
+const RADIO_KINDS = new Set(['news', 'community', 'sports', 'traffic', 'ad']);
+for (const r of DB.radio || []) {
+  const w = `radio ${r.id}`;
+  if (!RADIO_KINDS.has(r.kind)) bad(w, `kind "${r.kind}" is not one of ${[...RADIO_KINDS].join('/')}`);
+  if (!r.text) bad(w, 'no text');
+  if (!r.text_ko) warn(w, 'no text_ko');
+  if (r.day != null && (r.kind === 'traffic' || r.kind === 'ad')) warn(w, `a ${r.kind} for one day is only heard in the rush hours or not at all`);
+}
+if ((DB.radio || []).length && !(DB.radio || []).some(r => r.day == null && r.kind === 'traffic')) warn('radio', 'no traffic report for any day');
+
 const count = (t) => `${t} ${Array.isArray(DB[t]) ? DB[t].length : 0}`;
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail'].map(count).join(', '));
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);

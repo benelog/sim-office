@@ -16,6 +16,11 @@
    How busy the streets are goes with the clock and the weather when you come into the zone: the most cars in the rush
    hours of a working day (7:30 to 9:30, 16:30 to 18:30), few late in the evening, fewer people out in the rain or
    fog and nobody on a bench in the rain.
+   You on the road: a car that has to stop for you honks after a moment; walking on the road away from a crosswalk is
+   jaywalking, and stepping onto a signalled crosswalk on a steady DON'T WALK is against the signal (api.street(kind)
+   tells the engine: 'honk', 'jaywalk', 'dontwalk'). The pedestrian signals go with the traffic lights: WALK for 8 s at
+   the start of the parallel green, then a flashing DON'T WALK with a countdown until the cross traffic gets its green
+   (walkSign() gives the nearest one to you).
    Low graphics: 2 cars, 2 passers-by, 1 sitter (before that). */
 (function () {
   'use strict';
@@ -23,7 +28,7 @@
   const OPEN = { straight: [0, 2], bend: [2, 1] };               // at turn 0: road-straight runs along x, road-bend joins -x and +z
   // LANE: how far from the middle of the road a car drives (the road is 2.4 wide on a 3 x 3 tile, so a lane is 1.2 and
   // its middle 0.6 out). CARS: the type and a tint on the paint (null: the pack's own colour).
-  const LANE = 0.6, CRUISE = 2.4, TURNING = 1.4, CYCLE = 30, GREEN = 12;
+  const LANE = 0.6, CRUISE = 2.4, TURNING = 1.4, CYCLE = 30, GREEN = 12, WALK_S = 8, ROAD_HALF = 1.2;
   const CARS = [['taxi', null], ['sedan', null], ['suv', '#c9d6e6'], ['hatchback', '#f2d4b0'], ['sports-car', null], ['sports-car-2', '#c5e0c8']];
   const SEATS = /^(bench|benchCushion|chair|chairCushion|chairRounded|chairModernCushion|chairModernFrameCushion)$/;
   const rnd = (a, b) => a + Math.random() * (b - a);
@@ -334,14 +339,19 @@
       if (st === 'amber' && room < 1.0) return Infinity;
       return Math.max(0, room);
     }
-    function carTick(car, dt, people, night) {     // before the vehicles move: how fast this car may go
+    function carTick(car, dt, people, night, me) {     // before the vehicles move: how fast this car may go
       if (car.ghost > 0) car.ghost -= dt;
-      let room = signalRoom(car), byCar = false;
+      let room = signalRoom(car), byCar = false, byMe = Infinity;
       const fx = car.dx, fz = car.dz;
       people.forEach(p => {
         const rx = p.x - car.x, rz = p.z - car.z, f = rx * fx + rz * fz, lat = Math.abs(rx * fz - rz * fx);
-        if (f > 0 && f < 4.5 && lat < 0.75) room = Math.min(room, f - car.half - 0.55);
+        if (f > 0 && f < 4.5 && lat < 0.75) { const r = f - car.half - 0.55; room = Math.min(room, r); if (p === me) byMe = r; }
       });
+      // held up by you (not by a red light): after a moment the driver honks, at most every 7 s
+      if (me && byMe <= room + 0.01 && byMe < 0.6 && car.v < 0.2 && signalRoom(car) > byMe) {
+        car.waitMe = (car.waitMe || 0) + dt;
+        if (car.waitMe > 1.3 && api.elapsed > (car.honkAt || 0)) { car.honkAt = api.elapsed + 7; if (api.street) api.street('honk', { x: car.x, z: car.z }); }
+      } else car.waitMe = 0;
       if (car.ghost <= 0) L.cars.forEach(o => {
         if (o === car) return;
         [o.m1, o.m2].forEach(m => {
@@ -575,6 +585,59 @@
       api.animate(a, dt);
     }
 
+    // ------------------------------------------------------------ you on foot: crosswalks, the walk signal, jaywalking
+    // A crossing cell's road runs along one axis and people cross along the other; it is signalled when a signalled
+    // junction is next to it along the road. Its WALK goes with the green of the traffic people walk beside.
+    const walks = [];
+    cells.forEach(c => {
+      if (!c.crossing) return;
+      const axis = c.open.has(0) || c.open.has(2) ? 'x' : 'z', along = axis === 'x' ? [0, 2] : [1, 3];
+      if (along.some(d => { const n = nbr(c, d); return n && n.signal; })) walks.push({ c, axis });
+    });
+    function pedSignal(roadAxis) {          // 'walk' | 'flash' | 'dont', and the countdown while it flashes
+      const start = roadAxis === 'x' ? CYCLE / 2 : 0, e = ((t % CYCLE) - start + CYCLE) % CYCLE, stop = CYCLE / 2;
+      return e < WALK_S ? { state: 'walk', secs: 0 } : e < stop ? { state: 'flash', secs: Math.ceil(stop - e) } : { state: 'dont', secs: 0 };
+    }
+    function onAsphalt(c, x, z) {             // on the road surface of a cell (not the curb round it)
+      const rx = x - c.x, rz = z - c.z;
+      for (const d of c.open) {
+        const along = rx * DIRS[d][0] + rz * DIRS[d][1], lat = Math.abs(rx * DIRS[d][1] - rz * DIRS[d][0]);
+        if (along > -ROAD_HALF && along <= H + 0.01 && lat < ROAD_HALF) return true;
+      }
+      return false;
+    }
+    const foot = { cell: null, onFor: 0, told: false };
+    function footTick(dt, pl) {
+      if (!pl || !cells.size || !L.cars.length || api.state !== 'play') { foot.cell = null; foot.onFor = 0; return; }
+      const c = cells.get(key(Math.round(pl.pos.x / S), Math.round(pl.pos.z / S)));
+      const on = !!c && onAsphalt(c, pl.pos.x, pl.pos.z);
+      if (!on) { foot.cell = null; foot.onFor = 0; foot.told = false; return; }
+      if (foot.cell !== c) { foot.cell = c; foot.onFor = 0; foot.told = false; }
+      foot.onFor += dt;
+      if (foot.told || foot.onFor < 0.35) return;
+      const w = walks.find(x => x.c === c);
+      if (w) {                                // on a crosswalk: fine unless the signal said DON'T WALK when you stepped on
+        foot.told = true;
+        if (pedSignal(w.axis).state === 'dont' && api.street) api.street('dontwalk', { x: c.x, z: c.z });
+        return;
+      }
+      if (c.crossing) { foot.told = true; return; }            // a crosswalk without lights: people have the right of way
+      const inner = !c.junction || (Math.abs(pl.pos.x - c.x) < 0.9 && Math.abs(pl.pos.z - c.z) < 0.9);
+      if (inner && foot.onFor > 0.6) { foot.told = true; if (api.street) api.street('jaywalk', { x: c.x, z: c.z }); }
+    }
+    function walkSign() {                     // the pedestrian signal across the crosswalk nearest to you (within 4.5)
+      const pl = api.player;
+      if (!pl || !walks.length) return null;
+      let best = null, bd = 4.5;
+      walks.forEach(w => { const d = Math.hypot(pl.pos.x - w.c.x, pl.pos.z - w.c.z); if (d < bd) { bd = d; best = w; } });
+      if (!best) return null;
+      // the signal stands on the far side of the road from you
+      const across = best.axis === 'x' ? 'z' : 'x', side = Math.sign(pl.pos[across] - best.c[across]) || 1, p = pedSignal(best.axis);
+      const at = { x: best.c.x, z: best.c.z };
+      at[across] -= side * 1.45;
+      return { state: p.state, secs: p.secs, x: at.x, z: at.z };
+    }
+
     // ------------------------------------------------------------ start (cars wait for their pack)
     if (cells.size) {
       if (api.packReady('cars')) startCars();
@@ -592,7 +655,7 @@
     function update(dt) {
       if (dead) return;
       t += dt;
-      const e = api.elapsed, min = api.minute, night = (min >= 19.5 * 60 || min < 6.5 * 60) ? 1 : 0;
+      const e = api.elapsed, min = api.minute, night = api.dark != null ? (api.dark ? 1 : 0) : (min >= 19.5 * 60 || min < 6.5 * 60) ? 1 : 0;
       L.trees.forEach(tr => {
         const gust = 0.65 + 0.35 * Math.sin(e * 0.21 + tr.ph);
         tr.h.rotation.x = tr.x + tr.amp * gust * Math.sin(e * tr.f + tr.ph);
@@ -607,7 +670,7 @@
       if (Y) {
         const who = pl && api.state !== 'title' ? pl : null;
         if (who) playerObs.position.set(who.pos.x, 0, who.pos.z); else playerObs.position.set(1e6, 0, 1e6);
-        L.cars.forEach(c => carTick(c, dt, people, !!night));
+        L.cars.forEach(c => carTick(c, dt, people, !!night, who ? who.pos : null));
         carsEM.update(dt);
         L.cars.forEach(c => carAfter(c, dt, !!night));
         const others = Object.values(api.npcs || {}).concat(L.walkers.map(w => w.a));
@@ -616,6 +679,7 @@
         L.walkers.forEach(w => walkerAfter(w, dt));
       }
       L.sitters.forEach(s => sitterTick(s, dt, pl));
+      footTick(dt, pl && api.state !== 'title' ? pl : null);
     }
     function dispose() {
       dead = true;
@@ -626,10 +690,11 @@
     }
     function info() {
       return { busy, cars: L.cars.length, walkers: L.walkers.length, sitters: L.sitters.length, trees: L.trees.length, lights: L.lights.length,
-        signal: L.lights.length || [...cells.values()].some(c => c.signal) ? { x: phaseOf('x'), z: phaseOf('z') } : null,
+        signal: L.lights.length || [...cells.values()].some(c => c.signal) ? { x: phaseOf('x'), z: phaseOf('z') } : null, walks: walks.length,
+        walk: walks.map(w => Object.assign({ at: [w.c.x, w.c.z], axis: w.axis }, pedSignal(w.axis))), foot: { on: !!foot.cell, told: foot.told },
         at: L.cars.map(c => [+c.x.toFixed(1), +c.z.toFixed(1), +c.v.toFixed(2)]).concat(L.walkers.map(w => [+w.a.pos.x.toFixed(1), +w.a.pos.z.toFixed(1)])) };
     }
-    return { update, dispose, info };
+    return { update, dispose, info, walkSign };
   }
 
   // The lamp faces of a traffic light: its triangles whose colormap colour is the red, amber or green of a lamp and

@@ -278,3 +278,15 @@ CREATE TABLE IF NOT EXISTS mail (
   body text NOT NULL,
   body_ko text
 );
+
+-- The local radio station (turn it on at the desk at home). The engine says the time, the date and the weather
+-- itself; these are the other parts. day: the game day it is on the air, NULL = any day (taken in turn).
+-- kind: news | community | sports | traffic (weekday rush hours) | ad.
+CREATE TABLE IF NOT EXISTS radio (
+  id varchar(40) PRIMARY KEY,
+  day int,
+  kind varchar(12) NOT NULL DEFAULT 'news',
+  text text NOT NULL,
+  text_ko text,
+  sort int DEFAULT 0
+);

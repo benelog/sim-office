@@ -1070,7 +1070,7 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     skyTint(api, keep);
   }
   function skyTint(api, keep) {
-    var h = (api.minute || 600) / 60, step = Math.round(h * 12);   // every five minutes
+    var h = (api.solarMinute || api.minute || 600) / 60, step = Math.round(h * 12);   // every five minutes
     if (step === keep.step) return;
     keep.step = step;
     var e = Math.max(0, Math.min(1, Math.sin(Math.PI * (h - 6) / 14))), night = h < 6 || h > 20;
