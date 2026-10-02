@@ -266,7 +266,41 @@ for (const t of DB.tasks || []) {
   if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
 }
 
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'].map(count).join(', '));
+// cards (credit cards, Menu > Bank): a kind, a deposit that is the limit of a secured card, a limit and a score for
+// an unsecured one, rates that a bank could charge, both languages; a card to become that exists and is unsecured;
+// at least one secured card for a hero without credit history; the heroes' starting cards exist (config card_start)
+const cardById = Object.fromEntries((DB.cards || []).map(c => [c.id, c])), CFG = DB.config || {};
+const heroPairs = (v) => String(v == null ? '' : v).split(',').map(x => x.split(':').map(s => s.trim())).filter(x => x[0]);
+for (const c of DB.cards || []) {
+  const w = `cards ${c.id}`;
+  if (!/^(secured|unsecured)$/.test(c.kind)) bad(w, `kind "${c.kind}" is not secured/unsecured`);
+  if (!/^\d{4}$/.test(String(c.last4 || ''))) bad(w, `last4 "${c.last4}" is not four digits`);
+  if (c.kind === 'secured' && !(c.deposit > 0)) bad(w, 'a secured card needs a deposit (it is the limit)');
+  if (c.kind === 'secured' && c.min_score != null) bad(w, 'a secured card is for no credit history: no min_score');
+  if (c.kind === 'unsecured' && !(c.credit_limit > 0)) bad(w, 'an unsecured card needs a credit_limit');
+  if (c.kind === 'unsecured' && !(c.min_score >= 300 && c.min_score <= 850)) bad(w, `min_score ${c.min_score} is not a score (300-850)`);
+  if (!(c.apr > 0 && c.apr <= 36)) bad(w, `apr ${c.apr} is not between 0 and 36`);
+  if (!(c.min_due > 0) || !(c.min_pct > 0 && c.min_pct <= 10)) bad(w, 'min_due must be above 0 and min_pct 0-10');
+  if (!(c.late_fee >= 0 && c.late_fee <= 41)) bad(w, `late_fee ${c.late_fee} is over the legal limit ($41)`);
+  if (c.cash_back != null && !(c.cash_back >= 0 && c.cash_back <= 5)) bad(w, `cash_back ${c.cash_back} is not 0-5`);
+  if (c.graduates_to && !(cardById[c.graduates_to] && cardById[c.graduates_to].kind === 'unsecured')) bad(w, `graduates_to "${c.graduates_to}" is not an unsecured card`);
+  if (c.graduates_to && c.kind !== 'secured') bad(w, 'only a secured card graduates');
+  if (!c.name_ko || !c.note_ko) bad(w, 'name_ko and note_ko are required');
+}
+if ((DB.cards || []).length) {
+  if (!(DB.cards || []).some(c => c.kind === 'secured')) bad('cards', 'no secured card: a hero without credit history cannot get one');
+  for (const [h, id] of heroPairs(CFG.card_start)) {
+    if (heroes.size && !heroes.has(h)) bad('config card_start', `hero "${h}" not in heroes`);
+    if (id && !cardById[id]) bad('config card_start', `card "${id}" not in cards`);
+  }
+  for (const [h, n] of heroPairs(CFG.credit_months)) if (!(+n >= 0)) bad('config credit_months', `${h}: "${n}" is not a number of months`);
+  for (const [h, id] of heroPairs(CFG.card_start)) if (id && !(heroPairs(CFG.credit_months).find(x => x[0] === h) || [])[1]) warn('config card_start', `${h} starts with a card but has no credit_months (no score until the first statement)`);
+  const dom = +CFG.card_close_dom;
+  if (CFG.card_close_dom != null && !(Number.isInteger(dom) && dom >= 1 && dom <= 28)) bad('config card_close_dom', `${CFG.card_close_dom} is not a date of every month (1-28)`);
+  if (CFG.card_due_days != null && !(+CFG.card_due_days >= 21)) bad('config card_due_days', 'the law gives at least 21 days to pay');
+}
+
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'cards'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);

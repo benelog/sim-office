@@ -366,3 +366,30 @@ CREATE TABLE IF NOT EXISTS tasks (
   time_to varchar(5),
   sort int NOT NULL DEFAULT 0
 );
+
+-- Credit cards from the hero's bank (config bank_name), applied for in Menu > Bank. kind: secured (the deposit, taken
+-- from checking, is the limit; no credit history needed) | unsecured (credit_limit, or config card_limit for the hero;
+-- needs a credit score of min_score). last4: the end of the card number on the screen. apr: yearly interest in percent
+-- on a balance carried past the due date; the minimum payment is the greater of min_due and min_pct % of the balance
+-- plus the interest and fees (all of it when that is less); late_fee: when not even the minimum is paid by the due
+-- date; cash_back: percent of purchases, credited on the statement. graduates_to: the unsecured card a secured card
+-- becomes after config card_graduate_after on-time payments in a row (the deposit comes back).
+CREATE TABLE IF NOT EXISTS cards (
+  id varchar(32) PRIMARY KEY,
+  name varchar(60) NOT NULL,
+  name_ko varchar(60),
+  kind varchar(10) NOT NULL DEFAULT 'unsecured',
+  last4 varchar(4) NOT NULL,
+  deposit decimal(8,2) NOT NULL DEFAULT 0,
+  credit_limit decimal(8,2) NOT NULL DEFAULT 0,
+  apr decimal(5,2) NOT NULL,
+  min_due decimal(6,2) NOT NULL DEFAULT 25,
+  min_pct decimal(4,2) NOT NULL DEFAULT 1,
+  late_fee decimal(6,2) NOT NULL DEFAULT 30,
+  cash_back decimal(4,2) NOT NULL DEFAULT 0,
+  min_score int,
+  graduates_to varchar(32),
+  note varchar(400),
+  note_ko varchar(400),
+  sort int NOT NULL DEFAULT 0
+);
