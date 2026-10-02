@@ -44,7 +44,7 @@
     start_date: '', bus_every: 0, bus_every_weekend: 0, bus_first: '06:00', bus_last: '22:30', overdraft_fee: 0, low_balance: 0,
     punch_card_place: '', punch_card_every: 0, late_after: '09:15', rain_energy_per_hour: -10, bank_name: 'Fairview Credit Union',
     late_points: 2, noon_points: 3, absent_points: 4, warn_points: 2, final_points: 4, fire_points: 6,
-    mission_days: 14, mission_bonus: 1000, mission_points: 200
+    mission_days: 15, mission_bonus: 1000, mission_points: 200
   }, DB.config || {});
   const DAY_START = hm(CFG.day_start, 420), DAY_END = hm(CFG.day_end, 1380);
   const E_MAX = +CFG.energy_max || 100;
@@ -1664,7 +1664,7 @@
   function closeDay(d, away) {
     const w = work();
     if (w.fired || isWeekend(d) || w.record[d]) return null;
-    const sick = G.log.some(l => l.type === 'episode' && l.day === d && EPISODES[l.id] && /(^|,)\s*sick\s*(,|$)/.test(EPISODES[l.id].tags || ''));
+    const sick = G.sickFor === d;          // you called in sick the evening before (a conversation tagged sick)
     const kind = sick ? 'sick' : (away || G.tripDay === d) ? 'trip' : G.inDay === d ? null : 'absent';
     if (!kind) return null;
     w.record[d] = kind;
@@ -1727,11 +1727,12 @@
       ok: tr('Walk away', '돌아서기'), state: 'card' });
     speak(line, voiceOf(desk ? NPCS[desk] : null));
   }
-  // ---------------------------------------------------------------- two weeks of missions, then free play
-  // Every conversation of the hero is a mission of the first config mission_days days (14: two weeks). Finishing all
+  // ---------------------------------------------------------------- missions, then free play
+  // Every conversation of the hero is a mission of the first config mission_days days (15: two weeks and the Monday
+  // after). Finishing all
   // of them: a congratulation, a bonus deposit (mission_bonus) and points (mission_points). From the day after, it is
   // free play: no set conversations, only the town, the bills and the job (work still starts at 9:00, and late
-  // mornings still add up). G.mission = { day, all (every mission done), bonus } once the two weeks are settled.
+  // mornings still add up). G.mission = { day, all (every mission done), bonus } once the missions are settled.
   const MISSION_DAYS = +CFG.mission_days || 14;
   const missions = () => episodes().filter(e => (e.day_from || 1) <= MISSION_DAYS);
   const missionsOf = (id) => rows('episodes').filter(e => (e.hero || DEFAULT_HERO) === id && (e.day_from || 1) <= MISSION_DAYS).length;
@@ -1743,22 +1744,22 @@
     if (!all || got < all) return false;
     const bonus = fired() ? 0 : +CFG.mission_bonus || 0, pts = +CFG.mission_points || 0;
     G.mission = { day: G.day, all: true, bonus };
-    if (bonus) pay(bonus, `Two-week bonus from ${CFG.company}`, 'income', { ko: `${CFG.company} 2주 보너스` });
-    addScore(pts, 'Every mission of the two weeks', '2주 미션 모두 완료');
-    if (!fired()) notify(BOSS, `${G.name}, you got through everything we planned for these two weeks, and it showed. Thank you! There's a ${usd(bonus)} bonus on its way to your account.`,
-      `${hero().name_ko || G.name}, 이번 2주 동안 계획한 일을 전부 해냈네요. 정말 고마워요! 보너스 ${usd(bonus)}가 계좌로 들어갈 거예요.`, 'text');
-    logEvent('mission', 'Finished every mission of the two weeks', 0, { ko: '2주 미션 모두 완료' });
+    if (bonus) pay(bonus, `Bonus from ${CFG.company}`, 'income', { ko: `${CFG.company} 보너스` });
+    addScore(pts, 'Every mission done', '미션 모두 완료');
+    if (!fired()) notify(BOSS, `${G.name}, you got through everything we planned for your first weeks here, and it showed. Thank you! There's a ${usd(bonus)} bonus on its way to your account.`,
+      `${hero().name_ko || G.name}, 그동안 계획한 일을 전부 해냈네요. 정말 고마워요! 보너스 ${usd(bonus)}가 계좌로 들어갈 거예요.`, 'text');
+    logEvent('mission', 'Finished every mission', 0, { ko: '미션 모두 완료' });
     saveGame();
     const days = MISSION_DAYS - G.day;
-    showCard({ kicker: tr('Two weeks of missions', '2주 미션'), title: tr('Congratulations!', '축하합니다!'),
-      body: tr(`<p class="big">🎉 You finished all <b>${all}</b> missions of these two weeks${fired() ? '' : ` at ${esc(CFG.company)}`}.</p>
+    showCard({ kicker: tr('Missions', '미션'), title: tr('Congratulations!', '축하합니다!'),
+      body: tr(`<p class="big">🎉 You finished all <b>${all}</b> missions${fired() ? '' : ` at ${esc(CFG.company)}`}.</p>
         <div class="sum">${bonus ? `<div><b>+${usd(bonus)}</b>bonus</div>` : ''}<div><b>+${pts}</b>points</div><div><b>★ ${score()}</b>score</div><div><b>${esc(standing()[0])}</b>at work</div></div>
         ${bonus ? `<p>Maya sent a thank-you note, and a bonus of <b>${usd(bonus)}</b> is in your account.</p>` : ''}
-        <p>${days > 0 ? `The rest of the two weeks is yours, and from ${esc(dateLong(MISSION_DAYS + 1))} it's <b>free play</b>` : `From tomorrow it's <b>free play</b>`}: no more set conversations. Live your life in ${esc(CFG.city)}: ${fired() ? 'find your own way' : 'go to work on time'}, pay the bills, cook, shop, jog, and explore.</p>`,
-        `<p class="big">🎉 이번 2주의 미션 <b>${all}</b>개를 모두 해냈어요.</p>
+        <p>${days > 0 ? `Until then the time is yours, and from ${esc(dateLong(MISSION_DAYS + 1))} it's <b>free play</b>` : `From tomorrow it's <b>free play</b>`}: no more set conversations. Live your life in ${esc(CFG.city)}: ${fired() ? 'find your own way' : 'go to work on time'}, pay the bills, cook, shop, jog, and explore.</p>`,
+        `<p class="big">🎉 미션 <b>${all}</b>개를 모두 해냈어요.</p>
         <div class="sum">${bonus ? `<div><b>+${usd(bonus)}</b>보너스</div>` : ''}<div><b>+${pts}</b>점수</div><div><b>★ ${score()}</b>총점</div><div><b>${esc(standing()[1])}</b>근무 평가</div></div>
         ${bonus ? `<p>${esc(firstName(NPCS[BOSS] || { name: 'Maya' }))}가 감사 인사를 보냈고, 보너스 <b>${usd(bonus)}</b>가 계좌에 들어왔어요.</p>` : ''}
-        <p>${days > 0 ? `2주의 남은 날은 자유롭게 보내고, ${esc(dateKo(MISSION_DAYS + 1))}부터는 <b>자유 플레이</b>예요` : '내일부터는 <b>자유 플레이</b>예요'}. 정해진 대화는 더 없어요. ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요: ${fired() ? '새 길을 찾고' : '제시간에 출근하고'}, 공과금을 내고, 요리하고, 장 보고, 달리고, 구경하세요.</p>`),
+        <p>${days > 0 ? `남은 날은 자유롭게 보내고, ${esc(dateKo(MISSION_DAYS + 1))}부터는 <b>자유 플레이</b>예요` : '내일부터는 <b>자유 플레이</b>예요'}. 정해진 대화는 더 없어요. ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요: ${fired() ? '새 길을 찾고' : '제시간에 출근하고'}, 공과금을 내고, 요리하고, 장 보고, 달리고, 구경하세요.</p>`),
       ok: tr('Keep going', '계속하기'), state: 'card' }, () => { goalTimer = 0; });
     speak('Congratulations!', heroVoice());
     return true;
@@ -1768,8 +1769,8 @@
     if (!G || day !== MISSION_DAYS) return null;
     const [got, all] = missionCount();
     if (!G.mission) G.mission = { day, all: false, bonus: 0 };
-    return G.mission.all ? tr(`🎉 Your two weeks of missions are behind you. From today it's <b>free play</b>: no set conversations, just your life in ${esc(CFG.city)}.`, `🎉 2주 미션이 끝났어요. 오늘부터 <b>자유 플레이</b>예요. 정해진 대화 없이 ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요.`)
-      : tr(`🗓️ The two weeks are over: you finished <b>${got} of ${all}</b> missions (all of them earns a bonus, so no bonus this time). From today it's <b>free play</b>.`, `🗓️ 2주가 끝났어요. 미션 <b>${all}개 중 ${got}개</b>를 해냈어요(모두 해내야 보너스가 나와서 이번에는 없어요). 오늘부터 <b>자유 플레이</b>예요.`);
+    return G.mission.all ? tr(`🎉 Your missions are behind you. From today it's <b>free play</b>: no set conversations, just your life in ${esc(CFG.city)}.`, `🎉 미션이 끝났어요. 오늘부터 <b>자유 플레이</b>예요. 정해진 대화 없이 ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요.`)
+      : tr(`🗓️ The missions are over: you finished <b>${got} of ${all}</b> missions (all of them earns a bonus, so no bonus this time). From today it's <b>free play</b>.`, `🗓️ 미션 기간이 끝났어요. 미션 <b>${all}개 중 ${got}개</b>를 해냈어요(모두 해내야 보너스가 나와서 이번에는 없어요). 오늘부터 <b>자유 플레이</b>예요.`);
   }
   // Sales tax and tips: prices on a menu or a shelf are before tax. Meals, drinks and other goods are taxed
   // (config sales_tax); groceries and fares are not. Where food or drinks are served the panel asks about a tip
@@ -2322,6 +2323,9 @@
       } else if (fired()) {
         en = `You no longer work at ${esc(CFG.company)}. Your time is your own.`;
         ko = `이제 ${esc(CFG.company)} 직원이 아니에요. 시간은 마음대로 쓰세요.`;
+      } else if (G.sickFor === G.day && G.inDay !== G.day) {
+        en = 'You called in sick today. Stay home and rest.';
+        ko = '오늘은 병가를 냈어요. 집에서 쉬세요.';
       } else if (!isWeekend(G.day) && G.inDay !== G.day && G.minute < 17 * 60 && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
         const late = G.minute > hm(CFG.late_after, 555);
         en = `${late ? "You're late! " : ''}Go to work at <b>${esc(CFG.company)}</b>${late ? '' : `: be in by ${clock(hm(CFG.late_after, 555))}`}.`;
@@ -3185,6 +3189,7 @@
     talk = null;
     G.done[ep.id] = true;
     (G.epScore = G.epScore || {})[ep.id] = [got, best];
+    if (/(^|,)\s*sick\s*(,|$)/.test(ep.tags || '')) { let d = G.day + 1; while (isWeekend(d)) d++; G.sickFor = d; }          // a sick day: the next working day
     if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend', { ko: ep.title_ko });
     if (ep.energy) G.energy = clamp(G.energy + +ep.energy, 0, E_MAX);
     rows('phrases').filter(p => p.episode === ep.id && !G.phrases.includes(p.id)).forEach(p => G.phrases.push(p.id));
@@ -3396,8 +3401,8 @@
       body.innerHTML = `<div class="sum"><div><b>★ ${score()}</b>${tr('score', '점수')}</div><div class="standing ${st[2]}"><b>${tr(st[0], st[1])}</b>${tr('standing', '평가')}</div><div><b>${fired() ? '—' : w.pts + ' / ' + CFG.fire_points}</b>${tr('strikes', '벌점')}</div></div>
         <p class="fine">${esc(say)}${!fired() && w.pts ? tr(` ${left} more strike${left === 1 ? '' : 's'} and you are let go (late ${CFG.late_points}, in after noon ${CFG.noon_points}, a missed day ${CFG.absent_points}; five on-time days in a row take one off).`, ` 벌점 ${left}점이 더 쌓이면 해고예요 (지각 ${CFG.late_points}, 오후 출근 ${CFG.noon_points}, 결근 ${CFG.absent_points}; 5일 연속 정시 출근하면 1점 감소).`) : ''}</p>
         ${(() => { const [got, all] = missionCount(); const m = G.mission;
-          return `<h3>${tr('Two weeks of missions', '2주 미션')}</h3><p class="fine">${m && m.all ? tr(`🎉 All ${all} done${m.bonus ? `: bonus ${usd(m.bonus)}` : ''}. ${freePlay() ? 'Free play now.' : `Free play from ${dateLong(MISSION_DAYS + 1)}.`}`, `🎉 ${all}개 모두 완료${m.bonus ? `: 보너스 ${usd(m.bonus)}` : ''}. ${freePlay() ? '지금은 자유 플레이.' : `${dateKo(MISSION_DAYS + 1)}부터 자유 플레이.`}`)
-            : freePlay() ? tr(`${got} of ${all} done. The two weeks are over: free play now.`, `${all}개 중 ${got}개 완료. 2주가 끝나 지금은 자유 플레이.`)
+          return `<h3>${tr('Missions', '미션')}</h3><p class="fine">${m && m.all ? tr(`🎉 All ${all} done${m.bonus ? `: bonus ${usd(m.bonus)}` : ''}. ${freePlay() ? 'Free play now.' : `Free play from ${dateLong(MISSION_DAYS + 1)}.`}`, `🎉 ${all}개 모두 완료${m.bonus ? `: 보너스 ${usd(m.bonus)}` : ''}. ${freePlay() ? '지금은 자유 플레이.' : `${dateKo(MISSION_DAYS + 1)}부터 자유 플레이.`}`)
+            : freePlay() ? tr(`${got} of ${all} done. The missions are over: free play now.`, `${all}개 중 ${got}개 완료. 미션 기간이 끝나 지금은 자유 플레이.`)
               : tr(`<b>${got} of ${all}</b> done, until ${dateLong(MISSION_DAYS)}. Finish all of them for a ${usd(+CFG.mission_bonus || 0)} bonus and ${+CFG.mission_points || 0} points.`, `${dateKo(MISSION_DAYS)}까지 <b>${all}개 중 ${got}개</b> 완료. 모두 해내면 보너스 ${usd(+CFG.mission_bonus || 0)}와 ${+CFG.mission_points || 0}점.`)}</p>`; })()}
         <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
         <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
@@ -3793,7 +3798,7 @@
     const wasFired = fired();
     const att = closeDay(day, away);           // a working day you never came in: a strike (and maybe the end of the job)
     const firedNow = !wasFired && fired();
-    const missionNote = closeMissions(day);          // the last day of the two weeks: free play from tomorrow
+    const missionNote = closeMissions(day);          // the last day of the missions: free play from tomorrow
     G.day += 1;
     G.minute = DAY_START;
     G.energy = late ? Math.round(E_MAX * 0.8) : E_MAX;          // asleep on your feet at 11 PM is not a night's rest
@@ -3914,7 +3919,7 @@
     const info = $('hero-info');
     if (info) info.innerHTML = `<p class="who"><b>${esc(tr(h.full_name || h.name, h.full_name_ko))}</b> · ${esc(loc(h, 'role'))}</p><p>${esc(loc(h, 'bio'))}</p>
       <dl><dt>${tr('Home', '집')}</dt><dd>${esc(tr(h.home_name || zoneName(h.home_zone)[0], h.home_name_ko))}</dd>
-      <dt>${tr('Story', '이야기')}</dt><dd>${tr(`${missionsOf(h.id)} missions in two weeks (all of them: a bonus), then free play`, `2주 동안 미션 ${missionsOf(h.id)}개(모두 해내면 보너스), 그다음은 자유 플레이`)}</dd>
+      <dt>${tr('Story', '이야기')}</dt><dd>${tr(`${missionsOf(h.id)} missions in ${MISSION_DAYS} days (all of them: a bonus), then free play`, `${MISSION_DAYS}일 동안 미션 ${missionsOf(h.id)}개(모두 해내면 보너스), 그다음은 자유 플레이`)}</dd>
       <dt>${tr('Money', '돈')}</dt><dd>${tr(`${usd(+h.start_money)} to start · ${usd(+h.salary_net)} every other Friday · ${esc(String(h.housing_name || 'Rent').toLowerCase())} ${usd(+h.housing)}`, `처음 ${usd(+h.start_money)} · 격주 금요일 ${usd(+h.salary_net)} · ${esc(h.housing_name_ko || '월세')} ${usd(+h.housing)}`)}</dd></dl>`;
     setPreview(h.model);
   }

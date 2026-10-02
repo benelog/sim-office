@@ -70,7 +70,7 @@ for (const e of rows('episodes')) {
   if (!Number.isInteger(e.reward ?? 0) || !Number.isInteger(e.energy ?? 0)) bad(w, 'reward and energy must be whole numbers');
   const nt = rows('turns').filter(t => t.episode === e.id).length, np = rows('phrases').filter(p => p.episode === e.id).length;
   if (nt && (nt < 3 || nt > 6)) bad(w, `${nt} turns (want 3-6)`);
-  if (np < 4 || np > 8) bad(w, `${np} phrases (want 4-8)`);
+  if (np > 8) warn(w, `${np} phrases (more than 8)`);          // phrases are kept in the save but no longer shown (2026-10-02): none is fine
   for (const r of String(e.requires || '').split(',').map(s => s.trim()).filter(Boolean)) {
     if (!episodes.has(r)) bad(w, `requires unknown episode "${r}"`);
     else {
