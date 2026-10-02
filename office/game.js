@@ -2387,6 +2387,7 @@
   }
   function checkPhone() {          // what has come in by now (only while you are walking about: not in the middle of a conversation)
     if (!G || state !== 'play') return;
+    ordersTick();          // packages: tracking, the driver at the door
     G.got = G.got || {};
     const now = G.day * 1440 + G.minute;
     const back = (G.later || []).filter(x => x.at <= now);
@@ -2661,6 +2662,324 @@
     return out;
   }
 
+  // ---------------------------------------------------------------- cash: the wallet, ATMs, cash back, places that take only cash
+  // G.money is the checking account (the debit card, paychecks, autopay); G.cash is the cash in your wallet (config
+  // start_cash for each hero, given on day 1 or to a save from before there was cash). Most places take the card; the
+  // places in config cash_only (the farmers market stands by Seaside Park) take only cash. Cash comes from an ATM
+  // (places of kind atm): your own credit union's (config atm_own) is free and takes deposits, another bank's charges
+  // config atm_fee for every withdrawal, shown on the screen before you accept it. Up to config atm_daily_limit a day
+  // in $20 bills, never more than is in checking. At the checkout of the market (config cash_back_place) the cashier
+  // gives cash back (config cash_back: the amounts) with a purchase made there in the last half hour, at no fee.
+  // Cash spent is logged with cash: 1 (not a line in the bank's list); a withdrawal, a deposit or cash back is logged
+  // as type atm (money moving between checking and the wallet: neither spent nor earned).
+  // G.atm = { day, out (withdrawn that day) }, G.cashBackAt (the purchase cash back was given with).
+  const CASH_ONLY = new Set(listOf(CFG.cash_only)), ATM_OWN = new Set(listOf(CFG.atm_own));
+  const ATM_FEE = +CFG.atm_fee || 0, ATM_LIMIT = +CFG.atm_daily_limit || 500, CASH_BACK_AT = String(CFG.cash_back_place || '');
+  const ATM_AMOUNTS = listOf(CFG.atm_amounts || '20,40,60,100,200').map(Number), CASH_BACK = listOf(CFG.cash_back || '20,40').map(Number);
+  const cashOnly = (pid) => !!pid && CASH_ONLY.has(pid);
+  const wallet = () => !G ? 0 : G.cash == null ? (G.cash = perHero(CFG.start_cash, G.hero, 0)) : G.cash;
+  const atms = () => rows('places').filter(p => p.kind === 'atm');
+  const atmFee = (pid) => ATM_OWN.has(pid) ? 0 : ATM_FEE;
+  const atmOut = () => G.atm && G.atm.day === G.day ? G.atm.out : 0;
+  const nameKo = (p) => p.name_ko || p.name;
+  const storeOf = (pid) => { const z = zoneOfPlace(pid), d = PLACES[z + '_door']; return d ? [d.name, nameKo(d)] : zoneName(z); };          // Fairview Market
+  let atmAsk = null;          // { pid, n }: a withdrawal waiting for you to accept the fee
+  function payCash(amount, text, type, extra) {
+    G.cash = cents(wallet() + amount);
+    logEvent(type || 'spend', text, amount, Object.assign({ cash: 1 }, extra || null));
+  }
+  function atmList() {          // the ATMs and what they cost, for the panels
+    const l = atms();
+    return [l.map(p => `${p.name} (${atmFee(p.id) ? usd2(atmFee(p.id)) + ' fee' : 'free'})`).join(', '), l.map(p => `${nameKo(p)} (${atmFee(p.id) ? '수수료 ' + usd2(atmFee(p.id)) : '수수료 없음'})`).join(', ')];
+  }
+  function cashShort(b) {         // the shop's note when the wallet is short at a cash-only place
+    const [en, ko] = atmList();
+    return tr(`Cash only, sorry: that's ${receipt(b)}, and you have ${usd2(wallet())} in cash. Get cash at an ATM: ${en}.`, `죄송하지만 현금만 받아요. ${receipt(b)}인데 지갑 속 현금은 ${usd2(wallet())}예요. ATM에서 현금을 찾으세요: ${ko}.`);
+  }
+  function cashNote(pid, sub) {   // over the list of a shop: cash only, and how much you have
+    if (!cashOnly(pid)) return '';
+    sub.textContent = tr('Cash ', '현금 ') + usd2(wallet());
+    const [en, ko] = atmList();
+    return `<p class="fine">${tr(`💵 <b>Cash only.</b> In your wallet: <b>${usd2(wallet())}</b>. ATMs: ${esc(en)}.`, `💵 <b>현금만 받아요.</b> 지갑 속 현금: <b>${usd2(wallet())}</b>. ATM: ${esc(ko)}.`)}</p>`;
+  }
+  function cashHud() {
+    const el = $('hud-cash');
+    if (!el) return;
+    el.textContent = '💵 ' + usd(wallet());
+    el.title = tr('Cash in your wallet', '지갑 속 현금');
+  }
+  function bankCash() {           // Menu > Bank: the wallet, the ATMs, cash back, where only cash will do
+    const [en, ko] = atmList(), only = Array.from(CASH_ONLY).filter(id => PLACES[id]);
+    const back = CASH_BACK_AT && PLACES[CASH_BACK_AT] ? [` Cash back at the ${storeOf(CASH_BACK_AT)[0]} checkout is free.`, ` ${storeOf(CASH_BACK_AT)[1]} 계산대의 캐시백은 수수료가 없어요.`] : ['', ''];
+    return `<p class="fine">${tr(`💵 Cash in your wallet: <b>${usd2(wallet())}</b>. ATMs: ${esc(en)}.${esc(back[0])}${only.length ? ` Cash only: ${esc(only.map(id => PLACES[id].name).join(', '))}.` : ''}`,
+      `💵 지갑 속 현금: <b>${usd2(wallet())}</b>. ATM: ${esc(ko)}.${esc(back[1])}${only.length ? ` 현금만 받는 곳: ${esc(only.map(id => nameKo(PLACES[id])).join(', '))}.` : ''}`)}</p>`;
+  }
+  function atmSays(ok, why, en, ko) {
+    if (panelKind === 'atm' && !panel.hidden) note(tr(en, ko), !ok);
+    else if (!panel.hidden || state === 'play') toast(en, ko, ok ? 'good' : 'bad', 4);
+    return { ok, why, cash: wallet(), money: G.money };
+  }
+  // take cash out: the fee of another bank's ATM is shown first (accept: you said yes on its screen)
+  function withdraw(pid, n, accept) {
+    n = Math.round(+n);
+    const fee = atmFee(pid), where = place(pid);
+    if (placeKind(pid) !== 'atm') return atmSays(false, 'atm', 'There is no ATM here.', '여기에는 ATM이 없어요.');
+    if (!(n > 0) || n % 20) return atmSays(false, 'bills', 'This ATM gives $20 bills only.', '이 ATM은 20달러 지폐만 나와요.');
+    if (atmOut() + n > ATM_LIMIT) return atmSays(false, 'limit', `That's over your daily ATM limit of ${usd(ATM_LIMIT)} (${usd(Math.max(0, ATM_LIMIT - atmOut()))} left today).`, `하루 ATM 인출 한도 ${usd(ATM_LIMIT)}를 넘어요 (오늘 남은 한도 ${usd(Math.max(0, ATM_LIMIT - atmOut()))}).`);
+    if (G.money < n + fee) return atmSays(false, 'funds', `Insufficient funds: checking has ${usd2(G.money)}${fee ? `, and this ATM adds a ${usd2(fee)} fee` : ''}.`, `잔액이 부족해요. 계좌에 ${usd2(G.money)}${fee ? `가 있고, 이 ATM은 수수료 ${usd2(fee)}가 더 붙어요` : '뿐이에요'}.`);
+    if (fee && !accept) { atmAsk = { pid, n }; return { ok: false, why: 'fee', fee, cash: wallet(), money: G.money }; }
+    atmAsk = null;
+    pay(-n, `ATM withdrawal (${where.name})`, 'atm', { ko: `ATM 출금 (${nameKo(where)})` });
+    if (fee) pay(-fee, `ATM fee (${where.name})`, 'fee', { ko: `ATM 수수료 (${nameKo(where)})` });
+    G.cash = cents(wallet() + n);
+    G.atm = { day: G.day, out: atmOut() + n };
+    advanceMinutes(2);
+    if (player) play(player, 'interact-right', { once: true });
+    saveGame();
+    return atmSays(true, 'ok', `Take your cash: ${usd(n)} in twenties${fee ? `, and a ${usd2(fee)} fee` : ''}. Cash in your wallet: ${usd2(wallet())}.`, `20달러 지폐로 ${usd(n)} 찾았어요${fee ? `(수수료 ${usd2(fee)})` : ''}. 지갑 속 현금: ${usd2(wallet())}.`);
+  }
+  function deposit(pid, n) {      // your own credit union's ATM takes bills (whole dollars)
+    const most = Math.floor(wallet());
+    n = n == null ? most : Math.min(most, Math.floor(+n));
+    if (!ATM_OWN.has(pid)) return atmSays(false, 'atm', 'This ATM does not take deposits for your bank.', '이 ATM에서는 내 은행으로 입금할 수 없어요.');
+    if (!(n >= 1)) return atmSays(false, 'cash', 'You have no bills to deposit.', '입금할 지폐가 없어요.');
+    G.cash = cents(wallet() - n);
+    pay(n, `ATM deposit (${place(pid).name})`, 'atm', { ko: `ATM 입금 (${nameKo(place(pid))})` });
+    advanceMinutes(2);
+    saveGame();
+    return atmSays(true, 'ok', `Deposited ${usd(n)} in bills. Checking: ${usd2(G.money)}.`, `지폐 ${usd(n)} 입금했어요. 계좌 잔액: ${usd2(G.money)}.`);
+  }
+  function boughtAt(pid) {        // the last purchase today at the shelves of the store a checkout is in (a minute stamp)
+    const z = zoneOfPlace(pid), names = new Set(rows('items').filter(i => i.place && zoneOfPlace(i.place) === z && !cashOnly(i.place)).map(i => i.name));
+    const l = G.log.slice().reverse().find(x => x.day === G.day && x.type === 'spend' && !x.cash && names.has(x.text));
+    return l ? l.day * 1440 + l.minute : null;
+  }
+  const cashBackOk = () => { const at = boughtAt(CASH_BACK_AT); return at != null && G.day * 1440 + G.minute - at <= 30 && G.cashBackAt !== at; };
+  function cashBack(n) {
+    n = Math.round(+n);
+    if (!CASH_BACK.includes(n)) return atmSays(false, 'amount', `Cash back comes in ${CASH_BACK.map(x => usd(x)).join(', ')}.`, `캐시백은 ${CASH_BACK.map(x => usd(x)).join(', ')} 중에서 골라요.`);
+    if (!cashBackOk()) return atmSays(false, 'purchase', 'Buy something first: the cashier gives cash back with a purchase.', '먼저 물건을 사세요. 캐시백은 물건을 살 때 함께 받아요.');
+    if (G.money < n) return atmSays(false, 'funds', `Your card is declined for that: checking has ${usd2(G.money)}.`, `카드가 거절됐어요. 계좌 잔액이 ${usd2(G.money)}예요.`);
+    G.cashBackAt = boughtAt(CASH_BACK_AT);
+    pay(-n, `Cash back (${storeOf(CASH_BACK_AT)[0]})`, 'atm', { ko: `캐시백 (${storeOf(CASH_BACK_AT)[1]})` });
+    G.cash = cents(wallet() + n);
+    saveGame();
+    return atmSays(true, 'ok', `The cashier hands you ${usd(n)} with your receipt. Cash in your wallet: ${usd2(wallet())}.`, `계산원이 영수증과 함께 현금을 건네줘요: ${usd(n)}. 지갑 속 현금: ${usd2(wallet())}.`);
+  }
+  function atmPanel(h, sub, body, pid) {
+    const back = pid === CASH_BACK_AT, fee = back ? 0 : atmFee(pid), left = Math.max(0, ATM_LIMIT - atmOut());
+    h.textContent = back ? tr('Cash back', '캐시백') : loc(place(pid));
+    sub.textContent = tr(`Checking ···4821 · ${usd2(G.money)}`, `입출금 계좌 ···4821 · ${usd2(G.money)}`);
+    let html = `<div class="sum"><div><b>${usd2(G.money)}</b>${tr('in checking', '계좌 잔액')}</div><div><b>${usd2(wallet())}</b>${tr('cash in your wallet', '지갑 속 현금')}</div>${back ? '' : `<div><b>${usd(left)}</b>${tr('left to take out today', '오늘 남은 인출 한도')}</div>`}</div>`;
+    if (back) {
+      const ok = cashBackOk();
+      html += `<p class="fine">${tr(`Cash back with a debit card purchase: no fee. It comes out of checking along with your groceries.`, '체크카드로 물건을 사면서 현금을 함께 받는 캐시백이에요. 수수료가 없고, 장 본 금액과 함께 계좌에서 빠져나가요.')}${ok ? '' : ' ' + tr('Buy something at the store first.', '먼저 가게에서 물건을 사세요.')}</p>
+        <div class="leave-ask">${CASH_BACK.map(n => `<button type="button" data-cashback="${n}" ${ok && n <= G.money ? '' : 'disabled'}>${usd(n)}</button>`).join('')}</div>`;
+    } else {
+      const own = Array.from(ATM_OWN).filter(id => PLACES[id]).map(id => place(id));
+      html += `<p class="fine">${!fee ? tr(`${esc(CFG.bank_name)}'s own ATM: no fee, open around the clock. Up to ${usd(ATM_LIMIT)} a day in $20 bills. It takes cash deposits too.`, `내 신용조합(${esc(CFG.bank_name)})의 ATM이에요. 수수료가 없고 24시간 열려 있어요. 하루 ${usd(ATM_LIMIT)}까지 20달러 지폐로 찾을 수 있고, 현금 입금도 돼요.`)
+        : tr(`⚠️ This ATM is not your bank's: it charges <b>${usd2(fee)}</b> for every withdrawal, on top of the cash you take out.${own.length ? ` ${esc(own.map(p => p.name).join(', '))} is free for you.` : ''}`, `⚠️ 내 은행의 ATM이 아니라서 인출할 때마다 <b>${usd2(fee)}</b>의 수수료가 붙어요.${own.length ? ` ${esc(own.map(nameKo).join(', '))}는 수수료가 없어요.` : ''}`)}</p>`;
+      const ask = atmAsk && atmAsk.pid === pid ? atmAsk.n : null;
+      if (ask != null) html += `<div class="row atm-fee"><div class="main"><div class="t">${tr(`This ATM charges a ${usd2(fee)} fee for this withdrawal, in addition to any fee your bank may charge. Do you accept the fee?`, `이 ATM은 이번 인출에 ${usd2(fee)}의 수수료를 받습니다. 거래 은행의 수수료는 따로입니다. 수수료에 동의하시겠습니까?`)}</div>
+        <div class="s">${tr(`${usd(ask)} + fee ${usd2(fee)} = ${usd2(ask + fee)} from checking`, `${usd(ask)} + 수수료 ${usd2(fee)} = 계좌에서 ${usd2(ask + fee)}`)}</div></div><button type="button" data-atm-ok="${ask}">${tr('Accept fee', '수수료 동의')}</button><button type="button" class="danger" data-atm-no="1">${tr('Cancel', '취소')}</button></div>`;
+      else html += `<h3>${tr('Withdraw cash', '현금 인출')}</h3><div class="leave-ask">${ATM_AMOUNTS.map(n => `<button type="button" data-atm="${n}" ${n > left || n + fee > G.money ? 'disabled' : ''}>${usd(n)}</button>`).join('')}</div>`;
+      if (!fee && ATM_OWN.has(pid) && wallet() >= 1) html += `<h3>${tr('Deposit cash', '현금 입금')}</h3><div class="leave-ask"><button type="button" data-atm-in="1">${tr(`Deposit ${usd(Math.floor(wallet()))} in bills`, `지폐 ${usd(Math.floor(wallet()))} 입금`)}</button></div>`;
+    }
+    body.innerHTML = html;
+  }
+
+  // ---------------------------------------------------------------- shopping online: an order from the phone, a package at the door
+  // Phone > Shop online (config order_store; catalog table: what it sells, item = the items row that goes in your bag,
+  // qty packages of it). Paid with the debit card at once: the prices, sales tax on all but groceries, and config
+  // order_shipping unless the order comes to config order_free_over. The carrier (config order_carrier) brings it on
+  // the config order_days-th business day after the order (Monday to Friday, not a federal holiday), some time between
+  // 10 AM and 5 PM; tracking comes by email and text (shipped the next morning, out for delivery at 8:30). Nobody home:
+  // the package is left at your front door and goes in your bag when you next come home. A package with a catalog row
+  // that needs a signature cannot be left: a door tag ("Sorry we missed you"), another try the next delivery day
+  // (Monday to Saturday), and after config order_tries tries it waits at the carrier's counter (config order_pickup,
+  // in the market) for config order_hold_days, then goes back to the store and the money comes back. Home means your
+  // home zone when the driver comes. G.orders [{ id, track, day, lines [[catalog id, n]], sub, tax, ship, total, sig,
+  // due, at, tries, state placed | door | held | done | returned, sent { ship, out }, missed, hold, until, got, tag }].
+  const CATALOG = rows('catalog').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0)), CAT = byId('catalog');
+  const STORE = [CFG.order_store || 'Northpine', CFG.order_store_ko || CFG.order_store || 'Northpine'];
+  const CARRIER = [CFG.order_carrier || 'Parcel Express', CFG.order_carrier_ko || CFG.order_carrier || 'Parcel Express'];
+  const SHIP = +(CFG.order_shipping == null ? 5.99 : CFG.order_shipping), FREE_OVER = +CFG.order_free_over || 35;
+  const ORDER_DAYS = +CFG.order_days || 2, ORDER_TRIES = +CFG.order_tries || 2, HOLD_DAYS = +CFG.order_hold_days || 7;
+  const PICKUP_AT = String(CFG.order_pickup || '');
+  let cart = { of: null, n: {} };
+  const theCart = () => { if (cart.of !== G) cart = { of: G, n: {} }; return cart.n; };
+  const orders = () => G.orders || (G.orders = []);
+  const bizDay = (d) => !isWeekend(d) && !dayOff(d);
+  function arrival(d) { for (let n = 0; n < ORDER_DAYS;) { d++; if (bizDay(d)) n++; } return d; }
+  const dropAt = (o) => 600 + hash(o.id + ':' + o.tries) % 420;          // 10:00 to 16:59
+  function orderBill(lines) {
+    let sub = 0, tax = 0;
+    lines.forEach(([id, n]) => { const c = CAT[id], i = ITEMS[c.item] || {}; sub += +c.price * n; if (taxed(i)) tax += +c.price * n * TAX; });
+    sub = cents(sub); tax = cents(tax);
+    const ship = !lines.length || sub >= FREE_OVER ? 0 : SHIP;
+    return { sub, tax, ship, total: cents(sub + tax + ship) };
+  }
+  const cartLines = () => Object.keys(theCart()).filter(id => CAT[id] && theCart()[id] > 0).map(id => [id, theCart()[id]]);
+  const linesText = (o) => [o.lines.map(([id, n]) => `${CAT[id] ? CAT[id].name : id}${n > 1 ? ' ×' + n : ''}`).join(', '), o.lines.map(([id, n]) => `${CAT[id] ? nameKo(CAT[id]) : id}${n > 1 ? ' ×' + n : ''}`).join(', ')];
+  function placeOrder() {
+    const lines = cartLines(), b = orderBill(lines);
+    if (!lines.length) { note(tr('Your cart is empty.', '장바구니가 비었어요.'), true); return null; }
+    if (G.money < b.total) { note(tr(`Your debit card was declined: checking has ${usd2(G.money)}.`, `체크카드가 거절됐어요. 계좌 잔액이 ${usd2(G.money)}예요.`), true); return null; }
+    const now = G.day * 1440 + Math.floor(G.minute);
+    const o = Object.assign({ id: 'NP-' + (100000 + hash(G.name + now + orders().length) % 900000), day: G.day, lines, sig: lines.some(([id]) => +CAT[id].signature), tries: 0, state: 'placed', sent: {} }, b);
+    o.track = '1PX' + String(hash(o.id) % 1e9).padStart(9, '0');
+    o.due = arrival(G.day); o.at = dropAt(o);
+    pay(-o.total, `${STORE[0]} order ${o.id}`, 'spend', { ko: `${STORE[1]} 주문 ${o.id}`, tax: o.tax || undefined });
+    orders().push(o);
+    cart.n = {};
+    const [en, ko] = linesText(o);
+    notify(STORE[0], `Thanks for your order ${o.id}: ${en}. ${usd2(o.total)} was charged to your debit card ···4821. Arriving ${dateLong(o.due)} by ${CARRIER[0]}.${o.sig ? ' Someone will need to sign for it.' : ''}`,
+      `주문 ${o.id} 감사합니다: ${ko}. 체크카드 ···4821로 ${usd2(o.total)}가 결제되었습니다. ${dateKo(o.due)}에 ${CARRIER[1]}로 도착합니다.${o.sig ? ' 받을 때 서명이 필요합니다.' : ''}`, 'email');
+    saveGame();
+    note(tr(`Order ${o.id} placed: ${usd2(o.total)}. Arriving ${dShort(o.due)}.`, `주문 ${o.id} 완료: ${usd2(o.total)}. ${dShort(o.due)} 도착 예정.`));
+    return o;
+  }
+  function takeIn(o) {            // the package goes in your bag
+    o.lines.forEach(([id, n]) => { const c = CAT[id]; if (c && ITEMS[c.item]) for (let k = 0; k < n * (+c.qty || 1); k++) addLot(c.item); });
+    o.state = 'done'; o.got = o.got || G.day;
+  }
+  // what happens to the orders by now (from checkPhone, while you walk about): tracking, the driver, the door, the counter
+  function ordersTick() {
+    if (!G || !G.orders || !G.orders.length) return;
+    const now = G.day * 1440 + G.minute, home = zoneId === hero().home_zone;
+    let changed = false;
+    G.orders.forEach(o => {
+      const [en, ko] = linesText(o);
+      if (o.state === 'placed') {
+        if (!o.sent.ship && now >= (o.day + 1) * 1440 + 450) {
+          o.sent.ship = 1; changed = true;
+          notify(STORE[0], `Your order ${o.id} has shipped with ${CARRIER[0]} (tracking number ${o.track}). Arriving ${dateLong(o.due)}.`, `주문 ${o.id}이 ${CARRIER[1]}로 발송되었습니다(운송장 번호 ${o.track}). ${dateKo(o.due)} 도착 예정.`, 'email');
+        }
+        if (o.sent.out !== o.due && now >= o.due * 1440 + 510) {
+          o.sent.out = o.due; changed = true;
+          notify(CARRIER[0], `Your package ${o.track} from ${STORE[0]} is out for delivery today.${o.sig ? ' A signature is required.' : ''}`, `${STORE[1]}에서 보낸 소포(${o.track})가 오늘 배송을 시작했습니다.${o.sig ? ' 받는 분의 서명이 필요합니다.' : ''}`, 'text');
+        }
+        const t = o.due * 1440 + o.at;
+        if (now >= t) {
+          changed = true;
+          const there = home && now - t < 30;          // home when the driver knocked (not a day the clock skipped)
+          if (there) {
+            takeIn(o);
+            toast(`📦 The ${CARRIER[0]} driver knocks${o.sig ? ' and you sign for the package' : ''}: ${en}. It's in your bag.`, `📦 ${CARRIER[1]} 기사가 문을 두드려요${o.sig ? '. 서명하고 소포를 받았어요' : ''}: ${ko}. 가방에 넣었어요.`, 'good', 6);
+          } else if (!o.sig) {
+            o.state = 'door'; o.got = o.due;
+            notify(CARRIER[0], `Delivered at ${clock(o.at)}. Your package ${o.track} was left at your front door.`, `${clockKo(o.at)}에 배달했습니다. 소포(${o.track})를 현관 앞에 두었습니다.`, 'text');
+          } else {
+            o.tries++; o.missed = o.due; o.tag = true;
+            if (o.tries < ORDER_TRIES) {
+              o.due = nextMailDay(o.due + 1); o.at = dropAt(o);
+              notify(CARRIER[0], `Sorry we missed you! Package ${o.track} needs a signature and no one was home. We'll try again ${dateLong(o.due)}, 10 AM to 5 PM.`, `부재중이라 소포(${o.track})를 전하지 못했습니다. 서명이 필요한 소포라 ${dateKo(o.due)} 오전 10시~오후 5시에 다시 배달하겠습니다.`, 'text');
+            } else {
+              o.state = 'held'; o.hold = o.due + 1; o.until = o.hold + HOLD_DAYS - 1;
+              notify(CARRIER[0], `Sorry we missed you again. Package ${o.track} will be at the ${CARRIER[0]} counter in ${storeOf(PICKUP_AT)[0]} from ${dateLong(o.hold)} until ${dateLong(o.until)}. Bring a photo ID.`, `또 부재중이라 소포(${o.track})를 전하지 못했습니다. ${dateKo(o.hold)}부터 ${dateKo(o.until)}까지 ${storeOf(PICKUP_AT)[1]}의 ${CARRIER[1]} 창구에 보관합니다. 사진이 붙은 신분증을 가져오세요.`, 'text');
+            }
+          }
+        }
+      }
+      if (o.state === 'door' && home) {
+        takeIn(o); changed = true;
+        toast(`📦 You bring in the package from ${STORE[0]}: ${en}. It's in your bag.`, `📦 ${STORE[1]}에서 온 소포를 들여왔어요: ${ko}. 가방에 넣었어요.`, 'good', 6);
+      }
+      if (o.tag && home && o.state !== 'done') {
+        o.tag = false; changed = true;
+        toast(`📋 A door tag from ${CARRIER[0]}: "Sorry we missed you." ${o.state === 'held' ? `Pick up the package at the ${CARRIER[0]} counter in ${storeOf(PICKUP_AT)[0]} with a photo ID.` : `They'll try again ${dateLong(o.due)}.`}`,
+          `📋 현관문에 ${CARRIER[1]}의 부재 안내 쪽지("Sorry we missed you")가 붙어 있어요. ${o.state === 'held' ? `사진이 붙은 신분증을 들고 ${storeOf(PICKUP_AT)[1]}의 ${CARRIER[1]} 창구에서 찾으세요.` : `${dateKo(o.due)}에 다시 온대요.`}`, null, 7);
+      }
+      if (o.state === 'held' && G.day > o.until) {
+        o.state = 'returned'; o.tag = false; changed = true;
+        pay(o.total, `Refund: ${STORE[0]} order ${o.id}`, 'income', { ko: `환불: ${STORE[1]} 주문 ${o.id}` });
+        notify(STORE[0], `Your package ${o.track} wasn't picked up, so ${CARRIER[0]} sent it back to us. We've refunded ${usd2(o.total)} to your card ···4821.`, `소포(${o.track})를 찾아가지 않아 ${CARRIER[1]}가 저희에게 돌려보냈습니다. 카드 ···4821로 ${usd2(o.total)}를 환불했습니다.`, 'email');
+      }
+    });
+    if (changed) saveGame();
+  }
+  const pickupReady = () => !G ? [] : orders().filter(o => o.state === 'held' && G.day >= o.hold);
+  function pickup() {
+    const list = pickupReady();
+    if (!list.length) return false;
+    list.forEach(takeIn);
+    advanceMinutes(3);
+    if (player) play(player, 'interact-right', { once: true });
+    const all = list.map(linesText);
+    toast(`You show your photo ID at the ${CARRIER[0]} counter and get your package: ${all.map(x => x[0]).join('; ')}.`, `${CARRIER[1]} 창구에서 사진이 붙은 신분증을 보여 주고 소포를 받았어요: ${all.map(x => x[1]).join('; ')}.`, 'good', 6);
+    saveGame();
+    return true;
+  }
+  function orderStatus(o) {
+    const now = G.day * 1440 + G.minute;
+    if (o.state === 'done') return [`Delivered ${dateShort(o.got)}`, `${dShort(o.got)} 받음`];
+    if (o.state === 'returned') return [`Returned to ${STORE[0]}: ${usd2(o.total)} refunded`, `${STORE[1]}로 반송: ${usd2(o.total)} 환불`];
+    if (o.state === 'door') return [`Delivered ${dateShort(o.got)}: waiting at your front door`, `${dShort(o.got)} 배달됨: 현관 앞에 있어요`];
+    if (o.state === 'held') return [`At the ${CARRIER[0]} counter in ${storeOf(PICKUP_AT)[0]}${G.day < o.hold ? ` from ${dateShort(o.hold)}` : ''} until ${dateShort(o.until)}. Bring a photo ID.`, `${storeOf(PICKUP_AT)[1]}의 ${CARRIER[1]} 창구에 ${G.day < o.hold ? `${dShort(o.hold)}부터 ` : ''}${dShort(o.until)}까지 보관 중. 사진이 붙은 신분증을 가져가세요.`];
+    if (o.missed) return [`Missed you ${dateShort(o.missed)} (signature needed) · trying again ${dateShort(o.due)}`, `${dShort(o.missed)} 부재(서명 필요) · ${dShort(o.due)}에 다시 배달`];
+    if (o.sent.out === o.due && G.day === o.due) return ['Out for delivery today', '오늘 배송 중'];
+    return o.sent.ship || now >= (o.day + 1) * 1440 + 450 ? [`Shipped · arriving ${dateShort(o.due)}`, `발송됨 · ${dShort(o.due)} 도착 예정`] : [`Ordered · arriving ${dateShort(o.due)}`, `주문함 · ${dShort(o.due)} 도착 예정`];
+  }
+  function shopLink() {           // at the top of the phone: the online store
+    if (!CATALOG.length || !G) return '';
+    const n = orders().filter(o => o.state === 'placed' || o.state === 'door' || o.state === 'held').length;
+    return `<p class="fine"><button type="button" data-shop-online="1">${tr(`🛒 Shop online: ${esc(STORE[0])}`, `🛒 온라인 쇼핑: ${esc(STORE[1])}`)}</button>${n ? tr(` ${n} order${n === 1 ? '' : 's'} on the way.`, ` 배송 중인 주문 ${n}건.`) : ''}</p>`;
+  }
+  function orderPanel(h, sub, body) {
+    h.textContent = tr(STORE[0], STORE[1]);
+    sub.textContent = tr(`Debit card ···4821 · ${usd2(G.money)}`, `체크카드 ···4821 · ${usd2(G.money)}`);
+    const c = theCart(), lines = cartLines(), b = orderBill(lines);
+    const mine = orders().filter(o => o.state !== 'done' && o.state !== 'returned' || G.day - (o.got || o.until || o.day) <= 7).slice().reverse().slice(0, 6);
+    let html = `<p class="fine">${tr(`Everyday things delivered by ${esc(CARRIER[0])} in about ${ORDER_DAYS} business days. Shipping ${usd2(SHIP)}, free on orders of ${usd(FREE_OVER)} or more. Sales tax on everything but groceries. ✍️ = someone has to be home to sign for it.`,
+      `${esc(CARRIER[1])}가 영업일 기준 약 ${ORDER_DAYS}일 만에 배달해요. 배송비 ${usd2(SHIP)}, ${usd(FREE_OVER)} 이상 주문하면 무료. 식료품 말고는 판매세가 붙어요. ✍️ = 받을 때 서명이 필요해서 누군가 집에 있어야 해요.`)}</p>`;
+    if (lines.length) html += `<h3>${tr('Cart', '장바구니')}</h3><div class="sum"><div><b>${usd2(b.sub)}</b>${tr('items', '상품')}</div><div><b>${usd2(b.tax)}</b>${tr('sales tax', '판매세')}</div><div><b>${b.ship ? usd2(b.ship) : tr('Free', '무료')}</b>${tr('shipping', '배송비')}</div><div><b>${usd2(b.total)}</b>${tr('total', '합계')}</div></div>
+      ${b.ship ? `<p class="fine">${tr(`Add ${usd2(FREE_OVER - b.sub)} more for free shipping.`, `${usd2(FREE_OVER - b.sub)}어치 더 담으면 배송비가 무료예요.`)}</p>` : ''}
+      <div class="leave-ask"><button type="button" data-order="1" ${G.money < b.total ? 'disabled' : ''}>${tr(`Place order · ${usd2(b.total)}`, `주문하기 · ${usd2(b.total)}`)}</button><span class="fine">${tr(`Arrives ${dateShort(arrival(G.day))}`, `${dShort(arrival(G.day))} 도착 예정`)}</span></div>`;
+    if (mine.length) html += `<h3>${tr('Your orders', '내 주문')}</h3>` + mine.map(o => { const [en, ko] = linesText(o), st = orderStatus(o);
+      return `<div class="row"><span class="when">${esc(dMonth(o.day))}</span><div class="main"><div class="t">${esc(tr(en, ko))}</div><div class="s">📦 ${esc(tr(st[0], st[1]))} · ${esc(o.id)}</div></div><span class="price out">${usd2(o.total)}</span></div>`; }).join('');
+    html += `<h3>${tr('Shop', '상품')}</h3>` + CATALOG.map(x => {
+      const i = ITEMS[x.item] || {}, u = usesOf(i) * (+x.qty || 1), n = c[x.id] || 0;
+      const facts = [+x.signature ? tr('✍️ signature required', '✍️ 서명 필요') : '', i.kind === 'grocery' ? tr('grocery, no tax', '식료품, 면세') : '', u > 1 && i.energy ? tr(`${u} portions`, `${u}회분`) : '', +i.shelf_days > 0 ? tr(`keeps ${+i.shelf_days} days`, `${+i.shelf_days}일 보관`) : '', tr(x.note || '', x.note_ko)].filter(Boolean);
+      return `<div class="row"><button type="button" class="play" data-say="${esc(x.name)}" aria-label="Say it">▶</button><div class="main"><div class="t">${esc(loc(x))}${n ? ` <b>×${n}</b>` : ''}</div><div class="s">${esc(facts.join(' · '))}</div></div>
+        <span class="price">${usd2(+x.price)}</span>${n ? `<button type="button" class="danger" data-cart="${esc(x.id)}|-1" aria-label="${tr('Remove one', '하나 빼기')}">−</button>` : ''}<button type="button" data-cart="${esc(x.id)}|1" ${n >= 5 ? 'disabled' : ''}>${tr('Add', '담기')}</button></div>`; }).join('');
+    body.innerHTML = html;
+  }
+  // the panels and their buttons (renderPanel, the panel's click handler), and what you can do at a place (placeActions)
+  function moneyPanel(h, sub, body) { if (panelKind === 'atm') atmPanel(h, sub, body, panelArg); else orderPanel(h, sub, body); }
+  function moneyClick(b) {
+    if (b.dataset.shopOnline) { openPanel('order'); return; }
+    if (panelKind !== 'atm' && panelKind !== 'order') return;
+    const y = panel.querySelector('.panel-body').scrollTop, n = panel.querySelector('.panel-note'), keep = () => { const t = n.textContent, k = n.className; renderPanel(); n.textContent = t; n.className = k; panel.querySelector('.panel-body').scrollTop = y; };
+    if (b.dataset.atm) { withdraw(panelArg, +b.dataset.atm, false); keep(); }
+    if (b.dataset.atmOk) { withdraw(panelArg, +b.dataset.atmOk, true); keep(); }
+    if (b.dataset.atmNo) { atmAsk = null; note(tr('Cancelled. No fee was charged.', '취소했어요. 수수료는 나가지 않았어요.')); keep(); }
+    if (b.dataset.atmIn) { deposit(panelArg); keep(); }
+    if (b.dataset.cashback) { cashBack(+b.dataset.cashback); keep(); }
+    if (b.dataset.cart) { const [id, d] = b.dataset.cart.split('|'), c = theCart(); c[id] = clamp((c[id] || 0) + +d, 0, 5); keep(); }
+    if (b.dataset.order) { placeOrder(); keep(); }
+  }
+  function moneyActions(pid) {
+    const out = [];
+    if (!G) return out;
+    if (placeKind(pid) === 'atm') { const fee = atmFee(pid); out.push({ key: 'atm:' + pid, label: fee ? tr(`Use the ATM · ${usd2(fee)} fee`, `ATM 이용 · 수수료 ${usd2(fee)}`) : tr('Use the ATM · no fee', 'ATM 이용 · 수수료 없음'), run: () => { atmAsk = null; openPanel('atm', pid); } }); }
+    if (pid === CASH_BACK_AT && CASH_BACK.length && !closedNow(zoneOfPlace(pid)) && cashBackOk()) out.push({ key: 'cashback:' + pid, label: tr('Ask for cash back', '캐시백 받기'), run: () => openPanel('atm', pid) });
+    const ready = pid === PICKUP_AT ? pickupReady().length : 0;
+    if (ready) out.push({ key: 'pickup:' + pid + ready, label: tr(`Pick up a package (${CARRIER[0]})`, `소포 찾기 (${CARRIER[1]})`), run: () => pickup() });
+    return out;
+  }
+  // for tests: SO.debug.cash, atm(placeId, amount, accept), deposit(), cashBack(n), order([catalog ids]), orders, deliver(), pickup()
+  const moneyDebug = {
+    get cash() { return G ? wallet() : null; }, set cash(v) { if (G) G.cash = cents(+v || 0); },
+    atm(pid, n, accept) { return G ? withdraw(pid || Array.from(ATM_OWN)[0], n, !!accept) : null; },
+    deposit(pid, n) { return G ? deposit(pid || Array.from(ATM_OWN)[0], n) : null; }, cashBack(n) { return G ? cashBack(n) : null; },
+    get catalog() { return CATALOG.map(c => c.id); },
+    order(ids) { if (!G) return null; cart = { of: G, n: {} }; listOf(ids).forEach(id => { if (CAT[id]) cart.n[id] = (cart.n[id] || 0) + 1; }); const o = placeOrder(); return o ? { id: o.id, total: o.total, due: o.due, at: hhmm(o.at), sig: o.sig } : null; },
+    get orders() { return G ? JSON.parse(JSON.stringify(orders())) : []; },
+    // jump the clock to the next time the driver comes (a minute after) and let it happen; returns the orders' states
+    deliver() { const o = G && orders().filter(x => x.state === 'placed').sort((a, b) => (a.due * 1440 + a.at) - (b.due * 1440 + b.at))[0]; if (o) { G.day = o.due; G.minute = o.at + 1; goalTimer = 0; ordersTick(); } return G ? orders().map(x => x.state) : []; },
+    ordersTick() { ordersTick(); return orders().map(x => x.state); }, pickup() { return pickup(); }
+  };
+
   // ---------------------------------------------------------------- the bus timetable
   // Every bus_every minutes from bus_first to bus_last (bus_every_weekend on weekends and federal holidays): you
   // wait for the next one, and after the last one you walk.
@@ -2804,6 +3123,7 @@
     const m = $('hud-money');
     m.textContent = usd(G.money);
     m.classList.toggle('neg', G.money < 0);
+    cashHud();
     const e = G.energy / E_MAX;
     $('hud-energy').style.width = (e * 100).toFixed(1) + '%';
     const box = document.querySelector('#bar .energy');
@@ -3521,6 +3841,7 @@
     if (G && zoneId === hero().home_zone && kind === 'door' && ITEMS.detergent) out.push({ key: 'laundry:' + pid + cleanClothes(), label: laundryLabel(), run: () => doLaundry() });
     if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: tr('Go for a jog', '조깅하기'), run: () => startJog(true) });
     if (kind === 'seat') out.push({ key: 'sit:' + pid, label: tr('Sit down', '앉기'), run: () => { player.sit = true; play(player, 'sit'); } });
+    moneyActions(pid).forEach(a => out.push(a));          // an ATM, cash back, a package at the carrier's counter
     return out;
   }
   function shopLabel(pid, pl) {
@@ -3806,6 +4127,7 @@
         top += `<div class="row punch"><div class="main"><div class="t">${tr('Punch card', '스탬프 카드')} <span class="dots">${'●'.repeat(Math.min(n, PUNCH_N - 1))}${'○'.repeat(Math.max(0, PUNCH_N - 1 - n))}</span></div><div class="s">${n >= PUNCH_N - 1 ? tr('Your next drink is on the house!', '다음 음료는 무료예요!') : tr(`Buy ${PUNCH_N - 1} drinks, get the next one free`, `음료 ${PUNCH_N - 1}잔을 사면 다음 한 잔은 무료`)}</div></div></div>`; }
       if (TAX && list.some(taxed)) top += `<p class="fine">${tr(`Prices do not include ${pct(TAX)} sales tax.${list.some(i => !taxed(i)) ? ' Groceries are not taxed.' : ''}`, `표시 가격에는 판매세 ${pct(TAX)}가 빠져 있어요.${list.some(i => !taxed(i)) ? ' 식료품은 면세예요.' : ''}`)}</p>`;
       else if (list.length && list.every(i => i.kind === 'grocery')) top += `<p class="fine">${tr(`No sales tax on groceries in ${esc(CFG.city)}.`, `${esc(CFG.city)}에서는 식료품에 판매세가 없어요.`)}</p>`;
+      top += cashNote(panelArg, sub);
       body.innerHTML = top + body.innerHTML;
     } else if (panelKind === 'bus') {
       h.textContent = tr('Bus', '버스');
@@ -3886,7 +4208,7 @@
       sub.textContent = fresh ? tr(`${fresh} new`, `새 메시지 ${fresh}개`) : tr(`${list.length} messages`, `메시지 ${list.length}개`);
       const ICON = { text: '💬', email: '✉️', voicemail: '📞', alert: '🔔' };
       const sb = G && !fired() && (G.minute >= 17 * 60 || G.minute < hm(CFG.sick_call_by, 570)) ? sickButton() : '';
-      body.innerHTML = (sb ? `<p class="fine leave-ask">${sb}</p>` : '') + list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
+      body.innerHTML = shopLink() + (sb ? `<p class="fine leave-ask">${sb}</p>` : '') + list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
         <div class="main"><div class="s">${ICON[m.kind] || ''} ${esc(tr(MSG_KIND[m.kind] || 'Message', MSG_KIND_KO[m.kind] || '메시지'))} · ${esc(dShort(m.day))}, ${clk(m.minute)}</div><div class="t">${esc(senderName(m.sender))}${m.subject ? ` <span class="subj">${esc(tr(m.subject, m.subject_ko))}</span>` : ''}</div>
         <div class="b">${esc(shown(m.body, m.body_ko))}</div>${replyBox(m)}</div></div>`).join('')
         || `<p class="empty">${tr('No messages yet. Texts, emails and alerts from your bank arrive here.', '아직 메시지가 없어요. 문자, 이메일, 은행 알림이 여기로 와요.')}</p>`;
@@ -3938,10 +4260,10 @@
         if (isRentDay(d)) soon.push([when, tr(hero().housing_name || 'Rent', hero().housing_name_ko || '월세'), -hero().housing]);
         billsDue(d).forEach(b => soon.push([when, tr(b.name + ' (autopay)', loc(b) + ' (자동이체)'), -b.amount]));
       }
-      const KIND = { income: ['Deposit', '입금'], spend: ['Debit card', '체크카드'], bill: ['Autopay', '자동이체'], fee: ['Bank fee', '은행 수수료'] };
+      const KIND = { income: ['Deposit', '입금'], spend: ['Debit card', '체크카드'], bill: ['Autopay', '자동이체'], fee: ['Bank fee', '은행 수수료'], atm: ['ATM', 'ATM'] };
       const line = (when, text, amount, kind) => `<div class="row"><span class="when">${esc(when)}</span><div class="main"><div class="t">${esc(text)}</div>${kind ? `<div class="s">${esc(kind)}</div>` : ''}</div><span class="price ${amount < 0 ? 'out' : 'in'}">${amount < 0 ? '−' : '+'}${usd2(Math.abs(amount)).replace('−', '')}</span></div>`;
-      const past = G.log.filter(l => l.amount).slice().reverse().slice(0, 60);
-      body.innerHTML = `<div class="sum"><div><b>${usd2(G.money)}</b>${tr('available balance', '사용 가능 잔액')}</div></div>
+      const past = G.log.filter(l => l.amount && !l.cash).slice().reverse().slice(0, 60);          // cash spent is not in checking
+      body.innerHTML = `<div class="sum"><div><b>${usd2(G.money)}</b>${tr('available balance', '사용 가능 잔액')}</div></div>${bankCash()}
         <h3>${tr('Coming up', '예정')}</h3>${soon.map(x => line(x[0], x[1], x[2])).join('') || `<p class="empty">${tr('Nothing in the next two weeks.', '앞으로 2주 동안 없음.')}</p>`}
         <h3>${tr('Recent transactions', '최근 거래')}</h3>${past.map(l => line(`${dMonth(l.day)} · ${clk(l.minute)}`, logText(l), l.amount,
           (/direct deposit/i.test(l.text) ? tr('Direct deposit', '계좌 입금') : KIND[l.type] ? tr(KIND[l.type][0], KIND[l.type][1]) : '') + (l.tax ? tr(` · tax ${usd2(l.tax)}`, ` · 세금 ${usd2(l.tax)}`) : '') + (l.tip ? tr(` · tip ${usd2(l.tip)}`, ` · 팁 ${usd2(l.tip)}`) : ''))).join('') || `<p class="empty">${tr('No transactions yet.', '아직 거래가 없어요.')}</p>`}`;
@@ -3973,7 +4295,7 @@
         <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
     } else if (panelKind === 'map') {
       renderMapPanel(h, sub, body);
-    }
+    } else if (panelKind === 'atm' || panelKind === 'order') moneyPanel(h, sub, body);
     panel.classList.toggle('map', panelKind === 'map');
   }
   panel.addEventListener('click', (e) => {
@@ -3982,6 +4304,7 @@
     if (b.dataset.say) speak(b.dataset.say, b.dataset.voice ? voiceOf(NPCS[b.dataset.voice] || npcRow(b.dataset.voice)) : undefined);
     if (b.dataset.reply && panelKind === 'phone') { const [mid, rid] = b.dataset.reply.split('|'); const y = panel.querySelector('.panel-body').scrollTop; if (replyTo(mid, rid)) { renderPanel(); panel.querySelector('.panel-body').scrollTop = y; } }
     if (b.dataset.buy) buy(b.dataset.buy);
+    moneyClick(b);          // the ATM, cash back, the online store
     if (b.dataset.tip != null && panelKind === 'shop') { tipChoice[panelArg] = +b.dataset.tip; renderPanel(); }
     if (b.dataset.eat) eat(b.dataset.eat);
     if (b.dataset.toss) toss(+b.dataset.toss);
@@ -4288,9 +4611,9 @@
     const i = ITEMS[id];
     if (!i || !G) return false;
     if (i.place && (closedNow(i.place) || closedNow(zoneOfPlace(i.place)))) { if (!panel.hidden) note(tr('Sorry, we are closed.', '죄송해요, 영업이 끝났어요.'), true); return false; }
-    const b = billFor(i), price = b.total;
-    if (G.money < price) { if (!panel.hidden) note(tr(`You can't afford that (${receipt(b)}).`, `돈이 부족해요 (${receipt(b)}).`), true); speak("Sorry, you can't afford that."); return false; }
-    pay(-price, i.name, 'spend', Object.assign({ ko: i.name_ko }, b.tax || b.tip ? { tax: b.tax, tip: b.tip } : null));
+    const b = billFor(i), price = b.total, cash = cashOnly(i.place);          // a cash-only place takes it from your wallet
+    if ((cash ? wallet() : G.money) < price) { if (!panel.hidden) note(cash ? cashShort(b) : tr(`You can't afford that (${receipt(b)}).`, `돈이 부족해요 (${receipt(b)}).`), true); speak(cash ? "Sorry, cash only." : "Sorry, you can't afford that."); return false; }
+    (cash ? payCash : pay)(-price, i.name, 'spend', Object.assign({ ko: i.name_ko }, b.tax || b.tip ? { tax: b.tax, tip: b.tip } : null));
     speak(i.name);
     if (i.kind === 'fare') note(tr(`Paid ${usd2(price)}: ${i.name}.`, `${usd2(price)} 냈어요: ${loc(i)}.`));
     else if (/^(meal|drink)$/.test(i.kind)) {
@@ -4357,8 +4680,8 @@
     const day = G.day;
     const today = G.log.filter(l => l.day === day);
     const eps = today.filter(l => l.type === 'episode');
-    const spent = -today.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0);
-    const earned = today.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0);
+    const spent = -today.filter(l => l.amount < 0 && l.type !== 'atm').reduce((s, l) => s + l.amount, 0);          // atm: cash in or out of checking
+    const earned = today.filter(l => l.amount > 0 && l.type !== 'atm').reduce((s, l) => s + l.amount, 0);
     const gained = (G.points || []).filter(p => p.day === day).reduce((n, p) => n + p.n, 0);
     const missed = episodes().filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1) && !firedOut(e.place, e));
     const away = TRAVEL_ZONES.includes(zoneId);
@@ -4995,5 +5318,6 @@
       });
     }
   };
+  Object.defineProperties(debug, Object.getOwnPropertyDescriptors(moneyDebug));          // cash, ATMs, online orders
   window.SO = { debug, api, keys };
 })();
