@@ -366,3 +366,29 @@ CREATE TABLE IF NOT EXISTS tasks (
   time_to varchar(5),
   sort int NOT NULL DEFAULT 0
 );
+
+-- Home life (office/game.js, db/seed/81-home.sql). kind: repair | noise | text | email. hero: all, a hero id or a list.
+-- repair: something at home that breaks after the missions; title = the thing (kitchen faucet), body = what you notice,
+-- place = the kind of place at home where you report it (eat | sleep | desk), effect = what it does until the visit
+-- (cook | dishes | cold | sleep | shower | fridge), days = days from the request to the visit, cost = what a repair
+-- service charges a homeowner. noise: a loud neighbor late at night; choices JSON [{ t, t_ko (what you do), r, r_ko
+-- (how the night goes), energy (next morning, 0 or less), points }], four of them. text | email: a message the engine
+-- sends (id n_<what>_<hero>: trash_smell, trash_fee, trash_holiday, fix_ask, fix_entry, fix_done) from sender (npcs id
+-- or a name), with {name} {thing} {when} {cost} {fee} {order} {day} filled in; title is its label (a charge's line at
+-- the bank).
+CREATE TABLE IF NOT EXISTS home_events (
+  id varchar(40) PRIMARY KEY,
+  kind varchar(16) NOT NULL,
+  hero varchar(32) NOT NULL DEFAULT 'all',
+  sender varchar(60),
+  title varchar(120) NOT NULL,
+  title_ko varchar(120),
+  body varchar(800) NOT NULL,
+  body_ko varchar(800),
+  place varchar(16),
+  effect varchar(16),
+  cost decimal(8,2),
+  days int,
+  choices json,
+  sort int NOT NULL DEFAULT 0
+);

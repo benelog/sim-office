@@ -266,7 +266,47 @@ for (const t of DB.tasks || []) {
   if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
 }
 
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'].map(count).join(', '));
+// home_events (home life): repairs say where and what they do, noises have four choices with both languages and how
+// the night goes, the engine's messages exist for every hero with the same {placeholders} in both languages
+const HOME_KINDS = new Set(['repair', 'noise', 'text', 'email']), HOME_PLACES = new Set(['eat', 'sleep', 'desk']);
+const HOME_EFFECTS = new Set(['cook', 'dishes', 'cold', 'sleep', 'shower', 'fridge']), HOME_VARS = new Set(['name', 'thing', 'when', 'cost', 'fee', 'order', 'day']);
+const HOME_NOTES = ['trash_smell', 'trash_fee', 'fix_ask', 'fix_entry', 'fix_done'];
+const holes = (s) => Array.from(String(s || '').matchAll(/\{(\w+)\}/g), m => m[1]).sort().join(',');
+for (const r of DB.home_events || []) {
+  const w = `home_events ${r.id}`;
+  if (!HOME_KINDS.has(r.kind)) bad(w, `kind "${r.kind}" is not one of ${Array.from(HOME_KINDS).join(', ')}`);
+  const hs = heroesOf(r.hero || 'all');
+  if (!hs.length || hs.some(h => !heroes.has(h))) bad(w, `hero "${r.hero}" not in heroes`);
+  if (!r.title_ko || !r.body_ko) bad(w, 'title_ko and body_ko are required');
+  if (r.kind === 'repair') {
+    if (!HOME_PLACES.has(r.place)) bad(w, `place "${r.place}" is not one of ${Array.from(HOME_PLACES).join(', ')}`);
+    if (!HOME_EFFECTS.has(r.effect)) bad(w, `effect "${r.effect}" is not one of ${Array.from(HOME_EFFECTS).join(', ')}`);
+    if (!Number.isInteger(r.days) || r.days < 1 || r.days > 7) bad(w, `days ${r.days} (want 1-7)`);
+    if (!(+r.cost > 0)) bad(w, 'a repair needs a cost (what a homeowner pays)');
+  } else if (r.kind === 'noise') {
+    const cs = Array.isArray(r.choices) ? r.choices : [];
+    if (cs.length !== 4) bad(w, `${cs.length} choices (want 4)`);
+    cs.forEach((c, i) => {
+      for (const k of ['t', 't_ko', 'r', 'r_ko']) if (!c[k]) bad(w, `choice ${i + 1} has no ${k}`);
+      if (!Number.isInteger(c.points ?? 0) || !Number.isInteger(c.energy ?? 0) || (c.energy || 0) > 0 || (c.energy || 0) < -40) bad(w, `choice ${i + 1}: points and energy (-40 to 0) must be whole numbers`);
+    });
+    if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
+  } else if (HOME_KINDS.has(r.kind)) {
+    if (!/^n_[a-z_]+$/.test(r.id)) bad(w, 'a message id is n_<what>[_<hero>]');
+    if (!r.sender) bad(w, 'no sender');
+    else if (/^[a-z]+$/.test(r.sender) && !npcs.has(r.sender)) bad(w, `sender "${r.sender}" not in npcs`);
+    for (const k of holes(r.body + r.body_ko).split(',').filter(Boolean)) if (!HOME_VARS.has(k)) bad(w, `unknown placeholder {${k}}`);
+    if (holes(r.body) !== holes(r.body_ko)) bad(w, `placeholders differ: "${holes(r.body)}" in English, "${holes(r.body_ko)}" in Korean`);
+  }
+}
+if ((DB.home_events || []).length) for (const h of heroes) {
+  const mineOf = (k) => (DB.home_events || []).filter(r => r.kind === k && heroesOf(r.hero || 'all').includes(h));
+  if (!mineOf('repair').length) bad('home_events', `no repair for ${h}`);
+  if (!mineOf('noise').length) bad('home_events', `no noise for ${h}`);
+  for (const n of HOME_NOTES) if (!(DB.home_events || []).some(r => r.id === `n_${n}_${h}` || r.id === `n_${n}`)) bad('home_events', `no message n_${n} for ${h}`);
+}
+
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'home_events'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);
