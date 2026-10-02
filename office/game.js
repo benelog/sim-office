@@ -65,8 +65,9 @@
   const heroOf = (id) => HEROES.find(h => h.id === id) || HEROES.find(h => h.id === DEFAULT_HERO);
   const hero = () => heroOf(G ? G.hero : DEFAULT_HERO);
   const CHARACTERS = Array.from(new Set(HEROES.map(h => h.model))), DEFAULT_CHARACTER = heroOf(DEFAULT_HERO).model;
-  const mine = (r) => (r.hero || DEFAULT_HERO) === (G ? G.hero : DEFAULT_HERO);          // a row of the hero you play
-  const episodes = () => rows('episodes').filter(mine), calendar = () => rows('calendar').filter(mine);
+  const forHero = (h, id) => { const s = String(h || DEFAULT_HERO); return s === 'all' || listOf(s).includes(id); };     // a hero id, a list ('jun,derek') or all
+  const mine = (r) => forHero(r.hero, G ? G.hero : DEFAULT_HERO);          // a row of the hero you play
+  const episodes = () => rows('episodes').filter(mine), calendar = () => rows('calendar').filter(mine).concat(routineCal());
   const cast = () => rows('npcs').filter(n => !G || n.id !== G.hero);
   const portalsOf = (spec) => (spec.portals || []).filter(p => !p.hero || (!!G && p.hero === G.hero));     // a home's door is its owner's
   // a person (Quaternius, tools/office-characters.py) is about 0.95 tall with the feet at y=0
@@ -1361,7 +1362,7 @@
     // their own conversation first; otherwise one they have a line in (a meeting: everybody who speaks is in the room,
     // also round the phone of a call), if it is in the building they work in (not the client on the screen)
     const ep = open.find(e => e.npc === n.id && !isPhone(e))
-      || open.find(e => e.npc !== n.id && (SPEAKERS[e.id] || []).includes(n.id) && n.place && zoneOfPlace(n.place) === zoneOfPlace(e.place) && scheduledPlace(n) && zoneOfPlace(scheduledPlace(n)) === zoneOfPlace(e.place));
+      || open.find(e => e.npc !== n.id && ((SPEAKERS[e.id] || []).includes(n.id) || listOf((ROUTINE_OF[e.id] || {}).people).includes(n.id)) && n.place && zoneOfPlace(n.place) === zoneOfPlace(e.place) && scheduledPlace(n) && zoneOfPlace(scheduledPlace(n)) === zoneOfPlace(e.place));
     if (ep) return ep.place;
     // somebody on the next shift at the same counter steps away while a coworker there has a conversation waiting
     const at = scheduledPlace(n);
@@ -1662,17 +1663,17 @@
   // a place id can be in more than one zone (office_door is outside and inside): the zone's own places come first
   function placeIn(pid, z) { const sp = zoneSpec(z).places[pid]; return (!!sp && !sp.guessed) || zoneOfPlace(pid) === z; }
   function isOpen(ep) {
-    if (!G || G.done[ep.id]) return false;
-    if (ep.day_from != null && G.day < ep.day_from) return false;
-    if (ep.day_to != null && G.day > ep.day_to) return false;
+    if (!G) return false;
+    if (ROUTINE_OF[ep.id]) { if (!routineDue(ep)) return false; }          // a meeting that comes back: today's, not done yet
+    else if (G.done[ep.id] || (ep.day_from != null && G.day < ep.day_from) || (ep.day_to != null && G.day > ep.day_to)) return false;
     if (G.minute < hm(ep.time_from, 0) || G.minute > hm(ep.time_to, 1439) + 0.999) return false;
     if (firedOut(ep.place, ep)) return false;          // let go: the work conversations are over
     return listOf(ep.requires).every(id => G.done[id]);
   }
   function laterToday(ep) {        // not open yet, but will be later today
-    if (!G || G.done[ep.id] || isOpen(ep) || firedOut(ep.place, ep)) return false;
-    if (ep.day_from != null && G.day < ep.day_from) return false;
-    if (ep.day_to != null && G.day > ep.day_to) return false;
+    if (!G || isOpen(ep) || firedOut(ep.place, ep)) return false;
+    if (ROUTINE_OF[ep.id]) { if (!routineDue(ep)) return false; }
+    else if (G.done[ep.id] || (ep.day_from != null && G.day < ep.day_from) || (ep.day_to != null && G.day > ep.day_to)) return false;
     return hm(ep.time_from, 0) > G.minute && listOf(ep.requires).every(id => G.done[id]);
   }
   function tickClock(dt) {
@@ -1850,6 +1851,53 @@
   const missionsOf = (id) => rows('episodes').filter(e => (e.hero || DEFAULT_HERO) === id && (e.day_from || 1) <= MISSION_DAYS).length;
   const missionCount = () => { const all = missions(); return [all.filter(e => G.done[e.id]).length, all.length]; };
   const freePlay = () => !!G && G.day > MISSION_DAYS;
+  // ---------------------------------------------------------------- meetings that come back (routines table)
+  // After the missions, on working days: the daily standup, a 1:1 every other week, sprint planning and retro, the
+  // monthly all-hands. A routine takes its conversations (only the hero's own) in turn; one opens around its time like
+  // any other conversation and is done for that day only (G.rdone { '<routine>@<day>': 1 }). A meeting you miss on a
+  // day you came in costs miss_points and gets a text from the manager (missedRoutines, at the end of the day).
+  const ROUTINES = rows('routines').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const ROUTINE_OF = {};
+  ROUTINES.forEach(r => listOf(r.episodes).forEach(id => { if (!ROUTINE_OF[id]) ROUTINE_OF[id] = r; }));
+  function routineOn(r, d) {
+    if (d <= MISSION_DAYS || offWork(d) || !forHero(r.hero, G.hero) || !listOf(r.days).includes(DAY_NAMES[(d - 1) % 7])) return false;
+    if (r.every === '2weeks') return Math.floor((d - 1) / 7) % 2 === (+r.parity || 0);
+    if (r.every === 'month') { const t = dateOf(d); return !!t && t.getUTCDate() <= 7; }
+    return true;
+  }
+  const routineMemo = {};
+  function routinesOn(d) {          // that day's meetings: [{ r, ep, key }]
+    if (!G) return [];
+    const k = G.hero + '@' + d;
+    if (routineMemo[k]) return routineMemo[k];
+    const out = [];
+    ROUTINES.forEach(r => {
+      if (!routineOn(r, d)) return;
+      const pool = listOf(r.episodes).map(id => EPISODES[id]).filter(e => e && mine(e));
+      if (!pool.length) return;
+      let n = 0;
+      for (let x = MISSION_DAYS + 1; x < d; x++) if (routineOn(r, x)) n++;
+      out.push({ r, ep: pool[n % pool.length], key: r.id + '@' + d });
+    });
+    return (routineMemo[k] = out);
+  }
+  const routineDue = (ep) => routinesOn(G.day).some(x => x.ep.id === ep.id && !(G.rdone && G.rdone[x.key]));
+  function routineCal() {          // the meetings on the calendar, from last week to two weeks ahead
+    if (!G || !ROUTINES.length) return [];
+    const out = [], d0 = Math.floor((G.day - 1) / 7) * 7 + 1;
+    for (let d = Math.max(MISSION_DAYS + 1, d0 - 7); d < d0 + 14; d++) routinesOn(d).forEach(x => out.push({ day: d, time: x.r.time, title: x.r.title, title_ko: x.r.title_ko, place: x.r.place, episode: x.ep.id, rkey: x.key }));
+    return out;
+  }
+  const meetingName = (r) => /^\d/.test(r.title) ? 'your ' + r.title : 'the ' + r.title.charAt(0).toLowerCase() + r.title.slice(1);          // the daily standup, your 1:1 with Maya
+  function missedRoutines(d) {
+    const w = work();
+    if (w.fired || !/^(on|late|noon)$/.test(w.record[d] || '')) return [];
+    const miss = routinesOn(d).filter(x => !(G.rdone && G.rdone[x.key]));
+    miss.forEach(x => addScore(-(x.r.miss_points == null ? 5 : +x.r.miss_points), `Missed: ${x.r.title}`, `빠짐: ${x.r.title_ko || x.r.title}`));
+    if (miss.length) notify(BOSS, `Hey ${G.name}, we missed you at ${miss.map(x => meetingName(x.r)).join(' and ')} today. Please make it to the team meetings, or give me a heads-up if you can't.`,
+      `${hero().name_ko || G.name}, 오늘 ${miss.map(x => x.r.title_ko || x.r.title).join('·')}에 안 보이던데요. 팀 회의에는 꼭 와 주고, 못 오면 미리 알려 줘요.`, 'text');
+    return miss;
+  }
   function checkMissions() {          // after a conversation: was it the last mission?
     if (!G || G.mission || G.day > MISSION_DAYS) return false;
     const [got, all] = missionCount();
@@ -3312,6 +3360,8 @@
     $('side').hidden = false;
     talk = null;
     G.done[ep.id] = true;
+    const rt = ROUTINE_OF[ep.id] && routinesOn(G.day).find(x => x.ep.id === ep.id);
+    if (rt) (G.rdone = G.rdone || {})[rt.key] = 1;          // a meeting is done for today only
     (G.epScore = G.epScore || {})[ep.id] = [got, best];
     if (/(^|,)\s*sick\s*(,|$)/.test(ep.tags || '')) { let d = G.day + 1; while (offWork(d)) d++; G.sickFor = d; }          // a sick day: the next working day
     if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend', { ko: ep.title_ko });
@@ -3442,7 +3492,7 @@
         if (!evs.length && !extra.length && d !== G.day) continue;
         html += `<h3>${tr(`${dateLong(d)} · Day ${d}${d === G.day ? ' · today' : ''}`, `${dateKo(d)} · ${d}일째${d === G.day ? ' · 오늘' : ''}`)}</h3>`;
         html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
-        html += evs.map(c => { const done = c.episode && G.done[c.episode]; const past = d < G.day || (d === G.day && hm(c.time, 0) < G.minute - 60);
+        html += evs.map(c => { const done = c.rkey ? !!(G.rdone && G.rdone[c.rkey]) : c.episode && G.done[c.episode]; const past = d < G.day || (d === G.day && hm(c.time, 0) < G.minute - 60);
           return `<div class="row${done ? ' done' : ''}${past && !done ? ' past' : ''}"><span class="when">${esc(c.time)}</span><div class="main"><div class="t">${esc(loc(c, 'title'))}</div><div class="s">${c.place ? esc(loc(place(c.place))) : ''}</div></div></div>`; }).join('');
         if (!evs.length && !extra.length) html += `<p class="empty">${tr('Nothing scheduled.', '일정 없음.')}</p>`;
       }
@@ -3923,6 +3973,7 @@
     hush = true;
     const wasFired = fired();
     const att = closeDay(day, away);           // a working day you never came in: a strike (and maybe the end of the job)
+    const skipped = missedRoutines(day);          // meetings you were at work for but did not go to
     const firedNow = !wasFired && fired();
     const missionNote = closeMissions(day);          // the last day of the missions: free play from tomorrow
     G.day += 1;
@@ -3933,6 +3984,7 @@
     if (firedNow) morning.push(tr(`📧 <b>You've been let go.</b> ${esc(CFG.company)} ended your job for missing too much work. Your badge no longer works, and your final paycheck has been deposited.`, `📧 <b>해고되었습니다.</b> 결근이 너무 잦아 ${esc(CFG.company)}에서 고용을 끝냈어요. 출입증은 이제 안 열리고, 마지막 급여는 계좌에 들어왔어요.`));
     else if (att === 'early') morning.push(tr(`⚠️ You left work early yesterday (${clock(G.work.left[day])}). ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 일찍 퇴근했어요(${clockKo(G.work.left[day])}). 조퇴예요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     else if (att === 'absent') morning.push(tr(`⚠️ You didn't show up for work yesterday. ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 출근하지 않았어요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
+    if (skipped.length) morning.push(tr(`📅 You missed ${skipped.map(x => esc(meetingName(x.r))).join(' and ')} yesterday. Your manager noticed.`, `📅 어제 ${skipped.map(x => esc(x.r.title_ko || x.r.title)).join('·')}에 빠졌어요. 매니저가 알아챘어요.`));
     if (missionNote) morning.push(missionNote);
     if (late) morning.push(tr('You stayed up too late and did not sleep well. You start the day a little tired.', '너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.'));
     const hol = holidayOf(G.day);
@@ -4491,6 +4543,7 @@
     // the calendar rules for any day: payday, rent, bills, the company's days off, holiday hours, the weather
     rules: (d) => ({ date: isoOf(d), payday: isPayday(d), rent: isRentDay(d), bills: billsDue(d).map(b => b.id), off: offWork(d), company: companyOff(d), hours: holidayHours(d).map(x => [x.id, x.h]), weather: weatherOf(d) }),
     npcAt: (id) => { const n = npcRow(id); return n ? npcPlaceNow(n) : null; }, setDay: (d) => { if (G) G.day = d; },
+    routines: (d) => routinesOn(d == null ? G.day : d).map(x => ({ id: x.r.id, ep: x.ep.id, time: x.r.time, done: !!(G.rdone && G.rdone[x.key]) })),
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
     get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },
     get umbrellas() { return Object.values(npcActors).concat(player ? [player] : []).filter(a => a.brolly && a.brolly.visible).map(a => a.id); },
@@ -4499,7 +4552,7 @@
     cook(id) { return cook(id); }, eat(id) { return eat(id); }, toss(n) { toss(n); return G.lots.length; },
     get punch() { return G ? Object.assign({}, G.punch) : {}; }, pay(amount, text) { pay(+amount, text || 'Test'); return G.money; },
     arrive(z, place) { return travel(z, place); },
-    panel(kind, arg) { openPanel(kind, arg); return state; },
+    panel(kind, arg) { if (kind) openPanel(kind, arg); else if (!panel.hidden) closePanel(); return state; },
     mapTab(t) { MAP.tab = t === 'room' ? 'room' : 'town'; if (panelKind === 'map') renderPanel(); return MAP.tab; },
     closeCard() { if (!$('card').hidden) closeCard(); if (!panel.hidden) closePanel(); return state; },
     reset() { resetGame(); store.del(SET_KEY); return true; },

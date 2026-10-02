@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS episodes (
   energy int DEFAULT 0,
   sort int DEFAULT 0,
   tags varchar(120),
-  hero varchar(16) NOT NULL DEFAULT 'jun'
+  hero varchar(16) NOT NULL DEFAULT 'jun'          -- a hero id, a list ('jun,derek') or all
 );
 
 -- One turn of an episode. The npc (or `speaker`) says `line`; `prompt` is what the player wants to get across (an
@@ -317,4 +317,26 @@ CREATE TABLE IF NOT EXISTS tv (
   note varchar(255),
   note_ko varchar(255),
   sort int DEFAULT 0
+);
+
+-- Meetings that come back after the missions (free play), on working days: the daily standup, a 1:1 every other
+-- week, sprint planning and retro, the monthly all-hands. hero: all, a hero id or a list ('jun,derek'). days: names of
+-- days ('mon,tue,wed,thu,fri'). every: week | 2weeks (weeks where (game day - 1) / 7 % 2 = parity) | month (the first
+-- such day of the month). time: when it starts (shown on the calendar; the episodes' own time_from–time_to is when the
+-- conversation is open). episodes: the conversations, taken in turn (only the hero's own). miss_points: points lost
+-- when you were at work and did not go. people: who comes to the meeting (besides those with a line), if at work.
+CREATE TABLE IF NOT EXISTS routines (
+  id varchar(32) PRIMARY KEY,
+  hero varchar(32) NOT NULL DEFAULT 'all',
+  title varchar(120) NOT NULL,
+  title_ko varchar(120),
+  days varchar(40) NOT NULL,
+  every varchar(8) NOT NULL DEFAULT 'week',
+  parity int NOT NULL DEFAULT 0,
+  time varchar(5) NOT NULL,
+  place varchar(32) NOT NULL,
+  episodes varchar(1000) NOT NULL,
+  people varchar(255),
+  miss_points int NOT NULL DEFAULT 5,
+  sort int NOT NULL DEFAULT 0
 );

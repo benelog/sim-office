@@ -47,26 +47,28 @@ for (const n of rows('npcs')) {
 for (const c of rows('chatter')) if (!npcs.has(c.npc)) bad(`chatter ${c.npc}/${c.seq}`, 'npc does not exist');
 
 const heroes = new Set((DB.heroes || []).map(h => h.id));
+// an episode's hero: a hero id, a list ('jun,derek') or all
+const heroesOf = (h) => { const s = String(h || 'jun'); return s === 'all' ? Array.from(heroes) : s.split(',').map(x => x.trim()).filter(Boolean); };
 for (const h of DB.heroes || []) {
   const w = `heroes ${h.id}`;
   for (const k of ['home_bed', 'home_kitchen', 'home_desk', 'home_door', 'desk']) if (h[k] && !places.has(h[k])) bad(w, `${k} "${h[k]}" not in places`);
   if (!fs.existsSync(path.join(root, 'office', 'models', h.model + '.js'))) bad(w, `model "${h.model}" is not in office/models`);
-  if (!rows('episodes').some(e => (e.hero || 'jun') === h.id)) warn(w, 'has no episodes');
+  if (!rows('episodes').some(e => heroesOf(e.hero).includes(h.id))) warn(w, 'has no episodes');
 }
 for (const e of rows('episodes')) {
   const w = `episodes ${e.id}`;
-  if (heroes.size && !heroes.has(e.hero || 'jun')) bad(w, `hero "${e.hero}" not in heroes`);
-  if (e.npc === (e.hero || 'jun')) bad(w, `the hero ${e.npc} cannot be the person of their own episode`);
+  if (heroes.size && (!heroesOf(e.hero).length || heroesOf(e.hero).some(h => !heroes.has(h)))) bad(w, `hero "${e.hero}" not in heroes`);
+  if (heroesOf(e.hero).includes(e.npc)) bad(w, `the hero ${e.npc} cannot be the person of their own episode`);
   for (const r of String(e.requires || '').split(',').map(s => s.trim()).filter(Boolean)) {
     const req = rows('episodes').find(x => x.id === r);
-    if (req && (req.hero || 'jun') !== (e.hero || 'jun')) bad(w, `requires ${r}, an episode of another hero`);
+    if (req && heroesOf(e.hero).some(h => !heroesOf(req.hero).includes(h))) bad(w, `requires ${r}, an episode of another hero`);
   }
   if (!places.has(e.place)) bad(w, `place "${e.place}" not in places`);
   if (!npcs.has(e.npc)) bad(w, `npc "${e.npc}" not in npcs`);
   else if (npcById[e.npc].place !== e.place) warn(w, `npc ${e.npc} normally stands at ${npcById[e.npc].place}, episode is at ${e.place}`);
   if (!HHMM.test(e.time_from || '') || !HHMM.test(e.time_to || '')) bad(w, `bad time ${e.time_from}–${e.time_to}`);
   else if (e.time_from >= e.time_to) bad(w, `time_from ${e.time_from} is not before time_to ${e.time_to}`);
-  if (e.day_from > e.day_to) bad(w, `day_from ${e.day_from} > day_to ${e.day_to}`);
+  if (e.day_to != null && e.day_from > e.day_to) bad(w, `day_from ${e.day_from} > day_to ${e.day_to}`);          // NULL: no last day
   if (!Number.isInteger(e.reward ?? 0) || !Number.isInteger(e.energy ?? 0)) bad(w, 'reward and energy must be whole numbers');
   const nt = rows('turns').filter(t => t.episode === e.id).length, np = rows('phrases').filter(p => p.episode === e.id).length;
   if (nt && (nt < 3 || nt > 6)) bad(w, `${nt} turns (want 3-6)`);
@@ -75,7 +77,7 @@ for (const e of rows('episodes')) {
     if (!episodes.has(r)) bad(w, `requires unknown episode "${r}"`);
     else {
       const req = rows('episodes').find(x => x.id === r);
-      if (req.day_from > e.day_to) bad(w, `requires ${r}, which only opens on day ${req.day_from}`);
+      if (e.day_to != null && req.day_from > e.day_to) bad(w, `requires ${r}, which only opens on day ${req.day_from}`);
     }
   }
 }
@@ -91,8 +93,8 @@ for (const [ep, list] of Object.entries(turnsBy)) {
   for (const t of list) {
     const w = `turns ${ep}#${t.seq}`;
     for (const who of [t.speaker, t.reply_speaker]) if (who && !npcs.has(who) && who !== 'player') bad(w, `speaker "${who}" not in npcs`);
-    const hero = (rows('episodes').find(e => e.id === ep) || {}).hero || 'jun';
-    for (const who of [t.speaker, t.reply_speaker]) if (who === hero) bad(w, `speaker "${who}" is the hero of this episode (the player)`);
+    const hs = heroesOf((rows('episodes').find(e => e.id === ep) || {}).hero);
+    for (const who of [t.speaker, t.reply_speaker]) if (who && hs.includes(who)) bad(w, `speaker "${who}" is the hero of this episode (the player)`);
     // multiple choice only (2026-10-02): the model and three plausible wrong answers, each with how the other person reacts,
     // all in English and Korean (the screen shows one language). answers/hints are no longer used by the game.
     if (!t.line || !t.prompt || !t.model) bad(w, 'line, prompt and model are required');
@@ -209,6 +211,28 @@ for (const c of DB.tv || []) {
 for (const p of rows('places')) if (p.kind === 'tv' && !/^home/.test(p.zone)) warn(`places ${p.id}`, 'a TV outside a home: Watch TV is only offered at home');
 
 const count = (t) => `${t} ${Array.isArray(DB[t]) ? DB[t].length : 0}`;
+// routines (meetings after the missions): their conversations exist, come after the missions, are at the routine's place
+// and open around its time; every hero of the routine has at least one
+const ROUTINE_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+for (const r of DB.routines || []) {
+  const w = `routines ${r.id}`;
+  if (!r.title_ko) warn(w, 'no title_ko');
+  if (!places.has(r.place)) bad(w, `place "${r.place}" not in places`);
+  if (!HHMM.test(r.time || '')) bad(w, `bad time ${r.time}`);
+  if (!['week', '2weeks', 'month'].includes(r.every)) bad(w, `every "${r.every}" is not week, 2weeks or month`);
+  const days = String(r.days || '').split(',').map(x => x.trim()).filter(Boolean);
+  if (!days.length || days.some(d => !ROUTINE_DAYS.has(d))) bad(w, `days "${r.days}" are not names of days`);
+  const pool = String(r.episodes || '').split(',').map(x => x.trim()).filter(Boolean);
+  for (const id of pool) {
+    const e = rows('episodes').find(x => x.id === id);
+    if (!e) { bad(w, `episode "${id}" does not exist`); continue; }
+    if ((e.day_from || 1) <= (+(DB.config || {}).mission_days || 15)) bad(w, `episode ${id} opens during the missions (day_from ${e.day_from})`);
+    if (e.place !== r.place) warn(w, `episode ${id} is at ${e.place}, the routine at ${r.place}`);
+    if (HHMM.test(r.time || '') && HHMM.test(e.time_from || '') && !(e.time_from <= r.time && r.time < e.time_to)) bad(w, `episode ${id} is open ${e.time_from}–${e.time_to}, not around ${r.time}`);
+  }
+  for (const h of heroesOf(r.hero)) if (!pool.some(id => { const e = rows('episodes').find(x => x.id === id); return e && heroesOf(e.hero).includes(h); })) bad(w, `no conversation for ${h}`);
+}
+
 console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
