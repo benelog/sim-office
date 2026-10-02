@@ -12,7 +12,7 @@ const API = `https://www.dolthub.com/api/v1alpha1/${OWNER}/${REPO}`;
 const TOKEN = process.env.DOLTHUB_TOKEN;
 if (!TOKEN) { console.error('DOLTHUB_TOKEN is not set (source .envrc)'); process.exit(2); }
 const H = { authorization: 'token ' + TOKEN };
-const TABLES = ['config', 'places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'schedule', 'weather', 'smalltalk', 'bills', 'heroes', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines'];
+const TABLES = ['config', 'places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'schedule', 'weather', 'smalltalk', 'bills', 'heroes', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'];
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function query(sql) {

@@ -233,7 +233,29 @@ for (const r of DB.routines || []) {
   for (const h of heroesOf(r.hero)) if (!pool.some(id => { const e = rows('episodes').find(x => x.id === id); return e && heroesOf(e.hero).includes(h); })) bad(w, `no conversation for ${h}`);
 }
 
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv'].map(count).join(', '));
+// tasks (what comes up at your desk): three choices with both languages, whole points and minutes, something good
+// and something bad among them, a known sender, a real hero, a day and times that can happen
+const TASK_KINDS = new Set(['build', 'review', 'alert', 'ticket', 'email', 'chat']);
+for (const t of DB.tasks || []) {
+  const w = `tasks ${t.id}`;
+  if (!TASK_KINDS.has(t.kind)) bad(w, `kind "${t.kind}" is not one of ${Array.from(TASK_KINDS).join(', ')}`);
+  if (t.sender && !npcs.has(t.sender)) bad(w, `sender "${t.sender}" not in npcs`);
+  const hs = heroesOf(t.hero);
+  if (!hs.length || hs.some(h => !heroes.has(h))) bad(w, `hero "${t.hero}" not in heroes`);
+  if (t.sender && hs.includes(t.sender)) bad(w, `the sender ${t.sender} is a hero of this task (the player)`);
+  if (!t.title_ko || !t.body_ko) bad(w, 'title_ko and body_ko are required');
+  for (const k of ['time_from', 'time_to']) if (t[k] && !HHMM.test(t[k])) bad(w, `bad ${k} ${t[k]}`);
+  if (t.time_from && t.time_to && t.time_from >= t.time_to) bad(w, `time_from ${t.time_from} is not before time_to ${t.time_to}`);
+  const cs = Array.isArray(t.choices) ? t.choices : [];
+  if (cs.length !== 3) bad(w, `${cs.length} choices (want 3)`);
+  cs.forEach((c, i) => {
+    for (const k of ['t', 't_ko', 'r', 'r_ko']) if (!c[k]) bad(w, `choice ${i + 1} has no ${k}`);
+    if (!Number.isInteger(c.points ?? 0) || !Number.isInteger(c.minutes ?? 0) || (c.minutes || 0) < 0 || (c.minutes || 0) > 120) bad(w, `choice ${i + 1}: points and minutes (0-120) must be whole numbers`);
+  });
+  if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
+}
+
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);

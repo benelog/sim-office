@@ -17,9 +17,9 @@ vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(path.join(root, 'office', 'data', 'db.js'), 'utf8'), ctx);
 const DB = JSON.parse(JSON.stringify(ctx.window.SO_DB));
 const KEYS = { config: ['k'], places: ['id'], npcs: ['id'], chatter: ['npc', 'seq'], episodes: ['id'], turns: ['episode', 'seq'], phrases: ['id'], items: ['id'],
-  calendar: ['hero', 'day', 'time'], schedule: ['npc', 'seq'], weather: ['day'], smalltalk: ['topic', 'seq'], bills: ['id'], heroes: ['id'], messages: ['id'], holidays: ['date'], recipes: ['id'], replies: ['id'], mail: ['id'], radio: ['id'], tv: ['id'], routines: ['id'] };
-const JSON_COLS = { turns: ['answers', 'distractors', 'hints', 'hints_ko', 'distractors_ko', 'reactions', 'reactions_ko'] };
-const DEFAULTS = { episodes: { hero: 'jun' }, calendar: { hero: 'jun' }, messages: { hero: 'all', kind: 'text' }, holidays: { kind: 'observance' }, replies: { tone: 'good', delay: 10 }, mail: { hero: 'all', kind: 'junk' }, radio: { kind: 'news', sort: 0 }, tv: { kind: 'news', live: 0, sort: 0 }, routines: { hero: 'all', every: 'week', parity: 0, miss_points: 5, sort: 0 } };
+  calendar: ['hero', 'day', 'time'], schedule: ['npc', 'seq'], weather: ['day'], smalltalk: ['topic', 'seq'], bills: ['id'], heroes: ['id'], messages: ['id'], holidays: ['date'], recipes: ['id'], replies: ['id'], mail: ['id'], radio: ['id'], tv: ['id'], routines: ['id'], tasks: ['id'] };
+const JSON_COLS = { turns: ['answers', 'distractors', 'hints', 'hints_ko', 'distractors_ko', 'reactions', 'reactions_ko'], tasks: ['choices'] };
+const DEFAULTS = { episodes: { hero: 'jun' }, calendar: { hero: 'jun' }, messages: { hero: 'all', kind: 'text' }, holidays: { kind: 'observance' }, replies: { tone: 'good', delay: 10 }, mail: { hero: 'all', kind: 'junk' }, radio: { kind: 'news', sort: 0 }, tv: { kind: 'news', live: 0, sort: 0 }, routines: { hero: 'all', every: 'week', parity: 0, miss_points: 5, sort: 0 }, tasks: { hero: 'all', day_from: 1, sort: 0 } };
 const PAD = 3 + 'sim-office seed '.length * 64 + 1;
 let bad = 0;
 function values(text, where) {            // the tuples of a VALUES list: strings ('' is a quote), numbers, NULL

@@ -1898,6 +1898,109 @@
       `${hero().name_ko || G.name}, 오늘 ${miss.map(x => x.r.title_ko || x.r.title).join('·')}에 안 보이던데요. 팀 회의에는 꼭 와 주고, 못 오면 미리 알려 줘요.`, 'text');
     return miss;
   }
+  // ---------------------------------------------------------------- work at your desk (tasks table)
+  // "Work for an hour" at your desk: the minutes add up (G.worked { day: minutes }), and the hour stops early when a
+  // meeting or a conversation of yours is about to open. Now and then something comes up at the office (a red build, a
+  // review request, a customer ticket, a phishing email): a card with three things you could do, each with what
+  // happens next, points and the minutes it takes (G.taskLog [{ day, id, pick, n }]; at most two a day, the ones you
+  // have not seen first). After the missions, the last working day of a week ends with a note from your manager about
+  // the hours at your desk against config work_hours_day for each day you came in (weekReview).
+  const TASKS = rows('tasks').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
+  const TASK_KIND = { build: ['🔴', 'Build', '빌드'], review: ['👀', 'Code review', '코드 리뷰'], alert: ['🚨', 'Alert', '경보'], ticket: ['🎫', 'Support ticket', '고객 문의'], email: ['✉️', 'Email', '이메일'], chat: ['💬', 'Chat', '메신저'] };
+  const WORK_HOURS_DAY = +CFG.work_hours_day || 4;
+  const hrs = (m) => { const h = Math.round(m / 6) / 10; return tr(`${h} h`, `${h}시간`); };
+  const workedOn = (d) => (G && G.worked && G.worked[d]) || 0;
+  const tasksOn = (d) => (G && G.taskLog || []).filter(x => x.day === d);
+  // the next thing of yours today: [minute, episode] for a conversation that opens later, or a meeting of today you
+  // have not been to (from now while it is on)
+  function nextUp() {
+    return episodes().filter(laterToday).map(e => [hm(e.time_from, 0), e])
+      .concat(routinesOn(G.day).filter(x => !(G.rdone && G.rdone[x.key]) && hm(x.ep.time_to, 1439) > G.minute).map(x => [Math.max(hm(x.r.time, 0), G.minute), x.ep]))
+      .sort((a, b) => a[0] - b[0])[0] || null;
+  }
+  function workHour() {
+    if (!G) return;
+    const up = nextUp(), next = up && up[0] < G.minute + 60 ? up : null;
+    const mins = next ? Math.ceil(next[0] - G.minute) : 60;
+    if (mins < 10) {
+      if (next[0] <= G.minute) toast(`${next[1].title} is on now. Go to ${place(next[1].place).name}.`, `지금 ${loc(next[1], 'title')} 시간이에요. ${loc(place(next[1].place))}에 가세요.`, 'bad', 3);
+      else toast(`No time to start anything: ${next[1].title} at ${clock(next[0])}.`, `뭘 시작할 시간이 없어요: ${clockKo(next[0])}에 ${loc(next[1], 'title')}.`, null, 3);
+      return;
+    }
+    advanceMinutes(mins);
+    if (state !== 'play') return;          // it got too late and you fell asleep
+    const d = G.day;
+    (G.worked = G.worked || {})[d] = workedOn(d) + mins;
+    player.sit = true;
+    play(player, 'sit');
+    goalTimer = 0;
+    const soon = nextUp();          // no task when something of yours starts soon (it would make you miss it)
+    const t = zoneId === 'office' && !offWork(d) && !(soon && soon[0] < G.minute + 45) && pickTask();
+    if (t) { showTask(t); return; }
+    const today = hrs(workedOn(d));
+    if (next) toast(`You worked until ${clock(G.minute)} (${today} today). Next: ${next[1].title}.`, `${clockKo(G.minute)}까지 일했어요(오늘 ${today}). 다음: ${loc(next[1], 'title')}.`, null, 3.2);
+    else toast(`You worked for an hour (${today} today).`, `한 시간 일했어요(오늘 ${today}).`, null, 2.4);
+  }
+  function pickTask() {
+    const n = tasksOn(G.day).length;
+    if (n >= 2 || Math.random() >= (n ? 0.25 : 0.5)) return null;
+    const seen = {};
+    (G.taskLog || []).forEach(x => { seen[x.id] = x.day; });
+    const pool = TASKS.filter(t => mine(t) && (t.day_from || 1) <= G.day && (!t.time_from || hm(t.time_from, 0) <= G.minute) && (!t.time_to || G.minute <= hm(t.time_to, 1439)));
+    if (!pool.length) return null;
+    const oldest = Math.min(...pool.map(t => seen[t.id] || 0));
+    if (oldest && G.day - oldest < 14) return null;          // everything came up in the last two weeks
+    const fresh = pool.filter(t => (seen[t.id] || 0) === oldest);
+    return fresh[Math.floor(Math.random() * fresh.length)];
+  }
+  let taskNow = null;          // { t, order, picked }
+  const bestChoice = (t) => (t.choices || []).reduce((b, c, i, a) => (+c.points || 0) > (+a[b].points || 0) ? i : b, 0);
+  function showTask(t) {
+    const k = TASK_KIND[t.kind] || ['📌', pretty(t.kind), t.kind], from = t.sender && NPCS[t.sender];
+    taskNow = { t, order: shuffle((t.choices || []).map((_, i) => i)) };
+    showCard({ kicker: `${k[0]} ${tr(k[1], k[2])}${from ? ' · ' + fullName(from) : ''}`, title: shown(t.title, t.title_ko),
+      body: `<p>${esc(shown(t.body, t.body_ko))}</p><p class="fine">${tr('What do you do?', '어떻게 할까요?')}</p><div class="choices">${taskNow.order.map(i => `<button type="button" data-task="${i}">${esc(shown(t.choices[i].t, t.choices[i].t_ko))}</button>`).join('')}</div>`,
+      ok: tr('Back to work', '다시 일하기'), state: 'card', choose: true }, () => { taskNow = null; goalTimer = 0; });
+  }
+  function chooseTask(i) {
+    if (!taskNow || !taskNow.t.choices[i]) return false;
+    const t = taskNow.t, c = t.choices[i], n = Math.round(+c.points || 0), mins = Math.max(0, +c.minutes || 0);
+    taskNow = Object.assign({}, taskNow, { picked: i });
+    G.taskLog = (G.taskLog || []).concat({ day: G.day, id: t.id, pick: i, n }).slice(-200);
+    addScore(n, t.title, t.title_ko);
+    if (mins) { (G.worked = G.worked || {})[G.day] = workedOn(G.day) + mins; G.minute += mins; }          // the time it takes is work too (no falling asleep on a card)
+    const card = $('card');
+    card.querySelector('.card-body').innerHTML = `<p class="quote">${esc(shown(c.t, c.t_ko))}</p><p>${esc(shown(c.r, c.r_ko))}</p>
+      <p class="score-line">${n ? `${n > 0 ? '+' : '−'}${Math.abs(n)} ${tr('points', '점')}` : tr('No points', '점수 없음')}${mins ? ` · ${tr(`${mins} min`, `${mins}분`)}` : ''} · ${tr('now', '지금')} ${clk(G.minute)}</p>`;
+    card.classList.remove('choose');
+    setTimeout(() => card.querySelector('.ok').focus(), 50);
+    return true;
+  }
+  $('card').addEventListener('click', (e) => { const b = e.target.closest('button[data-task]'); if (b) chooseTask(+b.dataset.task); });
+  // a week: the working days you came in, the minutes at your desk, and what came up (days after the missions only)
+  function weekStats(d) {
+    const w = work(), from = Math.max(Math.floor((d - 1) / 7) * 7 + 1, MISSION_DAYS + 1), to = Math.floor((d - 1) / 7) * 7 + 7;
+    let came = 0, mins = 0;
+    for (let x = from; x <= to; x++) { mins += workedOn(x); if (!offWork(x) && /^(on|late|noon)$/.test(w.record[x] || '')) came++; }
+    const tasks = (G.taskLog || []).filter(x => x.day >= from && x.day <= to);
+    return { from, to, came, mins, want: came * WORK_HOURS_DAY * 60, tasks: tasks.length, good: tasks.filter(x => x.n > 0).length };
+  }
+  const lastWorkday = (d) => { if (offWork(d)) return false; for (let x = d + 1; x <= Math.floor((d - 1) / 7) * 7 + 7; x++) if (!offWork(x)) return false; return true; };
+  // the end of the last working day of a week in free play (from goToSleep): the manager's note, and points
+  function weekReview(d) {
+    if (!G || d <= MISSION_DAYS || fired() || !lastWorkday(d)) return null;
+    const s = weekStats(d);
+    if (!s.came) return null;
+    const r = s.mins / s.want, me = hero().name_ko || G.name;
+    const grade = r >= 1 ? 'good' : r >= 0.5 ? 'ok' : 'low';
+    const n = grade === 'good' ? +CFG.week_good_points || 15 : grade === 'low' ? -(Math.abs(+CFG.week_low_points || 15)) : 0;
+    (G.weeks = G.weeks || {})[d] = { mins: s.mins, want: s.want, grade, n };
+    addScore(n, 'The week at your desk', '이번 주 업무량');
+    const handled = s.good ? ` Thanks for jumping on what came up, too.` : '', handledKo = s.good ? ' 중간에 생긴 일도 챙겨 줘서 고마워요.' : '';
+    if (grade === 'good') notify(BOSS, `Nice week, ${G.name}. You put real time into the sprint work, and it shows.${handled} Have a good weekend!`, `${me}, 이번 주 수고했어요. 스프린트 일에 시간을 제대로 들인 게 보여요.${handledKo} 주말 잘 보내요!`, 'text');
+    else if (grade === 'low') notify(BOSS, `Hey ${G.name}, I looked at the board, and your tickets barely moved this week. Is something blocking you? Let's talk about it at our next 1:1, or grab me any time.`, `${me}, 보드를 봤는데 이번 주에 맡은 티켓이 거의 그대로네요. 막힌 게 있어요? 다음 1:1에서 얘기하거나 아무 때나 불러 줘요.`, 'text');
+    return { grade, n, mins: s.mins, want: s.want };
+  }
   function checkMissions() {          // after a conversation: was it the last mission?
     if (!G || G.mission || G.day > MISSION_DAYS) return false;
     const [got, all] = missionCount();
@@ -2472,9 +2575,19 @@
       }
     } else {
       const later = episodes().filter(laterToday).sort(epOrder)[0];
-      if (later) {
+      const atWork = zoneId === 'office' && !offWork(G.day) && !fired() && G.inDay === G.day && G.minute < 17 * 60, desk = hero().desk;
+      if (later && atWork) {
+        en = `Work at your desk until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
+        ko = `${clockKo(hm(later.time_from, 0))}까지 자리에서 일하세요. 다음: ${esc(loc(later, 'title'))}`;
+        if (Z.places[desk]) goalTarget = { at: Z.places[desk].at };
+      } else if (later) {
         en = `Free until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
         ko = `${clockKo(hm(later.time_from, 0))}까지 자유 시간. 다음: ${esc(loc(later, 'title'))}`;
+      } else if (atWork && freePlay()) {
+        const s = weekStats(G.day);
+        en = `<b>At work.</b> Work at your desk: ${hrs(workedOn(G.day))} today, ${hrs(s.mins)} of about ${hrs(s.want)} this week.`;
+        ko = `<b>근무 중.</b> 자리에서 일하세요: 오늘 ${hrs(workedOn(G.day))}, 이번 주 약 ${hrs(s.want)} 중 ${hrs(s.mins)}.`;
+        if (Z.places[desk]) goalTarget = { at: Z.places[desk].at };
       } else if (G.minute >= 20 * 60) {
         const home = TRAVEL_ZONES.includes(zoneId) ? 'hotel' : hero().home_zone;
         const bed = home === 'hotel' ? 'hotel_room' : hero().home_bed;
@@ -3190,13 +3303,6 @@
     speak(personal(c.line), voiceOf(a.row));
     play(a, 'interact-right', { once: true });
   }
-  function workHour() {
-    advanceMinutes(60);
-    toast('You worked for an hour.', '한 시간 일했어요.', null, 2.4);
-    player.sit = true;
-    play(player, 'sit');
-    goalTimer = 0;
-  }
   const busFare = () => { const f = rows('items').find(i => busItem(i) && !/pass/.test(i.id)); return f ? +f.price : +CFG.bus_fare || 2.5; };
   const hasPass = () => G && G.pass === G.day;
 
@@ -3580,6 +3686,11 @@
           return `<h3>${tr('Missions', '미션')}</h3><p class="fine">${m && m.all ? tr(`🎉 All ${all} done${m.bonus ? `: bonus ${usd(m.bonus)}` : ''}. ${freePlay() ? 'Free play now.' : `Free play from ${dateLong(MISSION_DAYS + 1)}.`}`, `🎉 ${all}개 모두 완료${m.bonus ? `: 보너스 ${usd(m.bonus)}` : ''}. ${freePlay() ? '지금은 자유 플레이.' : `${dateKo(MISSION_DAYS + 1)}부터 자유 플레이.`}`)
             : freePlay() ? tr(`${got} of ${all} done. The missions are over: free play now.`, `${all}개 중 ${got}개 완료. 미션 기간이 끝나 지금은 자유 플레이.`)
               : tr(`<b>${got} of ${all}</b> done, until ${dateLong(MISSION_DAYS)}. Finish all of them for a ${usd(+CFG.mission_bonus || 0)} bonus and ${+CFG.mission_points || 0} points.`, `${dateKo(MISSION_DAYS)}까지 <b>${all}개 중 ${got}개</b> 완료. 모두 해내면 보너스 ${usd(+CFG.mission_bonus || 0)}와 ${+CFG.mission_points || 0}점.`)}</p>`; })()}
+        ${(() => { const s = weekStats(G.day), log = (G.taskLog || []).slice().reverse().slice(0, 12), T = byId('tasks');
+          const head = freePlay() && s.came ? tr(`This week: <b>${hrs(s.mins)}</b> of about ${hrs(s.want)} (${WORK_HOURS_DAY} h for each day you come in). Your manager looks at the week on its last working day.`, `이번 주: 약 ${hrs(s.want)} 중 <b>${hrs(s.mins)}</b>(출근한 날마다 ${WORK_HOURS_DAY}시간). 매니저가 그 주의 마지막 근무일에 한 주를 돌아봐요.`)
+            : tr(`Today: <b>${hrs(workedOn(G.day))}</b>. Use “Work for an hour” at your desk.${freePlay() ? '' : ` After the missions your manager expects about ${WORK_HOURS_DAY} h a day.`}`, `오늘: <b>${hrs(workedOn(G.day))}</b>. 자리에서 “한 시간 일하기”를 하세요.${freePlay() ? '' : ` 미션이 끝나면 매니저는 하루 약 ${WORK_HOURS_DAY}시간을 기대해요.`}`);
+          return `<h3>${tr('At your desk', '업무')}</h3><p class="fine">${head}</p>${log.map(x => { const t = T[x.id]; if (!t) return ''; const c = (t.choices || [])[x.pick] || {};
+            return `<div class="row"><span class="when">${esc(dShort(x.day))}</span><div class="main"><div class="t">${esc((TASK_KIND[t.kind] || ['📌'])[0] + ' ' + shown(t.title, t.title_ko))}</div><div class="s">${esc(shown(c.t, c.t_ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n ? (x.n > 0 ? '+' : '−') + Math.abs(x.n) : ''}</span></div>`; }).join('')}`; })()}
         <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}${w.left && w.left[d] != null ? `<div class="s">${esc(tr(ATTEND.early[0], ATTEND.early[1]))} · ${clk(w.left[d])} · −${Math.abs(ATTEND.early[2])}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
         <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
     } else if (panelKind === 'map') {
@@ -3974,6 +4085,8 @@
     const wasFired = fired();
     const att = closeDay(day, away);           // a working day you never came in: a strike (and maybe the end of the job)
     const skipped = missedRoutines(day);          // meetings you were at work for but did not go to
+    const week = weekReview(day);          // the last working day of a week in free play: the manager's note
+    const deskMins = workedOn(day), deskTasks = tasksOn(day);
     const firedNow = !wasFired && fired();
     const missionNote = closeMissions(day);          // the last day of the missions: free play from tomorrow
     G.day += 1;
@@ -3985,6 +4098,9 @@
     else if (att === 'early') morning.push(tr(`⚠️ You left work early yesterday (${clock(G.work.left[day])}). ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 일찍 퇴근했어요(${clockKo(G.work.left[day])}). 조퇴예요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     else if (att === 'absent') morning.push(tr(`⚠️ You didn't show up for work yesterday. ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 출근하지 않았어요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     if (skipped.length) morning.push(tr(`📅 You missed ${skipped.map(x => esc(meetingName(x.r))).join(' and ')} yesterday. Your manager noticed.`, `📅 어제 ${skipped.map(x => esc(x.r.title_ko || x.r.title)).join('·')}에 빠졌어요. 매니저가 알아챘어요.`));
+    if (week) morning.push(week.grade === 'good' ? tr(`📈 Your manager liked your week: <b>${hrs(week.mins)}</b> at your desk (the team expects about ${hrs(week.want)}). +${week.n} points.`, `📈 매니저가 이번 주 일에 만족했어요: 자리에서 <b>${hrs(week.mins)}</b> 일함(팀 기대치 약 ${hrs(week.want)}). +${week.n}점.`)
+      : week.grade === 'low' ? tr(`📉 This week you put <b>${hrs(week.mins)}</b> into your work (the team expects about ${hrs(week.want)}). Your manager noticed. −${Math.abs(week.n)} points.`, `📉 이번 주에 자리에서 <b>${hrs(week.mins)}</b>만 일했어요(팀 기대치 약 ${hrs(week.want)}). 매니저가 알아챘어요. −${Math.abs(week.n)}점.`)
+        : tr(`📊 This week: <b>${hrs(week.mins)}</b> at your desk (the team expects about ${hrs(week.want)}).`, `📊 이번 주: 자리에서 <b>${hrs(week.mins)}</b> 일함(팀 기대치 약 ${hrs(week.want)}).`));
     if (missionNote) morning.push(missionNote);
     if (late) morning.push(tr('You stayed up too late and did not sleep well. You start the day a little tired.', '너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.'));
     const hol = holidayOf(G.day);
@@ -4011,6 +4127,7 @@
     const body = `<div class="sum"><div><b>${eps.length}</b>${tr('conversations', '대화')}</div><div><b>${gained >= 0 ? '+' : '−'}${Math.abs(gained)}</b>${tr('points', '점수')}</div><div><b>${usd2(spent)}</b>${tr('spent', '지출')}</div><div><b>${usd2(earned)}</b>${tr('earned', '수입')}</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(logText(l))}</li>`).join('') + '</ul>' : ''}
       ${missed.length ? `<p>${tr('Missed', '놓친 일')}: ${missed.map(e => esc(loc(e, 'title'))).join(', ')}</p>` : ''}
+      ${deskMins ? `<p>${tr(`You worked <b>${hrs(deskMins)}</b> at your desk${deskTasks.length ? ` and handled ${deskTasks.length === 1 ? 'one thing' : deskTasks.length + ' things'} that came up` : ''}.`, `자리에서 <b>${hrs(deskMins)}</b> 일했어요${deskTasks.length ? `. 중간에 생긴 일 ${deskTasks.length}건을 처리했어요` : ''}.`)}</p>` : ''}
       ${inAt != null ? `<p>${tr(`You got to work at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.`, `<b>${clockKo(inAt)}</b>에 출근했어요${wasLate ? ' (지각)' : inAt <= hm(CFG.work_start, 540) ? ' (정시)' : ''}.`)}</p>` : ''}
       <p>${tr('Score', '점수')} <b>★ ${score()}</b> · ${tr(standing()[0], standing()[1])}${day <= MISSION_DAYS ? ` · ${tr('Missions', '미션')} <b>${missionCount().join(' / ')}</b>` : ''}</p>
       <h3>${tr(`${dateLong(G.day)} · Day ${G.day}`, `${dateKo(G.day)} · ${G.day}일째`)}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
@@ -4033,19 +4150,22 @@
     card.querySelector('h2').textContent = c.title || '';
     card.querySelector('.card-body').innerHTML = c.body || '';
     card.querySelector('.ok').textContent = c.ok || tr('Continue', '계속');
+    card.classList.toggle('choose', !!c.choose);          // pick one of the choices in the body before going on
     card.hidden = false;
     state = c.state || 'card';
     cardDone = then || null;
-    setTimeout(() => card.querySelector('.ok').focus(), 50);
+    if (!c.choose) setTimeout(() => card.querySelector('.ok').focus(), 50);
   }
-  function closeCard() {
+  function closeCard(force) {          // force: also a card waiting for a choice (the debug API, a new game)
+    if ($('card').classList.contains('choose') && !force) return;
+    $('card').classList.remove('choose');
     $('card').hidden = true;
     state = 'play';
     const f = cardDone;
     cardDone = null;
     if (f) f();
   }
-  $('card').querySelector('.ok').addEventListener('click', closeCard);
+  $('card').querySelector('.ok').addEventListener('click', () => closeCard());
 
   // ---------------------------------------------------------------- menu
   function toggleMenu(on) {
@@ -4072,6 +4192,7 @@
     if (talk) endTalk();
     panel.hidden = true;
     $('card').hidden = true;
+    $('card').classList.remove('choose');
     showTitle();
   }
 
@@ -4444,7 +4565,7 @@
     async goto(zone, placeId) {
       if (!G) await this.start();
       if (talk) endTalk();
-      if (!$('card').hidden) closeCard();
+      if (!$('card').hidden) closeCard(true);
       if (!panel.hidden) closePanel();
       state = 'play';
       await enterZone(zone, placeId || null);
@@ -4476,7 +4597,7 @@
       const ep = EPISODES[id];
       if (!ep) throw new Error('no episode ' + id);
       if (!G) await this.start();
-      if (!$('card').hidden) closeCard();
+      if (!$('card').hidden) closeCard(true);
       if (!panel.hidden) closePanel();
       if (talk) endTalk();
       state = 'play';
@@ -4512,7 +4633,8 @@
         await wait(60);
         return 'turn';
       }
-      if (!$('card').hidden) { closeCard(); await wait(60); return 'card'; }
+      if (taskNow && taskNow.picked == null) { chooseTask(bestChoice(taskNow.t)); return 'task'; }
+      if (!$('card').hidden) { closeCard(true); await wait(60); return 'card'; }
       if (!panel.hidden) { closePanel(); return 'panel'; }
       return state;
     },
@@ -4525,7 +4647,7 @@
       if (!G) return false;
       if (talk) endTalk();
       if (!panel.hidden) closePanel();
-      if (!$('card').hidden) closeCard();
+      if (!$('card').hidden) closeCard(true);
       state = 'play';
       await goToSleep(false);
       await until(() => !busy, 8000);
@@ -4543,6 +4665,10 @@
     // the calendar rules for any day: payday, rent, bills, the company's days off, holiday hours, the weather
     rules: (d) => ({ date: isoOf(d), payday: isPayday(d), rent: isRentDay(d), bills: billsDue(d).map(b => b.id), off: offWork(d), company: companyOff(d), hours: holidayHours(d).map(x => [x.id, x.h]), weather: weatherOf(d) }),
     npcAt: (id) => { const n = npcRow(id); return n ? npcPlaceNow(n) : null; }, setDay: (d) => { if (G) G.day = d; },
+    workHour() { workHour(); return { minute: Math.floor(G.minute), worked: workedOn(G.day), task: taskNow ? taskNow.t.id : null }; },
+    worked: (d) => workedOn(d == null ? G.day : d), get taskLog() { return G ? (G.taskLog || []).slice() : []; },
+    task(id) { const t = id ? TASKS.find(x => x.id === id) : pickTask(); if (t) showTask(t); return t ? t.id : null; },          // show a task card (or try the dice)
+    pick(i) { return chooseTask(i == null && taskNow ? bestChoice(taskNow.t) : +i); }, week: (d) => weekStats(d == null ? G.day : d),
     routines: (d) => routinesOn(d == null ? G.day : d).map(x => ({ id: x.r.id, ep: x.ep.id, time: x.r.time, done: !!(G.rdone && G.rdone[x.key]) })),
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
     get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },
@@ -4554,7 +4680,7 @@
     arrive(z, place) { return travel(z, place); },
     panel(kind, arg) { if (kind) openPanel(kind, arg); else if (!panel.hidden) closePanel(); return state; },
     mapTab(t) { MAP.tab = t === 'room' ? 'room' : 'town'; if (panelKind === 'map') renderPanel(); return MAP.tab; },
-    closeCard() { if (!$('card').hidden) closeCard(); if (!panel.hidden) closePanel(); return state; },
+    closeCard() { if (!$('card').hidden) closeCard(true); if (!panel.hidden) closePanel(); return state; },
     reset() { resetGame(); store.del(SET_KEY); return true; },
     // what stands between the player and the camera (for tuning zone files)
     blockers() {

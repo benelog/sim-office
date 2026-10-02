@@ -340,3 +340,24 @@ CREATE TABLE IF NOT EXISTS routines (
   miss_points int NOT NULL DEFAULT 5,
   sort int NOT NULL DEFAULT 0
 );
+
+-- Things that come up while you work at your desk ("Work for an hour" at the office on a working day; at most two a
+-- day, the ones not seen yet first). hero: all, a hero id or a list ('jun,derek'). kind: build | review | alert | ticket
+-- | email | chat. sender: who it comes from (npcs id; NULL for a system or someone without a person). choices: JSON
+-- [{ t, t_ko (what you do), r, r_ko (what happens), points, minutes (how long it takes) }], three of them, shown in a
+-- random order. day_from: not before this game day. time_from / time_to: only between these times (NULL: any time).
+CREATE TABLE IF NOT EXISTS tasks (
+  id varchar(32) PRIMARY KEY,
+  hero varchar(32) NOT NULL DEFAULT 'all',
+  kind varchar(16) NOT NULL,
+  sender varchar(32),
+  title varchar(120) NOT NULL,
+  title_ko varchar(120),
+  body varchar(600) NOT NULL,
+  body_ko varchar(600),
+  choices json NOT NULL,
+  day_from int NOT NULL DEFAULT 1,
+  time_from varchar(5),
+  time_to varchar(5),
+  sort int NOT NULL DEFAULT 0
+);
