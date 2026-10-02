@@ -3,9 +3,10 @@
    north-south through x = 0, and both carry on to the edge of town (Lake Avenue crosses the river on a bridge
    to the north). North-west: the homes, with the apartment building (apartment_door) and the bus stop on the
    Maple Street sidewalk. North-east: the office towers; Seaside Labs is the tall one (office_door) with a plaza
-   and Nina's coffee cart on the corner. South-west: Seaside Park with trees, flower beds, a monument and benches
-   (park_bench). South-east: the diner (diner_door) and the grocery store (market_door) face Maple Street, with a
-   small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
+   and Nina's coffee cart on the corner, the credit union's ATM beside it (atm_cu). South-west: Seaside Park with
+   trees, flower beds, a monument and benches (park_bench); along its fence on Maple Street the weekend farmers market
+   (farm_stand, bakery_stand) and another bank's ATM by the gate (atm_park). South-east: the diner (diner_door) and
+   the grocery store (market_door) face Maple Street, with a small parking lot behind them (parking). The airport shuttle waits at the east end of Maple Street
    (airport_shuttle). The Fairview River runs along the north edge of town with the mountains rising beyond it
    (from z -48, low enough for the camera, which looks down, to see the ridge); south of town the plain runs down
    to a beach and the sea (from z 31; the range and the sea are SO_ZONE_KIT.dress, which also scatters the woods
@@ -123,6 +124,9 @@
     r('light-square', 6.5, -1.75, 180, { solid: [0.2, 0.2] }),
     r('light-square', 12.5, -1.75, 180, { solid: [0.2, 0.2] }),
     r('light-square', 1.75, -7.0, 90, { solid: [0.2, 0.2] }),
+    // the credit union's ATM on Lake Avenue, by the coffee cart (atm_cu): free for the heroes, who bank there
+    { pack: 'box', size: [0.5, 1.3, 0.4], at: [2.4, -6.1], color: '#2b5d8a', solid: [0.5, 0.4] },
+    { pack: 'box', size: [0.3, 0.2, 0.02], at: [2.4, -5.89], lift: 0.78, color: '#16233b' },
 
     // ----- crossroads at the origin
     r('traffic-light', -1.75, -1.75, 180, { solid: [0.25, 0.25] }),
@@ -185,6 +189,24 @@
     bit('grass-short', -11.0, 8.9, 0, 0.6), bit('grass-wispy-short', -6.2, 10.8, 0, 0.6),
     r('light-square', -12.5, 1.75, 0, { solid: [0.2, 0.2] }),
     r('light-square', -4.0, 1.75, 0, { solid: [0.2, 0.2] }),
+    // another bank's ATM by the park gate (atm_park: a fee), and the weekend farmers market along the park fence: a fruit
+    // stand (farm_stand) and a bakery stand (bakery_stand), cash only (config cash_only, hours_farm_stand…)
+    { pack: 'box', size: [0.5, 1.3, 0.4], at: [-5.6, 4.25], color: '#7a2f3b', solid: [0.5, 0.4] },
+    { pack: 'box', size: [0.3, 0.2, 0.02], at: [-5.6, 4.04], lift: 0.78, color: '#16233b' },
+    f('kitchenBar', -10.6, 4.2, 180, { solid: 'fit' }),
+    f('kitchenBar', -10.17, 4.2, 180, { solid: 'fit' }),
+    f('kitchenBar', -9.74, 4.2, 180, { solid: 'fit' }),
+    food('apple', -10.72, 4.2, 0, { lift: 0.42, scale: 0.8 }), food('pear', -10.5, 4.24, 30, { lift: 0.42, scale: 0.8 }),
+    food('tomato', -10.25, 4.18, 0, { lift: 0.42, scale: 0.8 }), food('honey', -10.02, 4.22, 0, { lift: 0.42, scale: 0.7 }),
+    food('pumpkin', -9.75, 4.2, 20, { lift: 0.42, scale: 0.7 }),
+    f('cardboardBoxOpen', -9.3, 4.25, 0, { solid: 'fit', scale: 1.3 }),
+    food('apple', -9.3, 4.25, 0, { lift: 0.33, scale: 0.8 }),
+    c('detail-parasol-b', -11.15, 3.9, 0, { solid: [0.3, 0.3], scale: 0.7 }),
+    f('kitchenBar', -12.6, 4.2, 180, { solid: 'fit' }),
+    f('kitchenBar', -12.17, 4.2, 180, { solid: 'fit' }),
+    food('loaf', -12.7, 4.2, 90, { lift: 0.42, scale: 0.7 }), food('bread', -12.48, 4.22, 0, { lift: 0.42, scale: 0.7 }),
+    food('muffin', -12.28, 4.18, 0, { lift: 0.42, scale: 0.7 }), food('bag', -12.06, 4.22, 0, { lift: 0.42, scale: 0.7 }),
+    c('detail-parasol-a', -13.1, 3.9, 0, { solid: [0.3, 0.3], scale: 0.7 }),
 
     // ----- south-east: diner, grocery store, parking lot
     c('building-e', 5.4, 5.0, 180, { solid: 'fit', id: 'diner' }),
@@ -280,7 +302,11 @@
       parking: { at: [9.2, 9.0], face: [5.2, 10.8] },
       airport_shuttle: { at: [18.0, -3.0], face: [18.0, -1.2] },
       derek_door: { at: [-10.0, -13.72], face: [-10.0, -15.0] },
-      priya_door: { at: [9.95, 11.2], face: [8.5, 11.2] }
+      priya_door: { at: [9.95, 11.2], face: [8.5, 11.2] },
+      atm_cu: { at: [2.4, -5.45], face: [2.4, -6.1] },
+      atm_park: { at: [-5.6, 3.6], face: [-5.6, 4.25] },
+      farm_stand: { at: [-10.17, 3.45], face: [-10.17, 4.2] },
+      bakery_stand: { at: [-12.4, 3.45], face: [-12.4, 4.2] }
     },
     portals: [
       // the homes: a door is there only in the game of the hero who lives behind it
@@ -326,7 +352,10 @@
         { kind: 'poster', at: [-5.35, -2.81], turn: 0, y: 0.5, w: 0.62, h: 0.8, frame: '#5f6f7f', text: 'Route 5', lines: ['Maple St - Downtown', 'Every 15 min, 6am-11pm', 'Fare $2.00'], band: '#2b5d8a', depth: 0.01 },
         { kind: 'sign', at: [-4.1, -2.26], turn: 0, y: 1.3, w: 0.5, h: 0.22, text: 'BUS', sub: 'Route 5', bg: '#2b5d8a', frame: '#1c3d5c', depth: 0.02 },
         { kind: 'sign', at: [3.73, -3.89], turn: 0, y: 0.24, w: 1.15, h: 0.28, text: "Nina's Coffee", bg: '#5b3a29', fg: '#ffe8c7', border: '#d9a066', depth: 0.005, frame: false },
-        { kind: 'sign', at: [-7.5, 4.62], turn: 180, y: 1.28, w: 1.84, h: 0.3, text: 'Seaside Park', bg: '#3f6b3a', fg: '#f4ecd6', border: '#c9b98a', frame: '#2b4a28', depth: 0.04 }
+        { kind: 'sign', at: [-7.5, 4.62], turn: 180, y: 1.28, w: 1.84, h: 0.3, text: 'Seaside Park', bg: '#3f6b3a', fg: '#f4ecd6', border: '#c9b98a', frame: '#2b4a28', depth: 0.04 },
+        { kind: 'sign', at: [2.4, -5.89], turn: 0, y: 1.1, w: 0.48, h: 0.2, text: 'ATM', sub: 'Fairview Credit Union', bg: '#1b4f7a', depth: 0.01, frame: false },
+        { kind: 'sign', at: [-5.6, 4.04], turn: 180, y: 1.1, w: 0.48, h: 0.2, text: 'ATM', sub: 'Tidewell Bank', bg: '#7a2f3b', depth: 0.01, frame: false },
+        { kind: 'sign', at: [-11.4, 4.55], turn: 180, y: 1.3, w: 2.8, h: 0.42, text: 'Farmers Market', sub: 'Sat & Sun 8 AM - 1 PM  ·  Cash only', bg: '#5f8a35', fg: '#fffbe8', border: '#f2d16b', frame: '#43612a', depth: 0.03 }
       ] });
     },
     update: function (api) { K.tick(api); }

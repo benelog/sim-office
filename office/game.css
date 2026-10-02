@@ -36,6 +36,7 @@ body.lang-ko { font-family: var(--font-ko); word-break: keep-all; }
 #bar .clock b { margin-left: 4px; }
 #bar .money { font-variant-numeric: tabular-nums; font-weight: 600; color: #b9f0c8; white-space: nowrap; }
 #bar .money.neg { color: #ffb4a8; }
+#bar .cash { font-variant-numeric: tabular-nums; font-size: 13px; color: #e6f4d8; white-space: nowrap; opacity: .9; }
 #bar .score { font: inherit; font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; color: #ffe2a3; background: #ffffff14; border: 1px solid #ffffff30; border-radius: 999px; padding: 2px 10px; cursor: pointer; }
 #bar .score.warn { color: #ffd27a; border-color: #e0a33a; }
 #bar .score.bad { color: #ffb4a8; border-color: #ff7a66; animation: blink 1.6s infinite; }
@@ -221,6 +222,7 @@ body.touch .touch-only { display: inline; }
 
 @media (max-width: 440px) {
   #hud-weather { display: none; }
+  #bar .cash { display: none; }
   #bar .energy .meter { width: 30px; }
 }
 @media (max-width: 640px) {
@@ -273,6 +275,7 @@ body.touch .touch-only { display: inline; }
 .row.bond .lvl { font-size: 12px; font-weight: 600; color: var(--ink-soft); background: #eef1f5; border-radius: 9px; padding: 1px 7px; margin-left: 4px; }
 .row.bond .lvl.lv2, .row.bond .lvl.lv3 { color: var(--accent-deep); background: var(--accent-soft); }
 .leave-ask { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.row.atm-fee { flex-wrap: wrap; border: 1px solid var(--amber); border-radius: 10px; padding: 8px 10px; background: #fff8e8; }
 .leave-ask select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
 #card-amount { font: inherit; width: 7.5em; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
 .card .card-body .score-line b { color: var(--ink); }

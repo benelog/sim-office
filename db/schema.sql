@@ -435,3 +435,20 @@ CREATE TABLE IF NOT EXISTS cards (
   note_ko varchar(400),
   sort int NOT NULL DEFAULT 0
 );
+
+-- The online store (Phone > Shop online; config order_*): what you can order from your phone. item: the items row that
+-- goes in your bag when the package comes, qty: how many packages of it. price: before tax (sales tax by the item's kind:
+-- groceries are not taxed). signature = 1: someone has to be home to sign for it (no one home: a door tag, another
+-- try, then the carrier's counter in the market).
+CREATE TABLE IF NOT EXISTS catalog (
+  id varchar(32) PRIMARY KEY,
+  item varchar(40) NOT NULL,
+  qty int NOT NULL DEFAULT 1,
+  name varchar(120) NOT NULL,
+  name_ko varchar(120),
+  price decimal(7,2) NOT NULL,
+  signature tinyint NOT NULL DEFAULT 0,
+  note varchar(255),
+  note_ko varchar(255),
+  sort int NOT NULL DEFAULT 0
+);

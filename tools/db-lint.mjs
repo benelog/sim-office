@@ -440,7 +440,30 @@ if ((DB.cards || []).length) {
   if (CFG.card_due_days != null && !(+CFG.card_due_days >= 21)) bad('config card_due_days', 'the law gives at least 21 days to pay');
 }
 
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'plans', 'friends', 'cards'].map(count).join(', '));
+// cash and the online store: the ATMs the config names are places of kind atm, cash-only places sell something, the
+// checkout for cash back and the carrier's counter exist; a catalog row delivers an item that goes in the bag
+const CFGS = DB.config || {}, cfgList = (k) => String(CFGS[k] == null ? '' : CFGS[k]).split(/[,\s]+/).filter(Boolean);
+for (const id of cfgList('atm_own')) if (!rows('places').some(p => p.id === id && p.kind === 'atm')) bad(`config atm_own`, `"${id}" is not a place of kind atm`);
+for (const id of cfgList('cash_only')) {
+  if (!places.has(id)) bad('config cash_only', `"${id}" not in places`);
+  else if (!rows('items').some(i => i.place === id)) warn('config cash_only', `nothing is sold at "${id}"`);
+}
+for (const k of ['cash_back_place', 'order_pickup']) if (CFGS[k] && !places.has(CFGS[k])) bad(`config ${k}`, `"${CFGS[k]}" not in places`);
+for (const k of ['atm_amounts', 'cash_back']) for (const n of cfgList(k)) if (!(+n > 0 && +n % 20 === 0)) bad(`config ${k}`, `${n} is not a multiple of $20 (the bills)`);
+for (const p of rows('places')) if (p.kind === 'atm' && !/^(city|market|diner|airport|hotel|office)$/.test(p.zone)) warn(`places ${p.id}`, `an ATM in zone ${p.zone}`);
+const ORDER_KINDS = new Set(['grocery', 'gear', 'other']);
+for (const c of DB.catalog || []) {
+  const w = `catalog ${c.id}`, it = rows('items').find(i => i.id === c.item);
+  if (!it) bad(w, `item "${c.item}" not in items`);
+  else if (!ORDER_KINDS.has(it.kind)) bad(w, `item ${c.item} is a ${it.kind}: only groceries, gear and other things are delivered`);
+  if (!(Number.isInteger(c.qty) && c.qty >= 1)) bad(w, `qty ${c.qty} is not a whole number of packages`);
+  if (!(c.price > 0)) bad(w, `bad price ${c.price}`);
+  if (![0, 1].includes(c.signature ?? 0)) bad(w, 'signature must be 0 or 1');
+  if (!c.name_ko) bad(w, 'no name_ko');
+  if (c.note && !c.note_ko) bad(w, 'no note_ko');
+}
+
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'plans', 'friends', 'cards', 'catalog'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);
