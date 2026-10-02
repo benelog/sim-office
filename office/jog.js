@@ -6,7 +6,7 @@
    faster, pass the other runners and finish in a better time; the score counts how well the steps were timed.
      window.SO_JOG.trail(api)          the trail, the start line and the distance posts, added to the city zone
      window.SO_JOG.create(api, opts)   a run: { update(dt), stop(), dispose() }; opts.onEnd(result | null)
-   The engine (game.js) starts a run from the door of your home ("Go for a jog") and from the title screen
+   The engine (office/engine) starts a run from the door of your home ("Go for a jog") and from the title screen
    (the game on its own), calls update every frame instead of its own camera, and takes the result. The best time
    and the best score are kept in localStorage so.v1.jog. */
 (function () {
@@ -233,7 +233,7 @@
     const me = { x: 0, z: 0, dx: 0, dz: 1 }, tmp = {};
     const name = opts.name || 'You';
     const fovBefore = cam.fov;
-    const ko = api.lang === 'ko', L = (en, k) => ko ? k : en;          // the language of the screen (game.js settings.lang)
+    const ko = api.lang === 'ko', L = (en, k) => ko ? k : en;          // the language of the screen (the engine's settings.lang)
 
     // ----- the screen
     const el = document.createElement('div');

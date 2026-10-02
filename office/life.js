@@ -1,4 +1,4 @@
-/* Sim Office: the background life of a zone, made by the engine (game.js) after it builds a zone and thrown away
+/* Sim Office: the background life of a zone, made by the engine (office/engine) after it builds a zone and thrown away
    when you leave: window.SO_LIFE.create(api) → { update(dt), dispose(), info() }.
    - Trees (city tree-*) sway a little: their prop groups are turned by a small angle, no vertex shader.
    - Traffic lights (roads traffic-light): the lamp faces are found in the model by their colour in the colormap and

@@ -1,5 +1,5 @@
 /* Sim Office: the season in the scenery, by the game's real date (game day 1 is config start_date; the calendar runs
-   from October into February). Made by the engine (game.js) after it builds a zone and thrown away when you leave:
+   from October into February). Made by the engine (office/engine) after it builds a zone and thrown away when you leave:
    window.SO_SEASON.create(api) → { update(dt), dispose(), info() }; SO_SEASON.at(date, cfg) tells the stage of a date.
    Fairview is on the coast of Northern California, so the autumn comes late and the winter is green and wet:
    - Autumn colours (config season_fall 'from,full'): the broadleaf trees of the town (nature tree-common-*) turn red,

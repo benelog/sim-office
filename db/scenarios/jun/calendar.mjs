@@ -1,0 +1,39 @@
+// Jun Kim's calendar entries that are not conversations (standups before the meetings come back,
+// paydays, reminders). The calendar entries of conversations are inside their episodes.
+
+export const hero = 'jun';
+
+export const calendar = [
+  { day: 2, time: '10:00', title: 'Daily standup', title_ko: '데일리 스탠드업', place: 'office_meeting' },
+  {
+    day: 2,
+    time: '14:00',
+    title: 'Checkout design review with Priya',
+    title_ko: '프리야와 결제 화면 디자인 리뷰',
+    place: 'office_meeting'
+  },
+  { day: 3, time: '10:00', title: 'Daily standup', title_ko: '데일리 스탠드업', place: 'office_meeting' },
+  { day: 4, time: '10:00', title: 'Daily standup', title_ko: '데일리 스탠드업', place: 'office_meeting' },
+  { day: 5, time: '07:00', title: 'Payday: paycheck by direct deposit', title_ko: '급여일: 급여 계좌 입금' },
+  { day: 5, time: '10:00', title: 'Daily standup', title_ko: '데일리 스탠드업', place: 'office_meeting' },
+  { day: 7, time: '20:00', title: 'Plan the week ahead', title_ko: '다음 주 계획 세우기', place: 'home_desk' },
+  { day: 9, time: '09:30', title: 'Daily standup', title_ko: '데일리 스탠드업', place: 'office_desk_team' },
+  { day: 10, time: '09:30', title: 'Daily standup', title_ko: '데일리 스탠드업', place: 'office_desk_team' },
+  {
+    day: 11,
+    time: '07:00',
+    title: 'Airport shuttle from Maple Street',
+    title_ko: '메이플 스트리트에서 공항 셔틀',
+    place: 'airport_shuttle'
+  },
+  { day: 14, time: '10:00', title: 'Sort your trip receipts', title_ko: '출장 영수증 정리', place: 'home_desk' },
+  { day: 19, time: '07:00', title: 'Payday: direct deposit', title_ko: '월급날: 계좌 입금' },
+  { day: 19, time: '17:00', title: 'Open enrollment closes today (HR portal)', title_ko: '복리후생 정기 가입 마감 (HR 포털)' },
+  {
+    day: 36,
+    time: '09:15',
+    title: 'First remote day: log in from home',
+    title_ko: '첫 재택근무: 집에서 로그인',
+    place: 'home_desk'
+  }
+];

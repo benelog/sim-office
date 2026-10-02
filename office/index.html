@@ -123,6 +123,54 @@
 <script src="life.js"></script>
 <script src="jog.js"></script>
 <script src="season.js"></script>
-<script src="game.js"></script>
+<!-- the engine: plain scripts that share one scope, in this order (office/PLAN.md section 6) -->
+<script src="engine/core.js"></script>
+<script src="engine/hooks.js"></script>
+<script src="engine/data.js"></script>
+<script src="engine/save.js"></script>
+<script src="engine/page.js"></script>
+<script src="engine/render.js"></script>
+<script src="engine/models.js"></script>
+<script src="engine/actors.js"></script>
+<script src="engine/zones.js"></script>
+<script src="engine/environment.js"></script>
+<script src="engine/people.js"></script>
+<script src="engine/paths.js"></script>
+<script src="engine/clock.js"></script>
+<script src="engine/choices.js"></script>
+<!-- the systems of daily life: each adds its rules, its lines on the morning card and its debug calls -->
+<script src="systems/work.js"></script>
+<script src="systems/routines.js"></script>
+<script src="systems/desk.js"></script>
+<script src="systems/leave.js"></script>
+<script src="systems/hybrid.js"></script>
+<script src="systems/review.js"></script>
+<script src="systems/benefits.js"></script>
+<script src="systems/phone.js"></script>
+<script src="systems/credit.js"></script>
+<script src="systems/media.js"></script>
+<script src="systems/household.js"></script>
+<script src="systems/health.js"></script>
+<script src="systems/cash.js"></script>
+<script src="systems/orders.js"></script>
+<script src="systems/home.js"></script>
+<script src="systems/bus.js"></script>
+<script src="systems/outdoors.js"></script>
+<script src="systems/friends.js"></script>
+<script src="engine/hud.js"></script>
+<script src="engine/bubbles.js"></script>
+<script src="engine/voice.js"></script>
+<script src="engine/input.js"></script>
+<script src="engine/movement.js"></script>
+<script src="engine/camera.js"></script>
+<script src="engine/actions.js"></script>
+<script src="engine/talk.js"></script>
+<script src="engine/panels.js"></script>
+<script src="engine/map.js"></script>
+<script src="engine/day.js"></script>
+<script src="engine/title.js"></script>
+<script src="engine/api.js"></script>
+<script src="engine/debug.js"></script>
+<script src="engine/main.js"></script>
 </body>
 </html>

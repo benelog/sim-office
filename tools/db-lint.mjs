@@ -1,4 +1,4 @@
-// Checks the Sim Office data pulled from DoltHub (office/data/db.js, made by `node tools/dolt.mjs pull`).
+// Checks the Sim Office data (office/data/db.js, made by `node tools/db.mjs build` from db/, or `pull` from DoltHub).
 //   node tools/db-lint.mjs [path/to/db.js]
 // Prints one line per problem and exits 1 if there are any (0 when clean). Warnings (prefixed "warn") do not fail.
 import fs from 'node:fs';

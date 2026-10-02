@@ -20,7 +20,8 @@ CREATE TABLE IF NOT EXISTS places (
   note varchar(255)
 );
 
--- People. `model` is a Kenney Mini Characters model id (character-male-a … character-female-f).
+-- People. `model` is a person made by tools/office-characters.py (office/models/<model>.js: man-casual, woman-suit-2 …).
+-- In db/world/people.mjs a person's chatter and schedule rows are written inside the person.
 CREATE TABLE IF NOT EXISTS npcs (
   id varchar(32) PRIMARY KEY,
   name varchar(80) NOT NULL,
@@ -72,7 +73,8 @@ CREATE TABLE IF NOT EXISTS episodes (
 -- intent, not a script); model = the right thing to say; distractors = 3 wrong choices that sound plausible (a wrong
 -- fact, the wrong tone for the person, or not what was asked), reactions = what the other person says to each of
 -- them; reply = what the npc says after the right answer (may be empty). Every text has a Korean twin (_ko): the
--- screen shows one language (multiple choice only since 2026-10-02; answers and hints are no longer used).
+-- screen shows one language (multiple choice only since 2026-10-02; the old answers/hints columns were dropped on 2026-10-03).
+-- In db/scenarios the four lists are written as one: distractors [{ text, text_ko, reaction, reaction_ko }].
 CREATE TABLE IF NOT EXISTS turns (
   episode varchar(40) NOT NULL,
   seq int NOT NULL,
@@ -80,21 +82,18 @@ CREATE TABLE IF NOT EXISTS turns (
   situation text,
   situation_ko text,
   line text NOT NULL,
+  line_ko text,
   prompt text NOT NULL,
   prompt_ko text,
-  answers json NOT NULL,
   model text NOT NULL,
-  distractors json NOT NULL,
-  hints json,
-  hints_ko json,
-  reply_speaker varchar(32),
-  reply_line text,
-  reply_ko text,
-  line_ko text,
   model_ko text,
+  distractors json NOT NULL,
   distractors_ko json,
   reactions json,
   reactions_ko json,
+  reply_speaker varchar(32),
+  reply_line text,
+  reply_ko text,
   PRIMARY KEY (episode, seq)
 );
 
@@ -391,6 +390,9 @@ CREATE TABLE IF NOT EXISTS plans (
   hsa decimal(8,2) NOT NULL DEFAULT 0,
   note varchar(255),
   note_ko varchar(255),
+  sort int NOT NULL DEFAULT 0
+);
+
 -- What coworkers say and do as you get closer (config friend_*: closeness 0-100 with each coworker, friend_levels for
 -- Friendly, Friend and Close friend). npc: the coworker (npcs id). hero: all, a hero id or a list ('jun,derek').
 -- kind: lunch | diner (what they talk about at lunch together, in the office kitchen or at the diner) | invite (a text:

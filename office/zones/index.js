@@ -1,5 +1,5 @@
 /* Zones of Sim Office: which places, props and doors each part of Fairview has.
-   The engine (game.js) loads this file first and then zones/<name>.js for every name in SO_ZONE_FILES; each of
+   The engine (office/engine) loads this file first and then zones/<name>.js for every name in SO_ZONE_FILES; each of
    those files sets SO_ZONES.<name> in the shape described in office/PLAN.md section 5. A zone file may build its
    props with SO_ZONE_KIT below (walls around a room, a row of wall pieces, a floor of tiles, a prop whose solid
    box is fitted to its model); what reaches the engine is still plain data. A zone's setup(api) may call
