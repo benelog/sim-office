@@ -945,6 +945,7 @@
     if (jogTrail) { jogTrail.dispose(); jogTrail = null; }
     if (z === 'city' && window.SO_JOG) { try { jogTrail = SO_JOG.trail(api); } catch (e) { console.error('Sim Office jog:', e); } }
     startLife();
+    startSeason();
     busy = false;
     setTimeout(() => $('fade').classList.remove('on'), 60);
     if (G) { G.zone = z; if (state === 'play') arrived(z); saveGame(); }
@@ -4671,7 +4672,8 @@
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
     loadPack, packReady, findPath: (from, to, opts, cb) => requestPath(from, to, opts, cb),
     blocked: (x, z, r) => solids.some(s => x > s.x0 - r && x < s.x1 + r && z > s.z0 - r && z < s.z1 + r),
-    street: (kind, at) => street(kind, at)          // life.js: a horn, jaywalking, crossing against the signal
+    street: (kind, at) => street(kind, at),          // life.js: a horn, jaywalking, crossing against the signal
+    get date() { return seasonDate(); }, cfg: CFG          // season.js: the game's date (a Date at UTC midnight, or null) and the config
   };
 
   // ---------------------------------------------------------------- jogging (office/jog.js): a run round the Fairview Loop, seen through your own eyes
@@ -4741,6 +4743,28 @@
     lifeMs += (performance.now() - t0 - lifeMs) * 0.05;
   }
 
+  // ---------------------------------------------------------------- the season in the scenery (office/season.js): autumn colours, bare trees, fallen leaves, holiday lights
+  // Made with the life of a zone (and again when the graphics setting changes) for the game's date; debug.season(iso)
+  // shows another date (also on the title screen and the tour, which have none).
+  let season = null, seasonGfx = null, seasonForce = null;
+  const seasonDate = () => seasonForce || (G ? dateOf(G.day) : null);
+  function startSeason() {
+    endSeason();
+    if (!window.SO_SEASON || !Z) return;
+    seasonGfx = gfxHigh();
+    try { season = window.SO_SEASON.create(api); } catch (e) { console.error('Sim Office season:', e); season = null; }
+  }
+  function endSeason() {
+    if (!season) return;
+    try { season.dispose(); } catch (e) { console.error('Sim Office season:', e); }
+    season = null;
+  }
+  function seasonTick(dt) {
+    if (!season) return;
+    if (seasonGfx !== gfxHigh()) { startSeason(); return; }
+    try { season.update(dt); } catch (e) { console.error('Sim Office season:', e); endSeason(); }
+  }
+
   // ---------------------------------------------------------------- frame loop
   const timer = new T.Timer();
   let elapsed = 0, debugSpeed = 1, fastMode = false;
@@ -4753,6 +4777,7 @@
     playerTick(dt);
     npcTick(dt, elapsed);
     lifeTick(dt);
+    seasonTick(dt);
     portalTick();
     if (Z && Z.update) { try { Z.update(api, dt); } catch (e) { console.error(`zones/${zoneId}.js update:`, e); Z.update = null; } }
     if ((goalTimer -= dt) <= 0 && G) { goalTimer = 0.5; if (state === 'play' && !busy) { refreshNpcs(false); checkPhone(); } updateGoal(); }
@@ -4885,6 +4910,8 @@
       info() { return life && life.info ? life.info() : null; }
     },
     setDay(d) { if (G) { G.day = +d; goalTimer = 0; refreshNpcs(true); } return G && G.day; },
+    // the season in the scenery: season() what it shows here now, season('2026-12-15') as on that date, season(null) back to the game's date
+    season(iso) { if (iso !== undefined) { seasonForce = iso ? new Date(iso + 'T00:00:00Z') : null; startSeason(); } return season ? season.info() : null; },
     async startEpisode(id) {
       const ep = EPISODES[id];
       if (!ep) throw new Error('no episode ' + id);
