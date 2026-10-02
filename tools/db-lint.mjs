@@ -65,7 +65,7 @@ for (const e of rows('episodes')) {
   }
   if (!places.has(e.place)) bad(w, `place "${e.place}" not in places`);
   if (!npcs.has(e.npc)) bad(w, `npc "${e.npc}" not in npcs`);
-  else if (npcById[e.npc].place !== e.place) warn(w, `npc ${e.npc} normally stands at ${npcById[e.npc].place}, episode is at ${e.place}`);
+  else if (npcById[e.npc].place !== e.place && !/(^|,)\s*video\s*(,|$)/.test(e.tags || '')) warn(w, `npc ${e.npc} normally stands at ${npcById[e.npc].place}, episode is at ${e.place}`);          // a video call is at your desk
   if (!HHMM.test(e.time_from || '') || !HHMM.test(e.time_to || '')) bad(w, `bad time ${e.time_from}–${e.time_to}`);
   else if (e.time_from >= e.time_to) bad(w, `time_from ${e.time_from} is not before time_to ${e.time_to}`);
   if (e.day_to != null && e.day_from > e.day_to) bad(w, `day_from ${e.day_from} > day_to ${e.day_to}`);          // NULL: no last day
@@ -242,6 +242,38 @@ for (const r of DB.routines || []) {
     if (HHMM.test(r.time || '') && HHMM.test(e.time_from || '') && !(e.time_from <= r.time && r.time < e.time_to)) bad(w, `episode ${id} is open ${e.time_from}–${e.time_to}, not around ${r.time}`);
   }
   for (const h of heroesOf(r.hero)) if (!pool.some(id => { const e = rows('episodes').find(x => x.id === id); return e && heroesOf(e.hero).includes(h); })) bad(w, `no conversation for ${h}`);
+}
+
+// hybrid work (config hybrid_from, remote_days, remote_people): a routine's days after the start (hybrid_days) and its
+// video calls for remote days (remote_episodes: tagged video, at the hero's desk at home, around the routine's time,
+// one for every hero of the routine); a video conversation outside every remote_episodes never opens
+const cfg = DB.config || {}, isVideo = (e) => /(^|,)\s*video\s*(,|$)/.test(e.tags || ''), remotePools = new Set();
+for (const r of DB.routines || []) {
+  const w = `routines ${r.id}`;
+  if (r.hybrid_days != null && (!String(r.hybrid_days).split(',').map(x => x.trim()).filter(Boolean).length || String(r.hybrid_days).split(',').some(d => !ROUTINE_DAYS.has(d.trim())))) bad(w, `hybrid_days "${r.hybrid_days}" are not names of days`);
+  if (r.hybrid_days && String(cfg.remote_days || '').split(',').some(d => String(r.hybrid_days).split(',').map(x => x.trim()).includes(d.trim()))) warn(w, `hybrid_days "${r.hybrid_days}" include a remote day: a video call`);
+  const pool = String(r.remote_episodes || '').split(',').map(x => x.trim()).filter(Boolean);
+  for (const id of pool) {
+    remotePools.add(id);
+    const e = rows('episodes').find(x => x.id === id);
+    if (!e) { bad(w, `remote episode "${id}" does not exist`); continue; }
+    if (!isVideo(e)) bad(w, `remote episode ${id} is not tagged video`);
+    if ((e.day_from || 1) <= (+cfg.mission_days || 15)) bad(w, `remote episode ${id} opens during the missions (day_from ${e.day_from})`);
+    const homes = heroesOf(e.hero).map(h => ((DB.heroes || []).find(x => x.id === h) || {}).home_desk);
+    if (!homes.includes(e.place)) warn(w, `remote episode ${id} is at ${e.place}, not at its hero's desk at home`);
+    if (HHMM.test(r.time || '') && HHMM.test(e.time_from || '') && !(e.time_from <= r.time && r.time < e.time_to)) bad(w, `remote episode ${id} is open ${e.time_from}–${e.time_to}, not around ${r.time}`);
+  }
+  if (pool.length) for (const h of heroesOf(r.hero)) if (!pool.some(id => { const e = rows('episodes').find(x => x.id === id); return e && heroesOf(e.hero).includes(h); })) bad(w, `no video call for ${h}`);
+}
+for (const e of rows('episodes')) if (isVideo(e) && !remotePools.has(e.id)) bad(`episodes ${e.id}`, 'tagged video but in no routine\'s remote_episodes: it never opens');
+if (cfg.hybrid_from != null && cfg.hybrid_from !== '') {
+  const iso = String(cfg.hybrid_from), t = Date.parse(iso + 'T00:00:00Z'), s0 = start ? Date.parse(start + 'T00:00:00Z') : null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || isNaN(t)) bad('config hybrid_from', `"${iso}" is not a date (YYYY-MM-DD)`);
+  else if (s0 != null && (t - s0) / 864e5 + 1 <= (+cfg.mission_days || 15)) bad('config hybrid_from', `${iso} falls in the missions (day ${(t - s0) / 864e5 + 1})`);
+  const rd = String(cfg.remote_days || 'mon,fri').split(',').map(x => x.trim()).filter(Boolean);
+  if (!rd.length || rd.some(d => !['mon', 'tue', 'wed', 'thu', 'fri'].includes(d))) bad('config remote_days', `"${cfg.remote_days}" are not weekday names`);
+  if (rd.length >= 5) bad('config remote_days', 'every weekday is remote: no office days');
+  for (const id of String(cfg.remote_people || '').split(',').map(x => x.trim()).filter(Boolean)) if (!npcs.has(id)) bad('config remote_people', `"${id}" not in npcs`);
 }
 
 // tasks (what comes up at your desk): three choices with both languages, whole points and minutes, something good
