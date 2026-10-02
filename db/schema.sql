@@ -366,3 +366,21 @@ CREATE TABLE IF NOT EXISTS tasks (
   time_to varchar(5),
   sort int NOT NULL DEFAULT 0
 );
+
+-- What coworkers say and do as you get closer (config friend_*: closeness 0-100 with each coworker, friend_levels for
+-- Friendly, Friend and Close friend). npc: the coworker (npcs id). hero: all, a hero id or a list ('jun,derek').
+-- kind: lunch | diner (what they talk about at lunch together, in the office kitchen or at the diner) | invite (a text:
+-- lunch at the diner, {time}) | noshow (a text when you did not come) | coffee | umbrella (said on a chat) | cover (a
+-- text: they gave your update at a meeting you missed, {meeting}) | text (on a weekend) | tip (shown on the card of
+-- the desk task `task`, a tasks id). need: the closeness it takes. Lines of a kind come in turn.
+CREATE TABLE IF NOT EXISTS friends (
+  id varchar(40) PRIMARY KEY,
+  npc varchar(32) NOT NULL,
+  hero varchar(32) NOT NULL DEFAULT 'all',
+  kind varchar(16) NOT NULL,
+  task varchar(32),
+  need int NOT NULL DEFAULT 0,
+  line varchar(400) NOT NULL,
+  line_ko varchar(400),
+  sort int NOT NULL DEFAULT 0
+);

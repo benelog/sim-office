@@ -266,7 +266,34 @@ for (const t of DB.tasks || []) {
   if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
 }
 
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'].map(count).join(', '));
+// friends (what coworkers say and do as you get closer): a coworker of config friend_people, a known kind, both
+// languages, the placeholder an invitation or a cover needs, a closeness the levels reach; a tip names a task that can
+// come to those heroes and does not come from the hero who plays it; every coworker can invite you and say they missed you
+const FRIEND_KINDS = new Set(['lunch', 'diner', 'invite', 'noshow', 'coffee', 'umbrella', 'cover', 'text', 'tip']);
+const CFGV = (k) => String((DB.config || {})[k] ?? '');
+const PALS = new Set(CFGV('friend_people').split(/[,\s]+/).filter(Boolean));
+for (const p of PALS) if (!npcs.has(p)) bad('config friend_people', `"${p}" not in npcs`);
+for (const x of CFGV('friend_start').split(',').filter(Boolean)) { const m = /^(\w+)\/(\w+):(\d+)$/.exec(x.trim()); if (!m || !heroes.has(m[1]) || !PALS.has(m[2]) || m[1] === m[2] || +m[3] > 100) bad('config friend_start', `"${x}" is not hero/coworker:0-100`); }
+for (const f of DB.friends || []) {
+  const w = `friends ${f.id}`, hs = heroesOf(f.hero || 'all');
+  if (!PALS.has(f.npc)) bad(w, `npc "${f.npc}" is not one of config friend_people`);
+  if (!FRIEND_KINDS.has(f.kind)) bad(w, `kind "${f.kind}" is not one of ${Array.from(FRIEND_KINDS).join(', ')}`);
+  if (!hs.length || hs.some(h => !heroes.has(h))) bad(w, `hero "${f.hero}" not in heroes`);
+  if (hs.length === 1 && hs[0] === f.npc) bad(w, `only for ${f.npc}, who is the player then`);
+  if (!f.line || !f.line_ko) bad(w, 'line and line_ko are required');
+  if (!Number.isInteger(f.need ?? 0) || (f.need || 0) < 0 || (f.need || 0) > 100) bad(w, `need ${f.need} is not 0-100`);
+  const need = { invite: '{time}', cover: '{meeting}' }[f.kind];
+  if (need && !(String(f.line).includes(need) && String(f.line_ko || '').includes(need))) bad(w, `${f.kind} wants ${need} in line and line_ko`);
+  if (!need && /\{\w+\}/.test(String(f.line) + (f.line_ko || ''))) bad(w, 'a placeholder this kind does not fill');
+  if (f.kind === 'tip') {
+    const t = (DB.tasks || []).find(x => x.id === f.task);
+    if (!t) bad(w, `task "${f.task}" not in tasks`);
+    else if (!hs.some(h => heroesOf(t.hero).includes(h) && h !== f.npc)) bad(w, `task ${f.task} never comes to a hero this tip is for`);
+  } else if (f.task) bad(w, 'only a tip names a task');
+}
+if ((DB.friends || []).length) for (const p of PALS) for (const k of ['invite', 'noshow', 'lunch']) if (!DB.friends.some(f => f.npc === p && f.kind === k)) bad(`friends ${p}`, `no ${k} line`);
+
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'friends'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);
