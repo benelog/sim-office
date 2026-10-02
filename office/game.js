@@ -1718,6 +1718,8 @@
   const BOSS = 'maya', HR = 'linda';
   const work = () => G.work || (G.work = { pts: 0, record: {}, warned: 0, fired: null, streak: 0 });
   const fired = () => !!G && !!G.work && !!G.work.fired;
+  // pay every other Friday: the hero's, times the raises from reviews (G.raise, 1 at the start)
+  const netPay = () => cents(+hero().salary_net * ((G && G.raise) || 1)), grossPay = () => Math.round(+hero().salary_gross * ((G && G.raise) || 1));
   const colleague = (id) => !!NPCS[id] && !!NPCS[id].place && zoneOfPlace(NPCS[id].place) === 'office';
   const firedOut = (pid, ep) => fired() && ((!!pid && WORK_ZONES.includes(zoneOfPlace(pid))) || (!!ep && isPhone(ep) && colleague(ep.npc)));
   const score = () => G ? Math.round(G.score || 0) : 0;
@@ -1802,17 +1804,18 @@
     }
     if (now) saveGame();
   }
-  function fire(now) {
+  function fire(now, why) {          // why: 'probation' (not through probation), otherwise attendance
     const w = work();
     if (w.fired) return;
     w.fired = G.day;
     let lastPay = G.day;
     while (lastPay > 0 && !isPayday(lastPay)) lastPay--;
     const worked = Object.keys(w.record).filter(d => +d > lastPay && /^(on|late|noon|trip|sick|pto)$/.test(w.record[d]) && leaveOf(+d) !== 'unpaid').length;
-    const final = cents(+hero().salary_net * worked / 10);
+    const final = cents(netPay() * worked / 10);
     addScore(-50, 'Let go', '해고');
-    notify(HR, `${G.name}, as we discussed, your employment with ${CFG.company} ends today because of repeated lateness and absences. Your badge and your accounts have been turned off.${final ? ` Your final paycheck of ${usd2(final)} has been deposited.` : ''} Please return your laptop to the front desk. We wish you well.`,
-      `${hero().name_ko || G.name} 님, 잦은 지각과 결근으로 오늘부로 ${CFG.company}와의 고용이 종료됩니다. 출입증과 계정은 비활성화되었습니다.${final ? ` 마지막 급여 ${usd2(final)}가 입금되었습니다.` : ''} 노트북은 프런트에 반납해 주세요. 앞날에 행운을 빕니다.`, 'email');
+    const because = why === 'probation' ? ['you did not pass your extended probation', '연장된 수습 기간을 통과하지 못해'] : ['of repeated lateness and absences', '잦은 지각과 결근으로'];
+    notify(HR, `${G.name}, as we discussed, your employment with ${CFG.company} ends today because ${because[0]}. Your badge and your accounts have been turned off.${final ? ` Your final paycheck of ${usd2(final)} has been deposited.` : ''} Please return your laptop to the front desk. We wish you well.`,
+      `${hero().name_ko || G.name} 님, ${because[1]} 오늘부로 ${CFG.company}와의 고용이 종료됩니다. 출입증과 계정은 비활성화되었습니다.${final ? ` 마지막 급여 ${usd2(final)}가 입금되었습니다.` : ''} 노트북은 프런트에 반납해 주세요. 앞날에 행운을 빕니다.`, 'email');
     if (final) pay(final, 'Final paycheck (direct deposit)', 'income', { ko: '마지막 급여 (계좌 입금)' });
     logEvent('fired', 'Let go', 0, { ko: '해고됨' });
     if (now) letGo();
@@ -2125,6 +2128,101 @@
       ${sick.map(d => `<div class="row"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${tr('Sick day', '병가')}${L.days[d] === 'unpaid' ? tr(' (unpaid)', ' (무급)') : ''}</div></div></div>`).join('')}
       <div class="leave-ask">${opts.length && free >= LEAVE_DAY ? `<select id="pto-day" aria-label="${tr('Day', '날짜')}">${opts.map(d => `<option value="${d}">${esc(dShort(d))}</option>`).join('')}</select> <button type="button" data-leave="pto">${tr('Ask for PTO', '연차 신청')}</button>`
         : `<span class="fine">${free < LEAVE_DAY ? tr(`Not enough PTO for a day yet (${leaveText(Math.max(0, free))} free).`, `아직 하루치 연차가 없어요(쓸 수 있는 연차 ${leaveText(Math.max(0, free))}).`) : tr('No days to ask for yet.', '아직 신청할 수 있는 날이 없어요.')}</span>`} ${sickButton()}</div>`;
+  }
+  // ---------------------------------------------------------------- the review: 90 days for Jun, the year-end review for the others
+  // A conversation tagged review (one for each hero, Maya's office, early January) is the meeting; when it is over the
+  // card shows how the time since you started went (reviewScore): attendance 40, the team meetings you came to 20, the
+  // weeks at your desk 25, what came up at your desk 15, and 5 for every mission done. 80 or more exceeds expectations,
+  // 55 meets them, below that needs improvement. A raise goes into every paycheck after (G.raise; config raise_meets,
+  // raise_exceeds, in percent), the year-end review also pays review_bonus for exceeding. A new hire who needs
+  // improvement has probation extended (config probation_extend_days): on that morning the time since is looked at
+  // again, and needing improvement then ends the job. Missing the meeting by the last day it is open: the review
+  // happens anyway, by email, 10 points lower. G.review = { day, kind, total, rating, raise, bonus, missed, extendTo, final }.
+  const RATING = { exceeds: ['Exceeds expectations', '기대 이상'], meets: ['Meets expectations', '기대 충족'], needs: ['Needs improvement', '개선 필요'] };
+  const reviewEp = () => episodes().find(e => /(^|,)\s*review\s*(,|$)/.test(e.tags || ''));
+  const probation = () => /new hire/i.test(hero().role || '');
+  function reviewScore(from, to, penalty) {
+    const w = work(), rec = (d) => w.record[d] || '', parts = [];
+    let att = 40, late = 0, noon = 0, absent = 0, early = 0;
+    for (let d = from; d <= to; d++) { const r = rec(d); if (r === 'late') late++; if (r === 'noon') noon++; if (r === 'absent') absent++; if (w.left && w.left[d] != null) early++; }
+    att = Math.max(0, att - late * 5 - noon * 8 - absent * 12 - early * 6);
+    parts.push({ en: 'Attendance', ko: '근태', got: att, max: 40, note: [late || noon || absent || early ? [late && `${late} late`, noon && `${noon} in after noon`, absent && `${absent} missed`, early && `${early} left early`].filter(Boolean).join(', ') : 'on time every day',
+      late || noon || absent || early ? [late && `지각 ${late}`, noon && `오후 출근 ${noon}`, absent && `결근 ${absent}`, early && `조퇴 ${early}`].filter(Boolean).join(', ') : '매일 정시'] });
+    let due = 0, came = 0;
+    for (let d = Math.max(from, MISSION_DAYS + 1); d <= to; d++) if (/^(on|late|noon)$/.test(rec(d))) routinesOn(d).forEach(x => { due++; if (G.rdone && G.rdone[x.key]) came++; });
+    const meet = due ? Math.round(20 * came / due) : 20;
+    parts.push({ en: 'Team meetings', ko: '팀 회의', got: meet, max: 20, note: due ? [`${came} of ${due}`, `${due}번 중 ${came}번`] : ['none yet', '아직 없음'] });
+    const weeks = Object.keys(G.weeks || {}).map(Number).filter(d => d >= from && d <= to).map(d => G.weeks[d]);
+    const desk = weeks.length ? Math.round(25 * weeks.reduce((a, x) => a + (x.grade === 'good' ? 1 : x.grade === 'ok' ? 0.6 : 0.2), 0) / weeks.length) : 15;
+    parts.push({ en: 'Work at your desk', ko: '자리에서 한 일', got: desk, max: 25, note: weeks.length ? [`${weeks.filter(x => x.grade === 'good').length} good weeks of ${weeks.length}`, `${weeks.length}주 중 충분했던 주 ${weeks.filter(x => x.grade === 'good').length}`] : ['no full weeks yet', '아직 평가한 주 없음'] });
+    const tasks = (G.taskLog || []).filter(x => x.day >= from && x.day <= to);
+    const tk = tasks.length ? Math.round(15 * clamp(tasks.reduce((a, x) => a + x.n, 0) / tasks.length / 8, 0, 1)) : 10;
+    parts.push({ en: 'What came up', ko: '중간에 생긴 일', got: tk, max: 15, note: tasks.length ? [`${tasks.filter(x => x.n > 0).length} of ${tasks.length} handled well`, `${tasks.length}건 중 ${tasks.filter(x => x.n > 0).length}건 잘 처리`] : ['nothing came up', '없었음'] });
+    if (from <= MISSION_DAYS && G.mission && G.mission.all) parts.push({ en: 'Your first two weeks', ko: '첫 2주', got: 5, max: 0, note: ['every mission done', '미션 모두 완료'] });
+    if (penalty) parts.push({ en: 'Missed the review meeting', ko: '평가 면담에 빠짐', got: -penalty, max: 0, note: ['', ''] });
+    const total = clamp(parts.reduce((a, x) => a + x.got, 0), 0, 100);
+    return { total, parts, rating: total >= 80 ? 'exceeds' : total >= 55 ? 'meets' : 'needs' };
+  }
+  const raisePct = (k) => +CFG[k] || (k === 'raise_exceeds' ? 5 : 3);
+  // the meeting is over (or missed): the result, the raise or the extension, the manager's note; returns the card body
+  function holdReview(missed) {
+    if (!G || G.review || fired()) return null;
+    const kind = probation() ? 'probation' : 'annual', res = reviewScore(1, G.day, missed ? 10 : 0), me = hero().name_ko || G.name;
+    const raise = res.rating === 'exceeds' ? raisePct('raise_exceeds') : res.rating === 'meets' ? raisePct('raise_meets') : 0;
+    const bonus = kind === 'annual' && res.rating === 'exceeds' ? +CFG.review_bonus || 1500 : 0;
+    const before = netPay();
+    G.review = { day: G.day, kind, total: res.total, rating: res.rating, raise, bonus, missed: !!missed };
+    if (raise) G.raise = Math.round(((G.raise || 1) * (1 + raise / 100)) * 10000) / 10000;
+    if (bonus) pay(bonus, 'Performance bonus', 'income', { ko: '성과 보너스' });
+    if (kind === 'probation' && res.rating === 'needs') G.review.extendTo = G.day + (+CFG.probation_extend_days || 30);
+    addScore(res.rating === 'exceeds' ? 30 : res.rating === 'meets' ? 10 : -20, `Review: ${RATING[res.rating][0]}`, `평가: ${RATING[res.rating][1]}`);
+    logEvent('review', `Review: ${RATING[res.rating][0]}`, 0, { ko: `평가: ${RATING[res.rating][1]}` });
+    const what = kind === 'probation' ? ['90-day review', '90일 평가'] : ['year-end review', '연말 평가'];
+    const raiseEn = raise ? ` Your pay goes up ${raise}%: from the next paycheck it's ${usd2(netPay())} instead of ${usd2(before)}.` : '';
+    const raiseKo = raise ? ` 급여가 ${raise}% 오릅니다. 다음 급여부터 ${usd2(before)}가 아니라 ${usd2(netPay())}예요.` : '';
+    const line = res.rating === 'needs' ? (kind === 'probation'
+      ? [`Your probation is extended until ${dateLong(G.review.extendTo)}. Let's work on showing up on time, the team meetings and steady work at your desk, and we'll look again then.`, `수습 기간이 ${dateKo(G.review.extendTo)}까지 연장돼요. 제시간 출근, 팀 회의, 꾸준한 업무를 같이 챙겨 보고 그때 다시 봐요.`]
+      : ['No raise this time. Let\'s put together a plan for the next quarter and check in every week.', '이번에는 인상이 없어요. 다음 분기 계획을 같이 세우고 매주 점검해요.'])
+      : kind === 'probation' ? [`You've passed your probation. Welcome to the team for real.${raiseEn}`, `수습을 통과했어요. 이제 정말 팀원이에요.${raiseKo}`]
+        : [`Thank you for a good year.${raiseEn}${bonus ? ` There's a ${usd(bonus)} bonus in your account, too.` : ''}`, `한 해 수고 많았어요.${raiseKo}${bonus ? ` 보너스 ${usd(bonus)}도 계좌에 넣었어요.` : ''}`];
+    notify(BOSS, `${missed ? `${G.name}, since we couldn't meet, here is your ${what[0]} in writing. ` : `Thanks for the talk today, ${G.name}. `}Overall: ${RATING[res.rating][0]} (${res.total}/100). ${line[0]}`,
+      `${missed ? `${me}, 만나지 못해서 ${what[1]} 결과를 글로 보내요. ` : `${me}, 오늘 얘기 고마워요. `}종합: ${RATING[res.rating][1]}(${res.total}/100). ${line[1]}`, missed ? 'email' : 'text');
+    saveGame();
+    return reviewBody(res, line, what);
+  }
+  function reviewBody(res, line, what) {
+    return `<p class="big">${tr(`Overall: <b>${RATING[res.rating][0]}</b> · ${res.total}/100`, `종합: <b>${RATING[res.rating][1]}</b> · ${res.total}/100`)}</p>
+      <ul>${res.parts.map(x => `<li><b>${esc(tr(x.en, x.ko))}</b> ${x.max ? `${x.got}/${x.max}` : (x.got > 0 ? '+' : '−') + Math.abs(x.got)}${x.note[0] ? ` · ${esc(tr(x.note[0], x.note[1]))}` : ''}</li>`).join('')}</ul>
+      <p class="quote">“${esc(tr(line[0], line[1]))}”</p>`;
+  }
+  function showReview(body) {
+    if (!body) return;
+    const r = G.review;
+    showCard({ kicker: tr(r.kind === 'probation' ? '90-day review' : 'Year-end review', r.kind === 'probation' ? '90일 평가' : '연말 평가'), title: tr(RATING[r.rating][0], RATING[r.rating][1]), body, ok: tr('Continue', '계속'), state: 'card' }, () => { goalTimer = 0; });
+  }
+  // the morning (from goToSleep): a missed meeting is held by email; an extended probation is looked at again
+  function reviewMorning(prev) {
+    const out = [];
+    if (!G || fired()) return out;
+    const ep = reviewEp();
+    if (!G.review && ep && ep.day_to != null && prev >= ep.day_to && !G.done[ep.id]) {
+      holdReview(true);
+      out.push(tr(`📋 You missed your review meeting, so ${esc(firstName(NPCS[BOSS]))} sent it by email: <b>${RATING[G.review.rating][0]}</b> (${G.review.total}/100). Check your phone.`, `📋 평가 면담에 빠져서 ${esc(josa(firstName(NPCS[BOSS]), '이', '가'))} 결과를 이메일로 보냈어요: <b>${RATING[G.review.rating][1]}</b>(${G.review.total}/100). 휴대전화를 확인하세요.`));
+    }
+    const r = G.review;
+    if (r && r.extendTo && !r.final && G.day >= r.extendTo) {
+      const res = reviewScore(r.day + 1, G.day - 1, 0);
+      r.final = res.rating;
+      if (res.rating === 'needs') {
+        fire(false, 'probation');
+        out.push(tr(`📧 <b>Your probation has ended, and so has your job.</b> ${esc(CFG.company)} looked at the month since your review (${res.total}/100) and let you go.`, `📧 <b>수습 기간이 끝났고, 고용도 끝났어요.</b> ${esc(CFG.company)}가 평가 뒤 한 달(${res.total}/100)을 보고 고용을 끝냈어요.`));
+      } else {
+        notify(BOSS, `${G.name}, good news: the last month went well (${res.total}/100), so you've passed your probation. Keep it up!`, `${hero().name_ko || G.name}, 좋은 소식이에요. 지난 한 달이 좋았어요(${res.total}/100). 수습 통과예요. 계속 이렇게 해요!`, 'text');
+        addScore(15, 'Passed probation', '수습 통과');
+        out.push(tr(`✅ You've passed your probation (${res.total}/100). ${esc(firstName(NPCS[BOSS]))} sent a note.`, `✅ 수습을 통과했어요(${res.total}/100). ${esc(josa(firstName(NPCS[BOSS]), '이', '가'))} 메시지를 보냈어요.`));
+      }
+    }
+    return out;
   }
   function checkMissions() {          // after a conversation: was it the last mission?
     if (!G || G.mission || G.day > MISSION_DAYS) return false;
@@ -3657,7 +3755,7 @@
     if (+ep.reward > 0) body.push(tr(`<p><b>${usd2(+ep.reward)}</b> added to your account.</p>`, `<p>계좌에 <b>${usd2(+ep.reward)}</b>가 들어왔어요.</p>`));
     if (+ep.reward < 0) body.push(tr(`<p>You paid <b>${usd2(-ep.reward)}</b>. Balance: ${usd2(G.money)}.</p>`, `<p><b>${usd2(-ep.reward)}</b>를 냈어요. 잔액: ${usd2(G.money)}.</p>`));
     if (!G.mission && G.day <= MISSION_DAYS) { const [got, all] = missionCount(); if (all) body.push(`<p class="score-line">${tr('Missions', '미션')} <b>${got} / ${all}</b>${got === all ? tr(' · all done!', ' · 모두 완료!') : ''}</p>`); }
-    showCard({ kicker: tr('Conversation complete', '대화 끝'), title: loc(ep, 'title'), body: body.join(''), ok: tr('Continue', '계속'), state: 'card' }, () => { goalTimer = 0; checkMissions(); });
+    showCard({ kicker: tr('Conversation complete', '대화 끝'), title: loc(ep, 'title'), body: body.join(''), ok: tr('Continue', '계속'), state: 'card' }, () => { goalTimer = 0; if (/(^|,)\s*review\s*(,|$)/.test(ep.tags || '')) showReview(holdReview(false)); else checkMissions(); });
   }
 
   // ---------------------------------------------------------------- panels: shop, bus, inventory, conversations, calendar
@@ -3761,7 +3859,7 @@
       for (let d = d0; d < d0 + 7; d++) {
         const evs = calendar().filter(c => c.day === d && !(fired() && d >= G.work.fired && firedOut(c.place))).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
         const extra = [];
-        if (isPayday(d) && !fired()) extra.push(tr(`Payday: ${usd(+hero().salary_net)} direct deposit`, `월급날: ${usd(+hero().salary_net)} 계좌 입금`));
+        if (isPayday(d) && !fired()) extra.push(tr(`Payday: ${usd(netPay())} direct deposit`, `월급날: ${usd(netPay())} 계좌 입금`));
         if (isRentDay(d)) extra.push(tr(`${hero().housing_name || 'Rent'} due: ${usd(+hero().housing)}`, `${hero().housing_name_ko || '월세'} 납부: ${usd(+hero().housing)}`));
         billsDue(d).forEach(b => extra.push(tr(`Autopay: ${b.name} ${usd2(+b.amount)}`, `자동이체: ${loc(b)} ${usd2(+b.amount)}`)));
         const hol = holidayOf(d);
@@ -3836,7 +3934,7 @@
       const soon = [];
       for (let d = G.day + 1; d <= G.day + 14; d++) {
         const when = dShort(d);
-        if (isPayday(d) && !fired()) soon.push([when, tr('Paycheck (direct deposit)', '급여 (계좌 입금)'), +hero().salary_net]);
+        if (isPayday(d) && !fired()) soon.push([when, tr('Paycheck (direct deposit)', '급여 (계좌 입금)'), netPay()]);
         if (isRentDay(d)) soon.push([when, tr(hero().housing_name || 'Rent', hero().housing_name_ko || '월세'), -hero().housing]);
         billsDue(d).forEach(b => soon.push([when, tr(b.name + ' (autopay)', loc(b) + ' (자동이체)'), -b.amount]));
       }
@@ -4288,6 +4386,7 @@
         : tr(`📊 This week: <b>${hrs(week.mins)}</b> at your desk (the team expects about ${hrs(week.want)}).`, `📊 이번 주: 자리에서 <b>${hrs(week.mins)}</b> 일함(팀 기대치 약 ${hrs(week.want)}).`));
     if (missionNote) morning.push(missionNote);
     if (late) morning.push(tr('You stayed up too late and did not sleep well. You start the day a little tired.', '너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.'));
+    reviewMorning(day).forEach(m => morning.push(m));          // a missed review by email, the end of an extended probation
     if (!fired()) leaveMorning().forEach(m => morning.push(m));          // PTO answers, a day off today, the sick time of a new year
     const hol = holidayOf(G.day);
     if (hol) morning.push(tr(`🗓️ <b>${esc(hol.name)}</b>${hol.kind === 'federal' ? ' (federal holiday)' : ''}. ${esc(hol.note || '')}`, `🗓️ <b>${esc(loc(hol))}</b>${hol.kind === 'federal' ? ' (연방 공휴일)' : ''}. ${esc(hol.note_ko || '')}`));
@@ -4298,11 +4397,11 @@
     const me = hero(), housing = me.housing_name || 'Rent', housingKo = me.housing_name_ko || (/mortgage/i.test(housing) ? '주택 담보 대출' : '월세');
     if (isPayday(G.day) && !fired()) {
       // unpaid sick days come off this paycheck (a working day is a tenth of two weeks); PTO builds up a little
-      const L = leave(), off = Math.min(10, L.unpaid || 0), cut = cents(+me.salary_net * off / 10), net = cents(+me.salary_net - cut);          // at most the whole paycheck; the rest waits for the next one
+      const L = leave(), off = Math.min(10, L.unpaid || 0), cut = cents(netPay() * off / 10), net = cents(netPay() - cut);          // at most the whole paycheck; the rest waits for the next one
       L.unpaid = (L.unpaid || 0) - off; L.pto = Math.round((L.pto + ptoPerPay()) * 100) / 100;
       if (net > 0) pay(net, 'Paycheck (direct deposit)', 'income', { ko: '급여 (계좌 입금)' }); notify(CFG.bank_name, `A direct deposit of ${usd2(net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(net)}가 계좌 ···4821에 입금되었습니다.`);
-      morning.push(tr(`Payday: <b>${usd2(net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)})${payDue(G.day) ? '' : ', early because the bank is closed on payday'}.${off ? ` ${usd2(cut)} less for ${off} unpaid day${off === 1 ? '' : 's'} off.` : ''} PTO +${ptoPerPay()} h (now ${leaveText(L.pto)}).`,
-        `월급날: <b>${usd2(net)}</b>가 계좌에 들어왔어요 (세전 ${usd(+me.salary_gross)})${payDue(G.day) ? '' : '. 급여일에 은행이 쉬어서 미리 들어왔어요'}.${off ? ` 무급 휴가 ${off}일로 ${usd2(cut)} 적게 들어왔어요.` : ''} 연차 +${ptoPerPay()}시간(지금 ${leaveText(L.pto)}).`));
+      morning.push(tr(`Payday: <b>${usd2(net)}</b> was deposited to your account (gross ${usd(grossPay())})${payDue(G.day) ? '' : ', early because the bank is closed on payday'}.${off ? ` ${usd2(cut)} less for ${off} unpaid day${off === 1 ? '' : 's'} off.` : ''} PTO +${ptoPerPay()} h (now ${leaveText(L.pto)}).`,
+        `월급날: <b>${usd2(net)}</b>가 계좌에 들어왔어요 (세전 ${usd(grossPay())})${payDue(G.day) ? '' : '. 급여일에 은행이 쉬어서 미리 들어왔어요'}.${off ? ` 무급 휴가 ${off}일로 ${usd2(cut)} 적게 들어왔어요.` : ''} 연차 +${ptoPerPay()}시간(지금 ${leaveText(L.pto)}).`));
     }
     if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill', { ko: housingKo }); notify(CFG.bank_name, `${housing} payment of ${usd2(+me.housing)} was sent from checking ···4821.`, `${housingKo} ${usd2(+me.housing)}가 계좌에서 나갔습니다.`); morning.push(tr(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`, `${housingKo}: <b>${usd2(+me.housing)}</b>를 ${/mortgage/i.test(housing) ? '은행에' : '집주인에게'} 냈어요.`)); }
     billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill', { ko: b.name_ko }); notify(CFG.bank_name, `Autopay: ${usd2(+b.amount)} was paid to ${b.name} from checking ···4821.`, `자동이체: ${b.name_ko || b.name} ${usd2(+b.amount)}가 빠져나갔습니다.`); morning.push(tr(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.`, `자동이체: ${esc(b.name_ko || b.name)} <b>${usd2(+b.amount)}</b>.`)); });
@@ -4862,6 +4961,7 @@
     worked: (d) => workedOn(d == null ? G.day : d), get taskLog() { return G ? (G.taskLog || []).slice() : []; },
     task(id) { const t = id ? TASKS.find(x => x.id === id) : pickTask(); if (t) showTask(t); return t ? t.id : null; },          // show a task card (or try the dice)
     pick(i) { return chooseTask(i == null && taskNow ? bestChoice(taskNow.t) : +i); }, week: (d) => weekStats(d == null ? G.day : d),
+    get review() { return G && G.review ? Object.assign({}, G.review) : null; }, set review(v) { if (G) G.review = v; }, reviewScore(from, to) { return reviewScore(from || 1, to || G.day, 0); }, get netPay() { return netPay(); },
     get leave() { return G ? JSON.parse(JSON.stringify(leave())) : null; }, leaveOf: (d) => leaveOf(d == null ? G.day : d),
     callInSick() { return callInSick(); }, requestPto(d) { return requestPto(d); }, cancelPto(d) { return cancelPto(d); }, ptoDays() { return ptoDays(); },
     routines: (d) => routinesOn(d == null ? G.day : d).map(x => ({ id: x.r.id, ep: x.ep.id, time: x.r.time, done: !!(G.rdone && G.rdone[x.key]) })),
