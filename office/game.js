@@ -5,7 +5,7 @@
    to generated rooms and boxes, so the engine runs on its own. */
 (function () {
   'use strict';
-  const T = window.THREE, M = window.LP_MATCHER;
+  const T = window.THREE;
   const DB = window.SO_DB || {};
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -22,6 +22,18 @@
   const weekday = (d) => WEEKDAYS[(d - 1) % 7];
   const hash = (s) => { let h = 7; for (const c of String(s)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
   const listOf = (v) => v == null ? [] : Array.isArray(v) ? v : String(v).split(/[,\s]+/).filter(Boolean);
+  // The language of the screen (settings.lang 'en' | 'ko', Menu or the title screen): one at a time. tr(en, ko) picks
+  // the text; a row's field in Korean is <field>_ko (falls back to English when there is none). The people still speak
+  // English (the voices), the screen shows what they say in the language picked, like subtitles.
+  const KO = () => settings.lang === 'ko';
+  const tr = (en, ko) => (KO() && ko != null && ko !== '') ? ko : en;
+  const loc = (row, k) => row ? tr(row[k || 'name'], row[(k || 'name') + '_ko']) : '';
+  const clockKo = (min) => { min = Math.floor(min); const h = Math.floor(min / 60) % 24; return `${h < 12 ? '오전' : '오후'} ${(h + 11) % 12 + 1}:${String(min % 60).padStart(2, '0')}`; };
+  const clk = (min) => KO() ? clockKo(min) : clock(min);
+  // people's names: the screen in Korean uses npcs.name_ko / heroes.name_ko (마야 첸); the voices keep the English
+  const fullName = (n) => !n ? '' : KO() && n.name_ko ? n.name_ko : n.name;
+  const firstName = (n) => String(fullName(n) || '').split(' ')[0];
+  const josa = (w, a, b) => { const c = String(w || '').charCodeAt(String(w || '').length - 1); return w + ((c >= 0xac00 && c <= 0xd7a3 && (c - 0xac00) % 28) ? a : b); };     // 을/를, 은/는, 이/가
 
   // ---------------------------------------------------------------- the rules (config table, with defaults)
   const CFG = Object.assign({
@@ -30,7 +42,9 @@
     minutes_per_second: 1, energy_max: 100, energy_per_hour: -6,
     sales_tax: 0.0825, tip_options: '0,15,18,20', tip_default: 18,
     start_date: '', bus_every: 0, bus_every_weekend: 0, bus_first: '06:00', bus_last: '22:30', overdraft_fee: 0, low_balance: 0,
-    punch_card_place: '', punch_card_every: 0, late_after: '09:15', rain_energy_per_hour: -10, bank_name: 'Fairview Credit Union'
+    punch_card_place: '', punch_card_every: 0, late_after: '09:15', rain_energy_per_hour: -10, bank_name: 'Fairview Credit Union',
+    late_points: 2, noon_points: 3, absent_points: 4, warn_points: 2, final_points: 4, fire_points: 6,
+    mission_days: 14, mission_bonus: 1000, mission_points: 200
   }, DB.config || {});
   const DAY_START = hm(CFG.day_start, 420), DAY_END = hm(CFG.day_end, 1380);
   const E_MAX = +CFG.energy_max || 100;
@@ -113,6 +127,9 @@
   const dateShort = (d) => { const t = dateOf(d); return t ? `${weekday(d).slice(0, 3)}, ${MONTHS[t.getUTCMonth()].slice(0, 3)} ${t.getUTCDate()}` : `${weekday(d).slice(0, 3)} · Day ${d}`; };
   const dateLong = (d) => { const t = dateOf(d); return t ? `${weekday(d)}, ${MONTHS[t.getUTCMonth()]} ${t.getUTCDate()}` : `${weekday(d)}, Day ${d}`; };
   const dateKo = (d) => { const t = dateOf(d); return (t ? `${t.getUTCMonth() + 1}월 ${t.getUTCDate()}일 ` : `${d}일째 `) + WEEKDAYS_KO[(d - 1) % 7]; };
+  const dateKoShort = (d) => { const t = dateOf(d); return (t ? `${t.getUTCMonth() + 1}월 ${t.getUTCDate()}일` : `${d}일째`) + ` (${WEEKDAYS_KO[(d - 1) % 7][0]})`; };
+  const dShort = (d) => KO() ? dateKoShort(d) : dateShort(d), dLong = (d) => KO() ? dateKo(d) : dateLong(d);
+  const dMonth = (d) => KO() ? dateKoShort(d).replace(/ \(.\)$/, '') : dateShort(d).replace(/^\w+, /, '');      // Oct 5 / 10월 5일
   const HOLIDAYS = {};
   rows('holidays').forEach(h => { HOLIDAYS[h.date] = h; });
   const holidayOf = (d) => { const t = dateOf(d); return (t && HOLIDAYS[t.toISOString().slice(0, 10)]) || null; };
@@ -125,7 +142,7 @@
     const owner = HEROES.find(h => h.desk === id);
     if (owner && PLACES[id]) {
       const me = owner.id === (G ? G.hero : DEFAULT_HERO);
-      return Object.assign({}, PLACES[id], me ? { name: 'Your desk', name_ko: '내 자리' } : { name: `${owner.name}'s desk`, name_ko: `${owner.name}의 자리` });
+      return Object.assign({}, PLACES[id], me ? { name: 'Your desk', name_ko: '내 자리' } : { name: `${owner.name}'s desk`, name_ko: `${owner.name_ko || owner.name}의 자리` });
     }
     if (PLACES[id]) return PLACES[id];
     return { id, name: pretty(id), zone: builtinZoneOf(id) || fileZoneOf(id), kind: BUILTIN_KIND[id] || null };
@@ -149,7 +166,9 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* private mode */ } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } }
   };
-  const settings = Object.assign({ voice: true, ko: false, mode: 'type' }, store.get(SET_KEY) || {});
+  const settings = Object.assign({ voice: true }, store.get(SET_KEY) || {});
+  if (settings.lang !== 'en' && settings.lang !== 'ko') settings.lang = settings.ko || /^ko\b/i.test(navigator.language || '') ? 'ko' : 'en';     // 'Korean help' on before: Korean
+  delete settings.ko; delete settings.mode;
   const saveSettings = () => store.set(SET_KEY, settings);
   function allSaves() { const s = store.get(SAVES_KEY); return s && typeof s === 'object' && !Array.isArray(s) ? s : {}; }
   function savedGames() {          // newest first
@@ -185,15 +204,43 @@
     store.set(LAST_KEY, G.name);
   }
   function logEvent(type, text, amount, extra) { G.log.push(Object.assign({ day: G.day, minute: Math.floor(G.minute), type, text, amount: amount || 0 }, extra || {})); }
+  // a line of the log in the language of the screen: its own ko, or the Korean name of what it names
+  const LOG_KO = { 'Paycheck (direct deposit)': '급여 (계좌 입금)', 'Overdraft fee': '초과 인출 수수료', 'Bus fare': '버스 요금', Rent: '월세', Mortgage: '주택 담보 대출 상환' };
+  rows('items').concat(rows('bills')).forEach(r => { if (r.name && r.name_ko) LOG_KO[r.name] = r.name_ko; });
+  const logText = (l) => KO() ? (l.ko || (l.id && EPISODES[l.id] && EPISODES[l.id].title_ko) || LOG_KO[l.text] || l.text) : l.text;
 
   // ---------------------------------------------------------------- page chrome
-  const koBox = $('ko-on'), voiceBox = $('voice-on');
-  koBox.checked = !!settings.ko;
+  const langBox = $('lang'), voiceBox = $('voice-on');
+  langBox.value = settings.lang;
   voiceBox.checked = settings.voice !== false;
-  const applyKo = () => document.body.classList.toggle('ko-on', koBox.checked);
-  koBox.addEventListener('change', () => { settings.ko = koBox.checked; saveSettings(); applyKo(); });
+  // the page itself: an element with data-ko has its Korean (HTML) there and keeps its English in data-en
+  function staticLang() {
+    document.documentElement.lang = settings.lang;
+    document.body.classList.toggle('lang-ko', KO());
+    document.querySelectorAll('[data-ko]').forEach(el => {
+      if (el.dataset.en == null) el.dataset.en = el.innerHTML;
+      el.innerHTML = KO() ? el.dataset.ko : el.dataset.en;
+    });
+    document.querySelectorAll('[data-ko-label]').forEach(el => {
+      if (el.dataset.enLabel == null) el.dataset.enLabel = el.getAttribute('aria-label') || el.title || '';
+      const v = KO() ? el.dataset.koLabel : el.dataset.enLabel;
+      if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', v);
+      if (el.title) el.title = v;
+    });
+  }
+  function applyLang() {          // everything on screen again, in the language picked
+    staticLang();
+    applyQuality();
+    tags.forEach(t => { if (t.en != null) t.el.textContent = tr(t.en, t.ko); });
+    if (G) { hud(); phoneBadge(); goalTimer = 0; actSig = ''; }
+    if (!panel.hidden && panelKind) renderPanel();
+    if (talk && !dlg.hidden) relangTurn();
+    if (state === 'title') { markChosen(); renderSaves(); }
+    if (state === 'tour') tourLabels();
+  }
+  langBox.addEventListener('change', () => { settings.lang = langBox.value === 'ko' ? 'ko' : 'en'; saveSettings(); applyLang(); });
   voiceBox.addEventListener('change', () => { settings.voice = voiceBox.checked; saveSettings(); if (!voiceBox.checked && window.speechSynthesis) speechSynthesis.cancel(); });
-  applyKo();
+  staticLang();
   const narrow = window.matchMedia ? matchMedia('(max-width: 640px)') : null;
   function placeSwitches() {
     const opts = Array.from(document.querySelectorAll('#bar label.opt'));
@@ -204,7 +251,7 @@
   function toast(en, ko, kind, secs) {
     const d = document.createElement('div');
     d.className = 'toast' + (kind ? ' ' + kind : '');
-    d.innerHTML = esc(en) + (ko ? `<span class="ko">${esc(ko)}</span>` : '');
+    d.textContent = tr(en, ko);
     $('toasts').appendChild(d);
     while ($('toasts').children.length > 3) $('toasts').firstChild.remove();
     setTimeout(() => { d.classList.add('out'); setTimeout(() => d.remove(), 500); }, (secs || 3.2) * 1000);
@@ -257,7 +304,7 @@
     if (sun.shadow.mapSize.x !== size) { sun.shadow.mapSize.set(size, size); if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; } }
     document.body.classList.toggle('gfx-low', !high);
     const b = $('gfx-btn');
-    if (b) b.textContent = 'Graphics: ' + (high ? 'High' : 'Low');
+    if (b) b.textContent = tr('Graphics: ' + (high ? 'High' : 'Low'), '그래픽: ' + (high ? '높음' : '낮음'));
     resize();
     shadowMat.opacity = high ? 0.6 : 1;
     if (zoneGroup) { setupLights(); lampTimer = 0; applyEnvironment(); if (life) startLife(); }
@@ -832,7 +879,7 @@
     setupLights();
     // portal signs and place labels
     portalsOf(spec).forEach(p => {
-      addTag(p.label || ('To ' + zoneName(p.to)[0]), new T.Vector3(p.at[0], 1.1, p.at[1]), 'portal', 14, p.label_ko || ('→ ' + zoneName(p.to)[1]));
+      addTag(p.label || ('To ' + zoneName(p.to)[0]), new T.Vector3(p.at[0], 1.1, p.at[1]), 'portal', 14, p.label_ko || (zoneName(p.to)[1] ? '→ ' + zoneName(p.to)[1] : ''));
       const g = new T.PlaneGeometry(p.size ? p.size[0] : 1, p.size ? p.size[1] : 1).rotateX(-Math.PI / 2);
       disposables.push(g);
       const m = new T.Mesh(g, portalMat);
@@ -873,9 +920,17 @@
     startLife();
     busy = false;
     setTimeout(() => $('fade').classList.remove('on'), 60);
-    if (G) { G.zone = z; saveGame(); }
+    if (G) { G.zone = z; if (state === 'play') arrived(z); saveGame(); }
     goalTimer = 0; actTimer = 0;
     return true;
+  }
+  // coming into a zone on a working day: the office is the first time at work today (on time, late), a trip zone is
+  // a day away on business
+  let checkedIn = null;
+  function arrived(z) {
+    if (isWeekend(G.day)) return;
+    if (TRAVEL_ZONES.includes(z)) G.tripDay = G.day;
+    if (z === 'office' && G.inDay !== G.day && G.minute < 17 * 60) checkedIn = checkIn();
   }
   const portalMat = new T.MeshBasicMaterial({ color: 0x3fb5ad, transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false });
 
@@ -1516,10 +1571,11 @@
     if (ep.day_from != null && G.day < ep.day_from) return false;
     if (ep.day_to != null && G.day > ep.day_to) return false;
     if (G.minute < hm(ep.time_from, 0) || G.minute > hm(ep.time_to, 1439) + 0.999) return false;
+    if (firedOut(ep.place, ep)) return false;          // let go: the work conversations are over
     return listOf(ep.requires).every(id => G.done[id]);
   }
   function laterToday(ep) {        // not open yet, but will be later today
-    if (!G || G.done[ep.id] || isOpen(ep)) return false;
+    if (!G || G.done[ep.id] || isOpen(ep) || firedOut(ep.place, ep)) return false;
     if (ep.day_from != null && G.day < ep.day_from) return false;
     if (ep.day_to != null && G.day > ep.day_to) return false;
     return hm(ep.time_from, 0) > G.minute && listOf(ep.requires).every(id => G.done[id]);
@@ -1554,6 +1610,167 @@
       notify(CFG.bank_name, `Low balance alert: checking ···4821 is at ${usd2(G.money)}.`, `잔액 부족 알림: 계좌 잔액이 ${usd2(G.money)}입니다.`);
     }
   }
+  // ---------------------------------------------------------------- work: the score, showing up on time, getting fired
+  // G.score: points for what you say (the right answer the first time 10, the second time 5, later 2) and for showing up
+  // on a working day (on time +5, late −10, in after noon −20, not at all −30). Holidays are working days at the office.
+  // G.work = { pts, record { day: on | late | noon | absent | trip | sick }, warned 0..2, fired (day), streak }: strikes
+  // for being late (config late_points), coming in after noon (noon_points) or not coming (absent_points); five on-time
+  // days in a row take one off. At warn_points the manager has a word with you (a text), at final_points HR sends a
+  // final written warning, at fire_points you are let go: the last paycheck (the days you worked since the last payday)
+  // comes at once, the work conversations are over, and your badge no longer opens the door of the office.
+  const WORK_ZONES = ['office'].concat(TRAVEL_ZONES);
+  const BOSS = 'maya', HR = 'linda';
+  const work = () => G.work || (G.work = { pts: 0, record: {}, warned: 0, fired: null, streak: 0 });
+  const fired = () => !!G && !!G.work && !!G.work.fired;
+  const colleague = (id) => !!NPCS[id] && !!NPCS[id].place && zoneOfPlace(NPCS[id].place) === 'office';
+  const firedOut = (pid, ep) => fired() && ((!!pid && WORK_ZONES.includes(zoneOfPlace(pid))) || (!!ep && isPhone(ep) && colleague(ep.npc)));
+  const score = () => G ? Math.round(G.score || 0) : 0;
+  function addScore(n, en, ko) {
+    if (!G || !n) return;
+    G.score = (G.score || 0) + n;
+    G.points = (G.points || []).concat({ day: G.day, minute: Math.floor(G.minute), n, en, ko }).slice(-300);
+    const sc = $('hud-score');
+    if (sc) { sc.classList.remove('pop', 'up', 'down'); void sc.offsetWidth; sc.classList.add('pop', n > 0 ? 'up' : 'down'); }
+  }
+  const STANDING = [['Good standing', '근무 양호', 'ok'], ['Verbal warning', '구두 경고', 'warn'], ['Final warning', '최종 경고', 'bad'], ['Let go', '해고됨', 'fired']];
+  const standing = () => !G ? STANDING[0] : fired() ? STANDING[3] : STANDING[(G.work && G.work.warned) || 0];
+  const ATTEND = {
+    on: ['On time', '정시 출근', 5], late: ['Late', '지각', -10], noon: ['In after noon', '오후 출근', -20], absent: ['Did not come in', '결근', -30],
+    trip: ['Business trip', '출장', 0], sick: ['Called in sick', '병가', 0]
+  };
+  // the first time at work on a working day: on time, late, or in after lunch (from travel)
+  function checkIn() {
+    const w = work(), d = G.day, m = Math.floor(G.minute), start = hm(CFG.work_start, 540);
+    G.inDay = d; G.inAt = m;
+    if (w.fired || isWeekend(d)) return null;
+    const kind = m <= hm(CFG.late_after, 555) ? 'on' : m < 12 * 60 ? 'late' : 'noon';
+    w.record[d] = kind;
+    addScore(ATTEND[kind][2], ATTEND[kind][0], ATTEND[kind][1]);
+    if (kind === 'on') { onTime(); return kind; }
+    G.lateDay = d;
+    w.streak = 0;
+    toast(kind === 'late' ? `You're late: it's ${clock(m)}, and work starts at ${clock(start)}.` : `It's ${clock(m)}. You've missed the whole morning.`,
+      kind === 'late' ? `지각이에요. 지금은 ${clockKo(m)}이고 업무는 ${clockKo(start)}에 시작해요.` : `지금은 ${clockKo(m)}. 오전을 통째로 빠졌어요.`, 'bad', 4.5);
+    strike(kind === 'late' ? +CFG.late_points : +CFG.noon_points, true);
+    return kind;
+  }
+  function onTime() {
+    const w = work();
+    w.streak = (w.streak || 0) + 1;
+    if (w.streak % 5 === 0 && w.pts > 0) { w.pts--; return true; }        // a good week makes up for a bad morning
+    return false;
+  }
+  // at the end of a working day (from goToSleep): you never came in, or you were on a trip or called in sick
+  function closeDay(d, away) {
+    const w = work();
+    if (w.fired || isWeekend(d) || w.record[d]) return null;
+    const sick = G.log.some(l => l.type === 'episode' && l.day === d && EPISODES[l.id] && /(^|,)\s*sick\s*(,|$)/.test(EPISODES[l.id].tags || ''));
+    const kind = sick ? 'sick' : (away || G.tripDay === d) ? 'trip' : G.inDay === d ? null : 'absent';
+    if (!kind) return null;
+    w.record[d] = kind;
+    if (kind !== 'absent') return kind;
+    w.streak = 0;
+    addScore(ATTEND.absent[2], ATTEND.absent[0], ATTEND.absent[1]);
+    strike(+CFG.absent_points, false);
+    return kind;
+  }
+  // strikes add up: a word from the manager, a final warning from HR, and then you are let go
+  function strike(n, now) {
+    const w = work();
+    w.pts += n;
+    if (w.pts >= +CFG.fire_points) { fire(now); return; }
+    if (w.pts >= +CFG.final_points && w.warned < 2) {
+      w.warned = 2;
+      notify(HR, `FINAL WRITTEN WARNING. ${G.name}, this is a formal warning about your attendance: you have been late or absent too often. One more late arrival or unexcused absence will lead to the end of your employment with ${CFG.company}. Please come see me if something is going on. — ${(NPCS[HR] || { name: 'HR' }).name}, HR`,
+        `최종 서면 경고. ${hero().name_ko || G.name} 님, 근태에 관한 공식 경고입니다. 지각이나 결근이 너무 잦습니다. 한 번 더 지각하거나 무단결근하면 ${CFG.company}와의 고용 관계가 종료됩니다. 무슨 사정이 있다면 찾아와 주세요. — 인사팀 ${(NPCS[HR] || {}).name_ko || (NPCS[HR] || { name: 'HR' }).name}`, 'email');
+    } else if (w.pts >= +CFG.warn_points && w.warned < 1) {
+      w.warned = 1;
+      notify(BOSS, `Hey ${G.name}, I noticed you weren't here on time. Everything okay? We need you at standup. Please be in by ${clock(hm(CFG.work_start, 540))} from now on.`,
+        `${hero().name_ko || G.name}, 오늘 제시간에 안 왔던데 괜찮아요? 스탠드업에 꼭 있어야 해요. 앞으로는 ${clockKo(hm(CFG.work_start, 540))}까지 와 주세요.`, 'text');
+    }
+    if (now) saveGame();
+  }
+  function fire(now) {
+    const w = work();
+    if (w.fired) return;
+    w.fired = G.day;
+    const lastPay = Math.max(0, ...PAYDAYS.filter(d => d <= G.day));
+    const worked = Object.keys(w.record).filter(d => +d > lastPay && /^(on|late|noon|trip|sick)$/.test(w.record[d])).length;
+    const final = cents(+hero().salary_net * worked / 10);
+    addScore(-50, 'Let go', '해고');
+    notify(HR, `${G.name}, as we discussed, your employment with ${CFG.company} ends today because of repeated lateness and absences. Your badge and your accounts have been turned off.${final ? ` Your final paycheck of ${usd2(final)} has been deposited.` : ''} Please return your laptop to the front desk. We wish you well.`,
+      `${hero().name_ko || G.name} 님, 잦은 지각과 결근으로 오늘부로 ${CFG.company}와의 고용이 종료됩니다. 출입증과 계정은 비활성화되었습니다.${final ? ` 마지막 급여 ${usd2(final)}가 입금되었습니다.` : ''} 노트북은 프런트에 반납해 주세요. 앞날에 행운을 빕니다.`, 'email');
+    if (final) pay(final, 'Final paycheck (direct deposit)', 'income', { ko: '마지막 급여 (계좌 입금)' });
+    logEvent('fired', 'Let go', 0, { ko: '해고됨' });
+    if (now) letGo();
+  }
+  // fired on the spot, at work: the manager and HR walk you out
+  function letGo() {
+    saveGame();
+    const boss = firstName(NPCS[BOSS] || { name: 'Maya' }), hr = firstName(NPCS[HR] || { name: 'Linda' });
+    showCard({ kicker: CFG.company, title: tr("You're let go", '해고되었습니다'),
+      body: tr(`<p>${esc(boss)} and ${esc(hr)} from HR are waiting for you by the front desk.</p><p class="quote">“${esc(G.name)}, we've talked about this. You've been late or absent too many times, so we're letting you go, effective today. I'm sorry it came to this.”</p><p>Your badge is turned off and you're walked out of the building. Your final paycheck goes to your bank account.</p>`,
+        `<p>${esc(josa(boss, '과', '와'))} 인사팀 ${esc(josa(hr, '이', '가'))} 프런트 옆에서 기다리고 있어요.</p><p class="quote">“${esc(myName())}, 이 얘기는 전에도 했죠. 지각과 결근이 너무 많아서 오늘부로 함께할 수 없게 됐어요. 이렇게 돼서 유감이에요.”</p><p>출입증이 비활성화되고 건물 밖으로 안내받습니다. 마지막 급여는 은행 계좌로 들어옵니다.</p>`),
+      ok: tr('Leave the building', '건물에서 나가기'), state: 'card' }, () => { travel('city', 'office_door'); });
+    speak(`${G.name}, we've talked about this. You've been late or absent too many times, so we're letting you go, effective today.`, voiceOf(NPCS[BOSS]));
+  }
+  // at the door of the office after you were let go: the badge reader blinks red and the front desk stops you
+  function stoppedAtDoor() {
+    const w = work(), desk = NPCS.tom ? 'tom' : null, who = desk ? firstName(NPCS[desk]) : tr('The guard', '경비원');
+    const line = `Sorry, ${G.name}. Your badge has been deactivated, and I can't let you in. If you left anything at your desk, HR will mail it to you.`;
+    if (w.stopDay === G.day) { toast(tr('Your badge no longer opens this door.', '출입증으로 더는 이 문을 열 수 없어요.'), null, 'bad', 3); return; }
+    w.stopDay = G.day;
+    saveGame();
+    showCard({ kicker: tr('At the front door', '정문 앞'), title: tr('Your badge doesn\'t work', '출입증이 안 열려요'),
+      body: tr(`<p>The badge reader beeps and blinks red. ${esc(who)} comes over from the front desk.</p><p class="quote">“${esc(line)}”</p><p>You no longer work at ${esc(CFG.company)}.</p>`,
+        `<p>출입증 리더기가 삐 소리를 내며 빨간 불이 깜빡입니다. 프런트에서 ${esc(josa(who, '이', '가'))} 다가옵니다.</p><p class="quote">“미안해요, ${esc(myName())}. 출입증이 비활성화돼서 들여보내 드릴 수가 없어요. 자리에 두고 간 물건은 인사팀이 우편으로 보내 줄 거예요.”</p><p>이제 ${esc(CFG.company)} 직원이 아닙니다.</p>`),
+      ok: tr('Walk away', '돌아서기'), state: 'card' });
+    speak(line, voiceOf(desk ? NPCS[desk] : null));
+  }
+  // ---------------------------------------------------------------- two weeks of missions, then free play
+  // Every conversation of the hero is a mission of the first config mission_days days (14: two weeks). Finishing all
+  // of them: a congratulation, a bonus deposit (mission_bonus) and points (mission_points). From the day after, it is
+  // free play: no set conversations, only the town, the bills and the job (work still starts at 9:00, and late
+  // mornings still add up). G.mission = { day, all (every mission done), bonus } once the two weeks are settled.
+  const MISSION_DAYS = +CFG.mission_days || 14;
+  const missions = () => episodes().filter(e => (e.day_from || 1) <= MISSION_DAYS);
+  const missionsOf = (id) => rows('episodes').filter(e => (e.hero || DEFAULT_HERO) === id && (e.day_from || 1) <= MISSION_DAYS).length;
+  const missionCount = () => { const all = missions(); return [all.filter(e => G.done[e.id]).length, all.length]; };
+  const freePlay = () => !!G && G.day > MISSION_DAYS;
+  function checkMissions() {          // after a conversation: was it the last mission?
+    if (!G || G.mission || G.day > MISSION_DAYS) return false;
+    const [got, all] = missionCount();
+    if (!all || got < all) return false;
+    const bonus = fired() ? 0 : +CFG.mission_bonus || 0, pts = +CFG.mission_points || 0;
+    G.mission = { day: G.day, all: true, bonus };
+    if (bonus) pay(bonus, `Two-week bonus from ${CFG.company}`, 'income', { ko: `${CFG.company} 2주 보너스` });
+    addScore(pts, 'Every mission of the two weeks', '2주 미션 모두 완료');
+    if (!fired()) notify(BOSS, `${G.name}, you got through everything we planned for these two weeks, and it showed. Thank you! There's a ${usd(bonus)} bonus on its way to your account.`,
+      `${hero().name_ko || G.name}, 이번 2주 동안 계획한 일을 전부 해냈네요. 정말 고마워요! 보너스 ${usd(bonus)}가 계좌로 들어갈 거예요.`, 'text');
+    logEvent('mission', 'Finished every mission of the two weeks', 0, { ko: '2주 미션 모두 완료' });
+    saveGame();
+    const days = MISSION_DAYS - G.day;
+    showCard({ kicker: tr('Two weeks of missions', '2주 미션'), title: tr('Congratulations!', '축하합니다!'),
+      body: tr(`<p class="big">🎉 You finished all <b>${all}</b> missions of these two weeks${fired() ? '' : ` at ${esc(CFG.company)}`}.</p>
+        <div class="sum">${bonus ? `<div><b>+${usd(bonus)}</b>bonus</div>` : ''}<div><b>+${pts}</b>points</div><div><b>★ ${score()}</b>score</div><div><b>${esc(standing()[0])}</b>at work</div></div>
+        ${bonus ? `<p>Maya sent a thank-you note, and a bonus of <b>${usd(bonus)}</b> is in your account.</p>` : ''}
+        <p>${days > 0 ? `The rest of the two weeks is yours, and from ${esc(dateLong(MISSION_DAYS + 1))} it's <b>free play</b>` : `From tomorrow it's <b>free play</b>`}: no more set conversations. Live your life in ${esc(CFG.city)}: ${fired() ? 'find your own way' : 'go to work on time'}, pay the bills, cook, shop, jog, and explore.</p>`,
+        `<p class="big">🎉 이번 2주의 미션 <b>${all}</b>개를 모두 해냈어요.</p>
+        <div class="sum">${bonus ? `<div><b>+${usd(bonus)}</b>보너스</div>` : ''}<div><b>+${pts}</b>점수</div><div><b>★ ${score()}</b>총점</div><div><b>${esc(standing()[1])}</b>근무 평가</div></div>
+        ${bonus ? `<p>${esc(firstName(NPCS[BOSS] || { name: 'Maya' }))}가 감사 인사를 보냈고, 보너스 <b>${usd(bonus)}</b>가 계좌에 들어왔어요.</p>` : ''}
+        <p>${days > 0 ? `2주의 남은 날은 자유롭게 보내고, ${esc(dateKo(MISSION_DAYS + 1))}부터는 <b>자유 플레이</b>예요` : '내일부터는 <b>자유 플레이</b>예요'}. 정해진 대화는 더 없어요. ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요: ${fired() ? '새 길을 찾고' : '제시간에 출근하고'}, 공과금을 내고, 요리하고, 장 보고, 달리고, 구경하세요.</p>`),
+      ok: tr('Keep going', '계속하기'), state: 'card' }, () => { goalTimer = 0; });
+    speak('Congratulations!', heroVoice());
+    return true;
+  }
+  // the end of the last day of the missions (from goToSleep): free play from tomorrow
+  function closeMissions(day) {
+    if (!G || day !== MISSION_DAYS) return null;
+    const [got, all] = missionCount();
+    if (!G.mission) G.mission = { day, all: false, bonus: 0 };
+    return G.mission.all ? tr(`🎉 Your two weeks of missions are behind you. From today it's <b>free play</b>: no set conversations, just your life in ${esc(CFG.city)}.`, `🎉 2주 미션이 끝났어요. 오늘부터 <b>자유 플레이</b>예요. 정해진 대화 없이 ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요.`)
+      : tr(`🗓️ The two weeks are over: you finished <b>${got} of ${all}</b> missions (all of them earns a bonus, so no bonus this time). From today it's <b>free play</b>.`, `🗓️ 2주가 끝났어요. 미션 <b>${all}개 중 ${got}개</b>를 해냈어요(모두 해내야 보너스가 나와서 이번에는 없어요). 오늘부터 <b>자유 플레이</b>예요.`);
+  }
   // Sales tax and tips: prices on a menu or a shelf are before tax. Meals, drinks and other goods are taxed
   // (config sales_tax); groceries and fares are not. Where food or drinks are served the panel asks about a tip
   // (config tip_options, percent of the price before tax): tip_default at a table (diner, restaurant), none at a counter.
@@ -1576,7 +1793,7 @@
     const tip = /^(meal|drink)$/.test(i.kind) ? cents(list * tipRate(i.place)) : 0;
     return { price, tax, tip, total: cents(price + tax + tip), free, list };
   }
-  const receipt = (b) => (b.free ? 'free with your punch card' : usd2(b.price)) + (b.tax ? ` + tax ${usd2(b.tax)}` : '') + (b.tip ? ` + tip ${usd2(b.tip)}` : '') + (b.tax || b.tip ? ` = ${usd2(b.total)}` : '');
+  const receipt = (b) => (b.free ? tr('free with your punch card', '스탬프 카드로 무료') : usd2(b.price)) + (b.tax ? tr(` + tax ${usd2(b.tax)}`, ` + 세금 ${usd2(b.tax)}`) : '') + (b.tip ? tr(` + tip ${usd2(b.tip)}`, ` + 팁 ${usd2(b.tip)}`) : '') + (b.tax || b.tip ? ` = ${usd2(b.total)}` : '');
   // Bills on autopay (bills table): due on their day, then every `every` days
   const billsDue = (d) => rows('bills').filter(b => d >= b.day && (d - b.day) % (+b.every || 30) === 0);
 
@@ -1584,8 +1801,8 @@
   // Messages (messages table) arrive when the clock passes their day and time, the bank's alerts (notify) when
   // something happens to the account. Kept in the save: G.got { id: 1 unread | 2 read }, G.notes [{ day, minute,
   // sender, kind, body, body_ko, read }]. Menu > Phone (P) lists them, newest first.
-  const MSG_KIND = { text: 'Text', email: 'Email', voicemail: 'Voicemail', alert: 'Alert' };
-  const senderName = (id) => NPCS[id] ? NPCS[id].name : String(id || '');
+  const MSG_KIND = { text: 'Text', email: 'Email', voicemail: 'Voicemail', alert: 'Alert' }, MSG_KIND_KO = { text: '문자', email: '이메일', voicemail: '음성 메시지', alert: '알림' };
+  const senderName = (id) => NPCS[id] ? fullName(NPCS[id]) : String(id || '');
   const myMessages = () => MESSAGES.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && m.sender !== G.hero);
   const unread = () => !G ? 0 : myMessages().filter(m => (G.got || {})[m.id] === 1).length + (G.notes || []).filter(n => !n.read).length;
   const sound = (function () {          // small sounds made with Web Audio (no files): the phone's chime
@@ -1618,13 +1835,15 @@
   function phoneBadge() {
     const n = unread(), b = $('menu-btn'), p = document.querySelector('#menu button[data-open="phone"]');
     if (n) b.dataset.n = n > 9 ? '9+' : String(n); else delete b.dataset.n;
-    if (p) p.textContent = n ? `Phone (${n})` : 'Phone';
+    if (p) p.textContent = tr('Phone', '휴대전화') + (n ? ` (${n})` : '');
   }
   let hush = false;                // overnight the alerts arrive without a sound: the morning card tells
   function ping(sender, kind, text, ko) {
     if (state !== 'play' || hush) return;
-    const short = String(text).length > 84 ? String(text).slice(0, 82).replace(/\s+\S*$/, '') + '…' : String(text);
-    toast(kind === 'voicemail' ? `📞 Missed call from ${senderName(sender)}. Voicemail: ${short}` : `📱 ${MSG_KIND[kind] || 'Message'} from ${senderName(sender)}: ${short}`, ko && String(ko).length > 70 ? String(ko).slice(0, 68) + '…' : ko, 'phone', 6);
+    const cut = (t, n) => String(t).length > n ? String(t).slice(0, n - 2).replace(/\s+\S*$/, '') + '…' : String(t);
+    const short = cut(text, 84), shortKo = ko ? cut(ko, 70) : '';
+    toast(kind === 'voicemail' ? `📞 Missed call from ${senderName(sender)}. Voicemail: ${short}` : `📱 ${MSG_KIND[kind] || 'Message'} from ${senderName(sender)}: ${short}`,
+      shortKo && (kind === 'voicemail' ? `📞 ${senderName(sender)}의 부재중 전화. 음성 메시지: ${shortKo}` : `📱 ${senderName(sender)}의 ${MSG_KIND_KO[kind] || '메시지'}: ${shortKo}`), 'phone', 6);
     if (kind === 'voicemail') sound.ring(); else sound.chime();
   }
   function notify(sender, body, ko, kind) {
@@ -1646,12 +1865,12 @@
     if (!due.length) { if (back.length) saveGame(); return; }
     due.forEach(m => { G.got[m.id] = 1; });
     const fresh = due.filter(m => m.day === G.day && G.minute - hm(m.time, 0) < 120).pop();
-    if (fresh) ping(fresh.sender, fresh.kind, fresh.subject || personal(fresh.body), fresh.subject ? '' : fresh.body_ko);
+    if (fresh) ping(fresh.sender, fresh.kind, fresh.subject || personal(fresh.body), fresh.subject ? fresh.subject_ko : fresh.body_ko);
     phoneBadge();
   }
   function inbox() {               // everything that has arrived, newest first
     const got = G.got || {};
-    return myMessages().filter(m => got[m.id]).map(m => ({ n: -1, id: m.id, day: m.day, minute: hm(m.time, 0), sender: m.sender, kind: m.kind, subject: m.subject, body: personal(m.body), body_ko: m.body_ko, fresh: got[m.id] === 1 }))
+    return myMessages().filter(m => got[m.id]).map(m => ({ n: -1, id: m.id, day: m.day, minute: hm(m.time, 0), sender: m.sender, kind: m.kind, subject: m.subject, subject_ko: m.subject_ko, body: personal(m.body), body_ko: m.body_ko, fresh: got[m.id] === 1 }))
       .concat((G.notes || []).map((n, i) => ({ n: i, day: n.day, minute: n.minute, sender: n.sender, kind: n.kind, body: n.body, body_ko: n.body_ko, fresh: !n.read })))
       .sort((a, b) => (b.day - a.day) || (b.minute - a.minute) || (b.n - a.n));
   }
@@ -1672,21 +1891,21 @@
     if (call) advanceMinutes(5);
     else if (r.answer) (G.later = G.later || []).push({ at: G.day * 1440 + Math.floor(G.minute) + Math.max(1, +r.delay || 10), sender: r.answer_from || m.sender,
       kind: m.kind === 'email' ? 'email' : 'text', body: personal(r.answer), body_ko: r.answer_ko || '' });
-    logEvent('reply', call ? `Called back ${senderName(m.sender)}` : `Replied to ${senderName(m.sender)}`, 0);
+    logEvent('reply', call ? `Called back ${senderName(m.sender)}` : `Replied to ${senderName(m.sender)}`, 0, { ko: call ? `${senderName(m.sender)}에게 다시 전화함` : `${senderName(m.sender)}에게 답장함` });
     saveGame();
     return true;
   }
-  const TONE = { good: ['👍', 'Natural'], ok: ['🙂', 'Understood, but stiff'], poor: ['😬', 'Awkward'] };
+  const TONE = { good: ['👍', 'Natural', '자연스러워요'], ok: ['🙂', 'Understood, but stiff', '통하지만 딱딱해요'], poor: ['😬', 'Awkward', '어색해요'] };
   function replyBox(m) {
     if (m.n !== -1 || !m.id) return '';
     const opts = repliesTo(m.id);
     if (!opts.length) return '';
     const call = m.kind === 'voicemail', done = (G.replied || {})[m.id], mine = opts.find(o => o.id === done);
-    if (!mine) return `<div class="reply"><span class="ask">${call ? '📞 Call back and say:' : '↩︎ Reply:'}</span>${opts.map(o => `<button type="button" data-reply="${esc(m.id)}|${esc(o.id)}">${esc(personal(o.label))}<span class="ko">${esc(personal(o.label_ko || ''))}</span></button>`).join('')}</div>`;
+    if (!mine) return `<div class="reply"><span class="ask">${call ? tr('📞 Call back and say:', '📞 다시 전화해서:') : tr('↩︎ Reply:', '↩︎ 답장:')}</span>${opts.map(o => `<button type="button" data-reply="${esc(m.id)}|${esc(o.id)}">${esc(shown(o.label, o.label_ko))}</button>`).join('')}</div>`;
     const t = TONE[mine.tone] || TONE.good, from = mine.answer_from || m.sender;
-    return `<div class="reply done"><div class="said-me"><button type="button" class="play" data-say="${esc(personal(mine.label))}" data-voice="${esc(G.hero)}" aria-label="Play">▶</button><div><b>You${call ? ' (call)' : ''}:</b> ${esc(personal(mine.label))}<span class="ko"> ${esc(personal(mine.label_ko || ''))}</span></div></div>
-      ${call && mine.answer ? `<div class="said-me"><button type="button" class="play" data-say="${esc(personal(mine.answer))}" data-voice="${NPCS[from] ? esc(from) : ''}" aria-label="Play">▶</button><div><b>${esc(senderName(from))}:</b> ${esc(personal(mine.answer))}<span class="ko"> ${esc(personal(mine.answer_ko || ''))}</span></div></div>` : ''}
-      <div class="tone ${esc(mine.tone)}">${t[0]} ${t[1]}${mine.tip_ko ? ' · ' + esc(mine.tip_ko) : ''}</div></div>`;
+    return `<div class="reply done"><div class="said-me"><button type="button" class="play" data-say="${esc(personal(mine.label))}" data-voice="${esc(G.hero)}" aria-label="Play">▶</button><div><b>${tr('You', '나')}${call ? tr(' (call)', ' (통화)') : ''}:</b> ${esc(shown(mine.label, mine.label_ko))}</div></div>
+      ${call && mine.answer ? `<div class="said-me"><button type="button" class="play" data-say="${esc(personal(mine.answer))}" data-voice="${NPCS[from] ? esc(from) : ''}" aria-label="Play">▶</button><div><b>${esc(senderName(from))}:</b> ${esc(shown(mine.answer, mine.answer_ko))}</div></div>` : ''}
+      <div class="tone ${esc(mine.tone)}">${t[0]} ${tr(t[1], t[2])}${KO() && mine.tip_ko ? ' · ' + esc(mine.tip_ko) : ''}</div></div>`;
   }
 
   // ---------------------------------------------------------------- the mailbox at home: what the post brings
@@ -1697,6 +1916,7 @@
   const myMail = () => MAIL.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && (m.day < G.day || (m.day === G.day && G.minute >= mailTime())));
   const newMail = () => !G ? [] : myMail().filter(m => !(G.mailGot || {})[m.id]);
   const MAIL_ICON = { junk: '🗑️', bill: '🧾', letter: '✉️', notice: '📋', card: '💌' }, MAIL_KIND = { junk: 'Junk mail', bill: 'Bill', letter: 'Letter', notice: 'Notice', card: 'Card' };
+  const MAIL_KIND_KO = { junk: '광고 우편', bill: '청구서', letter: '편지', notice: '안내문', card: '카드' };
 
   // ---------------------------------------------------------------- the radio at home: the local station
   // Turn it on at the desk at home (Menu is not needed): the station, the time and the date said the American way, the
@@ -1705,6 +1925,7 @@
   const RADIO = rows('radio').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
   const STATION = CFG.radio_station || 'KFVW 88.5';
   const RADIO_KIND = { station: 'On the air', weather: 'Weather', traffic: 'Traffic', news: 'Local news', community: 'Around town', sports: 'Sports', holiday: 'Today', ad: 'A word from our sponsors' };
+  const RADIO_KIND_KO = { station: '방송 중', weather: '날씨', traffic: '교통', news: '지역 뉴스', community: '동네 소식', sports: '스포츠', holiday: '오늘', ad: '광고' };
   const ordinal = (n) => n + ((n % 100 >= 11 && n % 100 <= 13) ? 'th' : ['th', 'st', 'nd', 'rd'][n % 10] || 'th');
   const spokenDate = (d) => { const t = dateOf(d); return t ? `${weekday(d)}, ${MONTHS[t.getUTCMonth()]} ${ordinal(t.getUTCDate())}` : weekday(d); };
   const SKY = { clear: 'clear skies', partly: 'a few clouds', cloudy: 'cloudy skies', rain: 'gray skies', fog: 'some fog' };
@@ -1721,7 +1942,7 @@
     const day = m < 15 * 60 ? `Today: ${w.forecast || ''} A high of ${w.high_f}, and tonight a low of ${w.low_f}.` : `Tonight, a low of ${w.low_f}. Tomorrow: ${next.forecast || ''} A high of ${next.high_f}.`;
     const light = sun ? (m < sun.set ? ` Sunset this evening is at ${clock(sun.set)}.` : sunNext ? ` Sunrise tomorrow is at ${clock(sunNext.rise)}.` : '') : '';
     out.push({ kind: 'weather', en: `${now} ${day}${light}${brolly ? " Don't forget your umbrella." : ''}`,
-      ko: `지금 기온 ${toC(wx.temp)}°C(${wx.temp}°F). ${m < 15 * 60 ? `${w.forecast_ko || ''} 최고 ${toC(w.high_f)}°C, 밤 최저 ${toC(w.low_f)}°C.` : `밤 최저 ${toC(w.low_f)}°C. 내일: ${next.forecast_ko || ''} 최고 ${toC(next.high_f)}°C.`}${sun ? (m < sun.set ? ` 오늘 해넘이 ${hhmm(sun.set)}.` : sunNext ? ` 내일 해돋이 ${hhmm(sunNext.rise)}.` : '') : ''} (degrees는 화씨 °F)` });
+      ko: `지금 기온 ${toC(wx.temp)}°C(${wx.temp}°F). ${m < 15 * 60 ? `${w.forecast_ko || ''} 최고 ${toC(w.high_f)}°C, 밤 최저 ${toC(w.low_f)}°C.` : `밤 최저 ${toC(w.low_f)}°C. 내일: ${next.forecast_ko || ''} 최고 ${toC(next.high_f)}°C.`}${sun ? (m < sun.set ? ` 오늘 해넘이 ${hhmm(sun.set)}.` : sunNext ? ` 내일 해돋이 ${hhmm(sunNext.rise)}.` : '') : ''}` });
     const rush = !isWeekend(d) && !dayOff(d) && ((m >= 6 * 60 && m < 10 * 60) || (m >= 15.5 * 60 && m < 19 * 60));
     const pool = (k) => RADIO.filter(r => r.kind === k && r.day == null);
     if (rush) rotate(RADIO.filter(r => r.kind === 'traffic' && r.day === d).concat(pool('traffic')), 1, d * 2 + (m >= 12 * 60 ? 1 : 0)).forEach(r => out.push({ kind: 'traffic', en: r.text, ko: r.text_ko }));
@@ -1770,16 +1991,16 @@
   function tvPanel(h, sub, body) {
     h.textContent = 'TV';
     const c = TV.find(x => x.id === tvNow.id);
-    sub.textContent = c ? `${c.name}${tvNow.live ? ' · LIVE' : ' · latest videos'}` : 'Pick a channel';
-    const screen = !c ? `<div class="tv-screen off"><p>Pick a channel below. News plays live, tech channels play their latest videos, with English captions.<span class="ko"> 아래에서 채널을 고르세요. 뉴스는 생방송, IT 채널은 최신 영상이 영어 자막과 함께 나옵니다.</span></p></div>`
-      : fileMode ? `<div class="tv-screen off"><p>YouTube does not play inside a game opened from a file. <a href="${esc(tvLink(c, tvNow.live))}" target="_blank" rel="noopener">Watch ${esc(c.name)} on YouTube ↗</a>, or play the web version of the game.<span class="ko"> 파일로 연 게임 안에서는 YouTube가 재생되지 않아요. YouTube에서 보거나 웹 버전(GitHub Pages)에서 하세요.</span></p></div>`
+    sub.textContent = c ? `${c.name}${tvNow.live ? tr(' · LIVE', ' · 생방송') : tr(' · latest videos', ' · 최신 영상')}` : tr('Pick a channel', '채널을 고르세요');
+    const screen = !c ? `<div class="tv-screen off"><p>${tr('Pick a channel below. News plays live, tech channels play their latest videos, with English captions.', '아래에서 채널을 고르세요. 뉴스는 생방송, IT 채널은 최신 영상이 영어 자막과 함께 나옵니다.')}</p></div>`
+      : fileMode ? `<div class="tv-screen off"><p>${tr('YouTube does not play inside a game opened from a file.', '파일로 연 게임 안에서는 YouTube가 재생되지 않아요.')} <a href="${esc(tvLink(c, tvNow.live))}" target="_blank" rel="noopener">${tr(`Watch ${esc(c.name)} on YouTube ↗`, `YouTube에서 ${esc(c.name)} 보기 ↗`)}</a>${tr(', or play the web version of the game.', ' 또는 웹 버전(GitHub Pages)에서 하세요.')}</p></div>`
         : `<div class="tv-screen"><iframe src="${esc(tvEmbed(c, tvNow.live))}" title="${esc(c.name)}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe></div>
-        <p class="fine">${esc(c.note || '')}<span class="ko"> ${esc(c.note_ko || '')}</span> <a href="${esc(tvLink(c, tvNow.live))}" target="_blank" rel="noopener">Open on YouTube ↗</a>${tvNow.live ? ' · Not live right now? Try <b>Latest</b>.' : ''}</p>`;
+        <p class="fine">${esc(tr(c.note || '', c.note_ko))} <a href="${esc(tvLink(c, tvNow.live))}" target="_blank" rel="noopener">${tr('Open on YouTube ↗', 'YouTube에서 열기 ↗')}</a>${tvNow.live ? tr(' · Not live right now? Try <b>Latest</b>.', ' · 지금 생방송이 없나요? <b>최신</b>을 눌러 보세요.') : ''}</p>`;
     body.innerHTML = screen + Object.keys(TV_KIND).map(k => {
       const list = TV.filter(x => x.kind === k);
       if (!list.length) return '';
-      return `<h3 class="tv-kind">${TV_KIND[k][0]}<span class="ko"> ${TV_KIND[k][1]}</span></h3><div class="tv-list">${list.map(x => `<div class="tv-ch${x.id === tvNow.id ? ' on' : ''}"><div class="t">${esc(x.name)}</div>
-        <div class="b">${+x.live ? `<button type="button" data-tv="${esc(x.id)}|1"${x.id === tvNow.id && tvNow.live ? ' aria-pressed="true"' : ''}>Live</button>` : ''}<button type="button" data-tv="${esc(x.id)}|0"${x.id === tvNow.id && !tvNow.live ? ' aria-pressed="true"' : ''}>Latest</button></div></div>`).join('')}</div>`;
+      return `<h3 class="tv-kind">${tr(TV_KIND[k][0], TV_KIND[k][1])}</h3><div class="tv-list">${list.map(x => `<div class="tv-ch${x.id === tvNow.id ? ' on' : ''}"><div class="t">${esc(x.name)}</div>
+        <div class="b">${+x.live ? `<button type="button" data-tv="${esc(x.id)}|1"${x.id === tvNow.id && tvNow.live ? ' aria-pressed="true"' : ''}>${tr('Live', '생방송')}</button>` : ''}<button type="button" data-tv="${esc(x.id)}|0"${x.id === tvNow.id && !tvNow.live ? ' aria-pressed="true"' : ''}>${tr('Latest', '최신')}</button></div></div>`).join('')}</div>`;
     }).join('');
   }
   function sitForTv(pid) {           // sit down on the sofa, facing the TV
@@ -1804,7 +2025,7 @@
   const laundryHours = () => String(CFG.laundry_hours || '07:00-22:00').split('-').map(x => hm(x, 0));
   function laundryLabel() {
     const n = cleanClothes();
-    return `Do laundry · ${n} clean outfit${n === 1 ? '' : 's'} left`;
+    return tr(`Do laundry · ${n} clean outfit${n === 1 ? '' : 's'} left`, `빨래하기 · 깨끗한 옷 ${n}벌 남음`);
   }
   function doLaundry() {
     if (!G) return false;
@@ -1822,22 +2043,22 @@
     if (!portions('detergent')) { toast("You're out of laundry detergent. Fairview Market sells detergent pods.", '세탁 세제가 없어요. 페어뷰 마켓에서 세제 캡슐을 팝니다.', 'bad', 5); return false; }
     if (fee && G.money < fee) { toast(`You need ${usd2(fee)} for the washer and the dryer.`, `세탁기와 건조기에 ${usd2(fee)}가 필요해요.`, 'bad'); return false; }
     useOne('detergent');
-    if (fee) pay(-fee, 'Laundry room (wash and dry)', 'spend');
+    if (fee) pay(-fee, 'Laundry room (wash and dry)', 'spend', { ko: '세탁실 (세탁·건조)' });
     advanceMinutes(LAUNDRY_MIN);
     G.clean = CLOSET;
     logEvent('laundry', 'Did the laundry', 0);
     if (player) play(player, 'interact-right', { once: true });
     saveGame();
     toast(`You washed, dried and folded a load in ${where}${fee ? ` (${usd2(fee)})` : ''}. ${CLOSET} clean outfits. ${portions('detergent')} detergent pod${portions('detergent') === 1 ? '' : 's'} left.`,
-      `${ownWasher() ? '집 세탁기와 건조기로' : '세탁실에서'} 빨래를 빨고 말려서 갰어요. 깨끗한 옷 ${CLOSET}벌.`, 'good', 5);
+      `${ownWasher() ? '집 세탁기와 건조기로' : '세탁실에서'} 빨래를 빨고 말려서 갰어요${fee ? ` (${usd2(fee)})` : ''}. 깨끗한 옷 ${CLOSET}벌, 세제 ${portions('detergent')}회분 남음.`, 'good', 5);
     return true;
   }
   function wakeDressed() {            // in the morning: put on a clean outfit (what the morning card says about it)
     const n = cleanClothes();
     if (n > 0) { G.clean = n - 1; G.dirtyDay = null; }
     else G.dirtyDay = G.day;
-    if (G.dirtyDay === G.day) return `👕 You're out of clean clothes, so you put on yesterday's. <b>Do laundry</b> at home${portions('detergent') ? '' : ' (buy detergent at Fairview Market first)'}.<span class="ko"> 깨끗한 옷이 없어서 어제 옷을 입었어요. 집에서 빨래하세요${portions('detergent') ? '' : '(먼저 마켓에서 세제를 사세요)'}.</span>`;
-    if (G.clean <= 1) return `👕 ${G.clean ? 'Only one clean outfit left after today' : "You're wearing your last clean outfit"}. Time to do laundry${portions('detergent') ? '' : ': buy detergent at Fairview Market first'}.<span class="ko"> 깨끗한 옷이 ${G.clean}벌 남았어요. 빨래할 때예요${portions('detergent') ? '' : '. 먼저 마켓에서 세제를 사세요'}.</span>`;
+    if (G.dirtyDay === G.day) return tr(`👕 You're out of clean clothes, so you put on yesterday's. <b>Do laundry</b> at home${portions('detergent') ? '' : ' (buy detergent at Fairview Market first)'}.`, `👕 깨끗한 옷이 없어서 어제 옷을 입었어요. 집에서 <b>빨래</b>하세요${portions('detergent') ? '' : '(먼저 페어뷰 마켓에서 세제를 사세요)'}.`);
+    if (G.clean <= 1) return tr(`👕 ${G.clean ? 'Only one clean outfit left after today' : "You're wearing your last clean outfit"}. Time to do laundry${portions('detergent') ? '' : ': buy detergent at Fairview Market first'}.`, `👕 ${G.clean ? '오늘 입은 옷 말고 깨끗한 옷이 한 벌 남았어요' : '마지막 깨끗한 옷을 입었어요'}. 빨래할 때예요${portions('detergent') ? '' : '. 먼저 페어뷰 마켓에서 세제를 사세요'}.`);
     return null;
   }
 
@@ -1852,6 +2073,7 @@
   const bestBy = (lot) => { const i = ITEMS[lot.id], n = i && i.shelf_days != null ? +i.shelf_days : 0; return n > 0 ? lot.day + n : null; };
   const gone = (lot) => { const d = bestBy(lot); return d != null && G.day > d; };
   const shortName = (id) => String((ITEMS[id] || { name: pretty(id) }).name).replace(/\s*\(.*\)\s*/, '').replace(/,.*$/, '');
+  const itemName = (id) => KO() && ITEMS[id] && ITEMS[id].name_ko ? String(ITEMS[id].name_ko).replace(/\s*\(.*\)\s*/, '') : shortName(id).toLowerCase();
   function lots() {
     if (!Array.isArray(G.lots)) {          // a save from before: everything was bought today
       G.lots = [];
@@ -1874,8 +2096,8 @@
   function cook(id) {
     const r = RECIPES.find(x => x.id === id);
     if (!r || !G) return false;
-    if (!atHome()) { if (!panel.hidden) note('You can only cook in your kitchen at home.', true); return false; }
-    if (!canCook(r)) { if (!panel.hidden) note(`You are missing: ${needs(r).filter(x => !portions(x)).map(shortName).join(', ').toLowerCase()}.`, true); return false; }
+    if (!atHome()) { if (!panel.hidden) note(tr('You can only cook in your kitchen at home.', '요리는 집 부엌에서만 할 수 있어요.'), true); return false; }
+    if (!canCook(r)) { if (!panel.hidden) note(tr(`You are missing: ${needs(r).filter(x => !portions(x)).map(shortName).join(', ').toLowerCase()}.`, `없는 재료: ${needs(r).filter(x => !portions(x)).map(itemName).join(', ')}.`), true); return false; }
     needs(r).forEach(useOne);
     G.energy = clamp(G.energy + (+r.energy || 0), 0, E_MAX);
     G.cooked = (G.cooked || 0) + 1;
@@ -1883,7 +2105,7 @@
     logEvent('cook', r.name, 0, { id: r.id });
     if (player) play(player, 'interact-right', { once: true });
     saveGame();
-    if (!panel.hidden) { renderPanel(); note(`You made ${r.name.toLowerCase()} in ${r.minutes} minutes. Energy +${r.energy}.`); }
+    if (!panel.hidden) { renderPanel(); note(tr(`You made ${r.name.toLowerCase()} in ${r.minutes} minutes. Energy +${r.energy}.`, `${r.minutes}분 걸려 ${josa(loc(r), '을', '를')} 만들었어요. 에너지 +${r.energy}.`)); }
     return true;
   }
   function toss(n) {
@@ -1895,13 +2117,13 @@
     logEvent('toss', name, 0);
     saveGame();
     renderPanel();
-    note(`You threw out the ${name.toLowerCase()}.`);
+    note(tr(`You threw out the ${name.toLowerCase()}.`, `${josa(itemName(l.id), '을', '를')} 버렸어요.`));
   }
   function kitchenNews() {          // in the morning: what went bad overnight, what should be used today
     const bad = lots().filter(l => bestBy(l) === G.day - 1), last = lots().filter(l => bestBy(l) === G.day);
-    const names = (l) => Array.from(new Set(l.map(x => shortName(x.id).toLowerCase()))).join(', '), out = [];
-    if (bad.length) out.push(`🗑️ Gone bad in your kitchen: <b>${esc(names(bad))}</b>. Throw it out (Inventory).<span class="ko"> 상한 식료품이 있어요. 가방(Inventory)에서 버리세요.</span>`);
-    if (last.length) out.push(`Use it or lose it: the <b>${esc(names(last))}</b> ${last.length > 1 || /s$/.test(names(last)) ? 'are' : 'is'} best by today.<span class="ko"> 오늘까지 먹어야 하는 식료품이 있어요.</span>`);
+    const names = (l) => Array.from(new Set(l.map(x => itemName(x.id)))).join(', '), out = [];
+    if (bad.length) out.push(tr(`🗑️ Gone bad in your kitchen: <b>${esc(names(bad))}</b>. Throw it out (Inventory).`, `🗑️ 부엌에서 상한 것: <b>${esc(names(bad))}</b>. 가방에서 버리세요.`));
+    if (last.length) out.push(tr(`Use it or lose it: the <b>${esc(names(last))}</b> ${last.length > 1 || /s$/.test(names(last)) ? 'are' : 'is'} best by today.`, `오늘까지 먹어야 해요: <b>${esc(names(last))}</b>.`));
     return out;
   }
 
@@ -2006,7 +2228,7 @@
     if (kind === 'honk') { const d = player && at ? Math.hypot(at.x - player.pos.x, at.z - player.pos.z) : 3; sound.honk(clamp(1.6 - d / 8, 0.4, 1.2)); }
     if (G.streetDay && G.streetDay[kind] === G.day) return;
     (G.streetDay = G.streetDay || {})[kind] = G.day;
-    toast((kind === 'honk' ? '📯 Beep beep! ' : '🚸 ') + STREET[kind][0], STREET[kind][1], 'bad', 5.5);
+    toast((kind === 'honk' ? '📯 Beep beep! ' : '🚸 ') + STREET[kind][0], (kind === 'honk' ? '📯 빵빵! ' : '🚸 ') + STREET[kind][1], 'bad', 5.5);
   }
   // the pedestrian signal across the crosswalk near you: a white walking person, or an orange hand (flashing, with
   // the seconds left, when it is too late to start crossing)
@@ -2033,15 +2255,17 @@
   let hudTimer = 0, goalTimer = 0, goalTarget = null;
   function hud() {
     if (!G) return;
-    $('hud-day').textContent = dateShort(G.day);
+    $('hud-day').textContent = dShort(G.day);
     const hol = holidayOf(G.day);
-    $('hud-day').title = `${dateLong(G.day)} · Day ${G.day}${hol ? ' · ' + hol.name : ''}`;
-    $('hud-time').textContent = clock(G.minute);
+    $('hud-day').title = tr(`${dateLong(G.day)} · Day ${G.day}${hol ? ' · ' + hol.name : ''}`, `${dateKo(G.day)} · ${G.day}일째${hol ? ' · ' + (hol.name_ko || hol.name) : ''}`);
+    $('hud-time').textContent = clk(G.minute);
     const wx = weatherNow(), hw = $('hud-weather'), dark = darkAt(G.minute);
     const dry = wx.kind === 'rain' && wx.rain < 0.04, lifted = wx.kind === 'fog' && wx.fog < 0.05;
     if (hw) {
-      hw.textContent = `${dry ? '☁️' : lifted ? '⛅' : dark && wx.kind === 'clear' ? '🌙' : WX_ICON[wx.kind] || ''} ${wx.temp}°F${soaked() ? ' 💧' : ''}`;
-      hw.title = `${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}${sunOf(G.day) ? ' ' + sunText(G.day) + '.' : ''}${soaked() ? ' You are wet from the rain.' : ''}`;
+      hw.textContent = `${dry ? '☁️' : lifted ? '⛅' : dark && wx.kind === 'clear' ? '🌙' : WX_ICON[wx.kind] || ''} ${KO() ? toC(wx.temp) + '°C' : wx.temp + '°F'}${soaked() ? ' 💧' : ''}`;
+      const sun = sunOf(G.day);
+      hw.title = tr(`${WX_NAME[wx.kind] || ''}, high ${wx.high}°F, low ${wx.low}°F (${toC(wx.temp)}°C now). ${wx.row.forecast || ''}${sun ? ' ' + sunText(G.day) + '.' : ''}${soaked() ? ' You are wet from the rain.' : ''}`,
+        `${WX_NAME_KO[wx.kind] || ''}, 최고 ${toC(wx.high)}°C, 최저 ${toC(wx.low)}°C (지금 ${wx.temp}°F). ${wx.row.forecast_ko || ''}${sun ? ` 해돋이 ${hhmm(sun.rise)}, 해넘이 ${hhmm(sun.set)}.` : ''}${soaked() ? ' 비에 젖었어요.' : ''}`);
     }
     const m = $('hud-money');
     m.textContent = usd(G.money);
@@ -2051,13 +2275,14 @@
     const box = document.querySelector('#bar .energy');
     box.classList.toggle('low', G.energy < 30 && G.energy >= 20);
     box.classList.toggle('empty', G.energy < 20);
-    box.title = `Energy ${Math.round(G.energy)} / ${E_MAX}`;
+    box.title = `${tr('Energy', '에너지')} ${Math.round(G.energy)} / ${E_MAX}`;
+    const sc = $('hud-score');
+    if (sc) { sc.textContent = '★ ' + score(); sc.title = tr(`Score ${score()} · ${standing()[0]}`, `점수 ${score()} · ${standing()[1]}`); sc.className = 'score ' + standing()[2]; }
   }
-  function setBox(el, en, ko, warn) {
+  function setBox(el, en, ko, warn) {          // en and ko are HTML
     if (!en) { el.hidden = true; return; }
     el.hidden = false;
-    el.querySelector('.en').innerHTML = en;
-    el.querySelector('.ko').textContent = ko || '';
+    el.innerHTML = tr(en, ko);
     el.classList.toggle('warn', !!warn);
   }
   function updateGoal() {
@@ -2071,16 +2296,16 @@
       const pl = place(pid);
       if (pz === zoneId && isPhone(ep)) {
         en = `Take the call at ${esc(pl.name)}: <b>${esc(ep.title)}</b>`;
-        ko = `${pl.name_ko || pl.name}에서 전화하세요: ${ep.title_ko || ep.title}`;
+        ko = `${esc(loc(pl))}에서 전화하세요: <b>${esc(loc(ep, 'title'))}</b>`;
         goalTarget = Z.places[pid] ? { at: Z.places[pid].at } : null;
       } else if (pz === zoneId) {
         en = `Talk to ${esc(n.name)}: <b>${esc(ep.title)}</b>`;
-        ko = `${n.name}에게 말을 거세요: ${ep.title_ko || ep.title}`;
+        ko = `${esc(fullName(n))}에게 말을 거세요: <b>${esc(loc(ep, 'title'))}</b>`;
         goalTarget = npcActors[ep.npc] ? { actor: npcActors[ep.npc] } : (Z.places[pid] ? { at: Z.places[pid].at } : null);
       } else {
         const zn = zoneName(pz);
         en = `Go to ${esc(pl.name)} (${esc(zn[0])})`;
-        ko = `${pl.name_ko || pl.name} (${zn[1] || zn[0]})에 가세요 · ${ep.title_ko || ep.title}`;
+        ko = `${esc(loc(pl))}(${esc(zn[1] || zn[0])})에 가세요 · ${esc(loc(ep, 'title'))}`;
         const via = pz && routeTo(zoneId, pz);
         if (via) goalTarget = { at: via.at, portal: true };
       }
@@ -2088,21 +2313,34 @@
       const later = episodes().filter(laterToday).sort(epOrder)[0];
       if (later) {
         en = `Free until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
-        ko = `${hhmm(hm(later.time_from, 0))}까지 자유 시간. 다음: ${later.title_ko || later.title}`;
+        ko = `${clockKo(hm(later.time_from, 0))}까지 자유 시간. 다음: ${esc(loc(later, 'title'))}`;
       } else if (G.minute >= 20 * 60) {
         const home = TRAVEL_ZONES.includes(zoneId) ? 'hotel' : hero().home_zone;
         const bed = home === 'hotel' ? 'hotel_room' : hero().home_bed;
         if (zoneId === home) { en = 'Time for bed. Go to your bed and sleep.'; ko = '잘 시간이에요. 침대에 가서 주무세요.'; if (Z.places[bed]) goalTarget = { at: Z.places[bed].at }; }
         else { en = `Head ${home === 'hotel' ? 'back to the hotel' : 'home'} and get some sleep.`; ko = home === 'hotel' ? '호텔로 돌아가 잠을 자세요.' : '집에 가서 잠을 자세요.'; const via = routeTo(zoneId, home); if (via) goalTarget = { at: via.at, portal: true }; }
+      } else if (fired()) {
+        en = `You no longer work at ${esc(CFG.company)}. Your time is your own.`;
+        ko = `이제 ${esc(CFG.company)} 직원이 아니에요. 시간은 마음대로 쓰세요.`;
+      } else if (!isWeekend(G.day) && G.inDay !== G.day && G.minute < 17 * 60 && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
+        const late = G.minute > hm(CFG.late_after, 555);
+        en = `${late ? "You're late! " : ''}Go to work at <b>${esc(CFG.company)}</b>${late ? '' : `: be in by ${clock(hm(CFG.late_after, 555))}`}.`;
+        ko = `${late ? '지각이에요! ' : ''}<b>${esc(ZONE_NAMES.office[1] || CFG.company)}</b>에 출근하세요${late ? '' : ` (${clockKo(hm(CFG.late_after, 555))}까지)`}.`;
+        warn = late;
+        const via = routeTo(zoneId, 'office');
+        if (via) goalTarget = { at: via.at, portal: true };
+      } else if (freePlay()) {
+        en = `<b>Free play.</b> Live your life in ${esc(CFG.city)}: work, shop, cook, explore.`;
+        ko = `<b>자유 플레이.</b> ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요: 일하고, 장 보고, 요리하고, 구경하세요.`;
       } else {
         en = 'Free time. Explore, shop, or grab something to eat.';
         ko = '자유 시간. 둘러보거나 장을 보거나 뭔가 먹어요.';
       }
     }
-    if (G.energy < 30) { warn = true; en += `<br><small>Low energy (${Math.round(G.energy)}). Eat something or rest.</small>`; ko += ' · 에너지가 낮아요. 뭔가 드세요.'; }
+    if (G.energy < 30) { warn = true; en += `<br><small>Low energy (${Math.round(G.energy)}). Eat something or rest.</small>`; ko += `<br><small>에너지가 낮아요(${Math.round(G.energy)}). 뭔가 먹거나 쉬세요.</small>`; }
     setBox($('goal'), en, ko, warn);
-    const cal = calendar().filter(c => c.day === G.day && hm(c.time, 0) >= G.minute - 30).sort((a, b) => hm(a.time, 0) - hm(b.time, 0))[0];
-    if (cal) setBox($('next'), `Next: <b>${hhmm(hm(cal.time, 0))}</b> ${esc(cal.title)}${cal.place ? ' · ' + esc(place(cal.place).name) : ''}`, `다음 일정: ${cal.time} ${cal.title_ko || cal.title}`);
+    const cal = calendar().filter(c => c.day === G.day && hm(c.time, 0) >= G.minute - 30 && !firedOut(c.place)).sort((a, b) => hm(a.time, 0) - hm(b.time, 0))[0];
+    if (cal) setBox($('next'), `Next: <b>${clock(hm(cal.time, 0))}</b> ${esc(cal.title)}${cal.place ? ' · ' + esc(place(cal.place).name) : ''}`, `다음 일정: <b>${clockKo(hm(cal.time, 0))}</b> ${esc(loc(cal, 'title'))}${cal.place ? ' · ' + esc(loc(place(cal.place))) : ''}`);
     else setBox($('next'), null);
     Object.values(npcActors).forEach(a => { if (a.mark) a.mark.visible = open.some(e => e.npc === a.id && !isPhone(e)); });
     phoneMarks(open.filter(e => isPhone(e) && Z.places[e.place] && placeIn(e.place, zoneId) && !(talk && talk.ep.id === e.id)));
@@ -2112,7 +2350,7 @@
       if (Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z) > 2.0 || elapsed - (a.chatAt || -99) < 40) return;
       a.chatAt = elapsed;
       const c = remark(a);
-      say(a, personal(c.line), c.line_ko, 3.5);
+      say(a, personal(c.line), c.line_ko && personalKo(c.line_ko), 3.5);
     });
   }
   // what somebody says in passing: their own lines in turn, and every third time (the first time too) a remark
@@ -2194,7 +2432,7 @@
     if (!a || !text) return;
     let b = bubbles[a.id];
     if (!b) { b = bubbles[a.id] = document.createElement('div'); b.className = 'bubble' + (a === player ? ' me' : ''); $('bubbles').appendChild(b); }
-    b.innerHTML = esc(text) + (ko ? `<span class="ko">${esc(ko)}</span>` : '');
+    b.textContent = tr(text, ko);
     b.classList.remove('hide');
     clearTimeout(b.timer);
     b.timer = setTimeout(() => b.classList.add('hide'), (secs || Math.max(2.6, text.length * 0.075)) * 1000);
@@ -2219,9 +2457,9 @@
   function addTag(text, pos, kind, range, ko) {
     const el = document.createElement('div');
     el.className = 'tag ' + kind;
-    el.innerHTML = esc(text) + (ko ? ` <span class="ko">${esc(ko)}</span>` : '');
+    el.textContent = tr(text, ko);
     $('tags').appendChild(el);
-    tags.push({ el, pos, range });
+    tags.push({ el, pos, range, en: text, ko });
   }
   function placeTags() {
     const show = state === 'play' && player;
@@ -2296,7 +2534,7 @@
       return;
     }
     if (e.code === 'Escape') { if (!$('panel').hidden) closePanel(); else if (!$('menu').hidden) toggleMenu(false); }
-    const panelKey = { KeyT: 'talks', KeyP: 'phone', KeyN: 'phone', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank' }[e.code];
+    const panelKey = { KeyT: 'talks', KeyP: 'phone', KeyN: 'phone', KeyI: 'inventory', KeyC: 'calendar', KeyM: 'map', KeyB: 'bank', KeyR: 'work' }[e.code];
     if (panelKey && G) { if (state === 'play') openPanel(panelKey); else if (panelKind === panelKey) closePanel(); }
     if (/Arrow|Space/.test(e.code)) e.preventDefault();
   });
@@ -2477,8 +2715,8 @@
     const pid = portalPlace(inside), fares = pid ? faresAt(pid) : [];
     const fare = fares.reduce((t, i) => t + +i.price, 0);
     if (fare && G.money < fare) { toast(`You can't afford the fare (${usd2(fare)}).`, '요금이 부족해요.', 'bad'); return; }
-    fares.forEach(i => pay(-i.price, i.name, 'spend'));
-    if (fare) toast(`Paid ${usd2(fare)}: ${fares.map(i => i.name).join(', ')}`, fares.map(i => i.name_ko).filter(Boolean).join(', '));
+    fares.forEach(i => pay(-i.price, i.name, 'spend', { ko: i.name_ko }));
+    if (fare) toast(`Paid ${usd2(fare)}: ${fares.map(i => i.name).join(', ')}`, `${usd2(fare)} 냈어요: ${fares.map(i => loc(i)).join(', ')}`);
     let flight = 0;
     if (zoneId === 'airport' && inside.to === 'hotel') { flight = 120; G.trip = true; }
     if (zoneId === 'airport' && !TRAVEL_ZONES.includes(inside.to) && G.trip) { flight = 120; G.trip = false; }
@@ -2492,6 +2730,7 @@
   }
   async function travel(z, arrive, at, minutes) {
     if (!z) return;
+    if (z === 'office' && zoneId !== 'office' && fired()) { stoppedAtDoor(); return; }          // let go: the badge no longer opens the door
     if (minutes) advanceMinutes(minutes);
     if (state !== 'play') return;
     // through a door: the camera leans in on you as the screen darkens, and pulls back out in the new place
@@ -2502,15 +2741,11 @@
     cam.push = null;
     if (await enterZone(z, arrive, at)) cam.pull = { t: 0, dur: 0.75 };
     const zn = zoneName(z);
-    if (z === 'office' && !isWeekend(G.day) && G.inDay !== G.day && G.minute < 17 * 60) {        // the first time in today
-      G.inDay = G.day; G.inAt = Math.floor(G.minute);
-      const start = hm(CFG.work_start, 540);
-      if (G.minute > hm(CFG.late_after, 555) && G.minute < 12 * 60) {
-        G.lateDay = G.day;
-        toast(`You're late: it's ${clock(G.minute)}, and work starts at ${clock(start)}.`, `지각이에요. 지금은 ${hhmm(G.minute)}이고 업무는 ${hhmm(start)}에 시작해요.`, 'bad', 4.5);
-        return;
-      }
-      if (G.minute <= start) { toast(`${zn[0]} · ${clock(G.minute)}. You're on time.`, `${zn[1] || zn[0]} · 제시간에 왔어요.`, 'good', 3); return; }
+    if (z === 'office' && checkedIn) {        // the first time in today (enterZone: arrived)
+      const kind = checkedIn;
+      checkedIn = null;
+      if (kind !== 'on') return;
+      if (G.minute <= hm(CFG.work_start, 540)) { toast(`${zn[0]} · ${clock(G.minute)}. You're on time.`, `${zn[1] || zn[0]} · ${clockKo(G.minute)}. 제시간에 왔어요.`, 'good', 3); return; }
     }
     if (z === 'office' && !npcsIn(z).length) {
       if (isWeekend(G.day)) toast("It's the weekend. Nobody is in the office.", '주말이라 사무실에 아무도 없어요.', null, 4);
@@ -2539,7 +2774,7 @@
   // town. ↑↓ / W S: forward and back, ← → / A D: turn, Q E: sideways, Z X (or the wheel): closer and farther,
   // R F: higher and lower, Space: the slow circling on and off, T: the time of day, Y: the weather, Esc: back.
   const tour = { x: 0, z: 0, yaw: 0, dist: 24, pitch: 0.42, auto: true, minute: 600, wx: null, drag: null };
-  const TOUR_TIMES = [[600, 'Morning'], [780, 'Afternoon'], [1105, 'Sunset'], [1290, 'Night'], [400, 'Sunrise']];
+  const TOUR_TIMES = [[600, 'Morning', '아침'], [780, 'Afternoon', '오후'], [1105, 'Sunset', '해 질 녘'], [1290, 'Night', '밤'], [400, 'Sunrise', '해돋이']];
   const TOUR_WX = [null, 'partly', 'cloudy', 'rain', 'fog'];
   async function startTour() {
     if (busy || jog) return;
@@ -2568,9 +2803,9 @@
   }
   function tourLabels() {
     const t = TOUR_TIMES.find(x => x[0] === tour.minute) || TOUR_TIMES[0];
-    $('tour').querySelector('[data-tour="time"]').textContent = `Time: ${t[1]}`;
-    $('tour').querySelector('[data-tour="weather"]').textContent = `Weather: ${tour.wx ? WX_NAME[tour.wx] : 'Sunny'}`;
-    $('tour').querySelector('[data-tour="auto"]').textContent = tour.auto ? 'Circling: on' : 'Circling: off';
+    $('tour').querySelector('[data-tour="time"]').textContent = tr(`Time: ${t[1]}`, `시간: ${t[2] || t[1]}`);
+    $('tour').querySelector('[data-tour="weather"]').textContent = tr(`Weather: ${tour.wx ? WX_NAME[tour.wx] : 'Sunny'}`, `날씨: ${tour.wx ? WX_NAME_KO[tour.wx] : '맑음'}`);
+    $('tour').querySelector('[data-tour="auto"]').textContent = tr(tour.auto ? 'Circling: on' : 'Circling: off', tour.auto ? '자동 회전: 켬' : '자동 회전: 끔');
   }
   function tourDo(what) {
     if (what === 'back') { endTour(); return; }
@@ -2706,34 +2941,34 @@
   function isBusStop(pid) { return pid === 'bus_stop' || rows('items').some(i => i.place === pid && busItem(i)); }
   function placeActions(pid) {
     const out = [], kind = placeKind(pid), pl = place(pid);
-    if (kind === 'sleep') out.push({ key: 'sleep:' + pid, label: 'Sleep', run: () => trySleep(pid) });
-    if (kind === 'eat' && atHome() && RECIPES.length) out.push({ key: 'cook:' + pid, label: 'Cook a meal', run: () => openPanel('cook') });
-    if (kind === 'eat') out.push({ key: 'eat:' + pid, label: 'Eat something', run: () => openPanel('inventory') });
+    if (kind === 'sleep') out.push({ key: 'sleep:' + pid, label: tr('Sleep', '잠자기'), run: () => trySleep(pid) });
+    if (kind === 'eat' && atHome() && RECIPES.length) out.push({ key: 'cook:' + pid, label: tr('Cook a meal', '요리하기'), run: () => openPanel('cook') });
+    if (kind === 'eat') out.push({ key: 'eat:' + pid, label: tr('Eat something', '뭔가 먹기'), run: () => openPanel('inventory') });
     const shut = G && (closedNow(pid) ? pid : closedNow(zoneOfPlace(pid)) ? zoneOfPlace(pid) : null);
-    if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: `Closed · open ${hoursText(shut)}`, run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${pl.name_ko || pl.name}: 영업시간 ${hoursText(shut)}`, 'bad') });
+    if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: tr(`Closed · open ${hoursText(shut)}`, `영업 종료 · ${hoursText(shut)}`), run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${loc(pl)} 영업 종료. 영업시간 ${hoursText(shut)}`, 'bad') });
     else if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
     if (isBusStop(pid) && zoneId === 'city') {
       const nb = G ? nextBus(G.minute) : 0;
-      if (nb == null) out.push({ key: 'bus:' + pid, label: 'No more buses tonight', run: () => toast(`The last bus left at ${clock(hm(CFG.bus_last, 1350))}. You'll have to walk.`, '막차가 떠났어요. 걸어가야 해요.', 'bad', 4) });
-      else out.push({ key: 'bus:' + pid, label: `Take the bus · ${busEvery() ? 'next ' + clock(nb) + ' · ' : ''}${usd2(busFare())}`, run: () => openPanel('bus', pid) });
+      if (nb == null) out.push({ key: 'bus:' + pid, label: tr('No more buses tonight', '오늘 버스 끊김'), run: () => toast(`The last bus left at ${clock(hm(CFG.bus_last, 1350))}. You'll have to walk.`, `막차가 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요. 걸어가야 해요.`, 'bad', 4) });
+      else out.push({ key: 'bus:' + pid, label: tr(`Take the bus · ${busEvery() ? 'next ' + clock(nb) + ' · ' : ''}${usd2(busFare())}`, `버스 타기 · ${busEvery() ? '다음 ' + clockKo(nb) + ' · ' : ''}${usd2(busFare())}`), run: () => openPanel('bus', pid) });
     }
-    if (kind === 'work' || pid === hero().desk) out.push({ key: 'work:' + pid, label: 'Work for an hour', run: () => work() });
-    if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: n ? `Check the mailbox (${n})` : 'Check the mailbox', run: () => openPanel('mailbox') }); }
-    if (TV.length && G && kind === 'tv' && atHome()) out.push({ key: 'tv:' + pid, label: 'Watch TV', run: () => sitForTv(pid) });
-    if (RADIO.length && G && kind === 'desk' && atHome()) out.push({ key: 'radio:' + pid, label: `Turn on the radio (${STATION})`, run: () => openPanel('radio') });
+    if ((kind === 'work' || pid === hero().desk) && !fired()) out.push({ key: 'work:' + pid, label: tr('Work for an hour', '한 시간 일하기'), run: () => workHour() });
+    if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: tr('Check the mailbox', '우편함 보기') + (n ? ` (${n})` : ''), run: () => openPanel('mailbox') }); }
+    if (TV.length && G && kind === 'tv' && atHome()) out.push({ key: 'tv:' + pid, label: tr('Watch TV', 'TV 보기'), run: () => sitForTv(pid) });
+    if (RADIO.length && G && kind === 'desk' && atHome()) out.push({ key: 'radio:' + pid, label: tr(`Turn on the radio (${STATION})`, `라디오 켜기 (${STATION})`), run: () => openPanel('radio') });
     if (G && zoneId === hero().home_zone && kind === 'door' && ITEMS.detergent) out.push({ key: 'laundry:' + pid + cleanClothes(), label: laundryLabel(), run: () => doLaundry() });
-    if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: 'Go for a jog', run: () => startJog(true) });
-    if (kind === 'seat') out.push({ key: 'sit:' + pid, label: 'Sit down', run: () => { player.sit = true; play(player, 'sit'); } });
+    if (window.SO_JOG && G && zoneId === hero().home_zone && kind === 'door') out.push({ key: 'jog:' + pid, label: tr('Go for a jog', '조깅하기'), run: () => startJog(true) });
+    if (kind === 'seat') out.push({ key: 'sit:' + pid, label: tr('Sit down', '앉기'), run: () => { player.sit = true; play(player, 'sit'); } });
     return out;
   }
   function shopLabel(pid, pl) {
     const its = itemsAt(pid);
-    if (its.every(i => i.kind === 'fare')) return 'Pay: ' + its[0].name;
-    if (its.length === 1) return 'Buy: ' + its[0].name;
-    if (/coffee|cafe/.test(pid)) return 'Order a drink';
-    if (/diner|restaurant|kitchen/.test(pid)) return 'Order food';
-    if (/market|shelves/.test(pid)) return 'Shop for groceries';
-    return 'Buy at ' + pl.name;
+    if (its.every(i => i.kind === 'fare')) return tr('Pay: ' + its[0].name, '내기: ' + loc(its[0]));
+    if (its.length === 1) return tr('Buy: ' + its[0].name, '사기: ' + loc(its[0]));
+    if (/coffee|cafe/.test(pid)) return tr('Order a drink', '음료 주문');
+    if (/diner|restaurant|kitchen/.test(pid)) return tr('Order food', '음식 주문');
+    if (/market|shelves/.test(pid)) return tr('Shop for groceries', '장보기');
+    return tr('Buy at ' + pl.name, loc(pl) + '에서 사기');
   }
   function computeActions() {
     if (state !== 'play' || busy || !player || !Z) return [];
@@ -2743,15 +2978,15 @@
       const d = Math.hypot(a.pos.x - player.pos.x, a.pos.z - player.pos.z);
       if (d > TALK_R || a.leaving) return;
       const ep = open.find(e => e.npc === a.id && !isPhone(e));
-      if (ep) list.push({ d: d - 1, key: 'ep:' + ep.id, label: `Talk to ${a.name.split(' ')[0]}: ${ep.title}${+ep.reward < 0 ? ` (${usd2(-ep.reward)})` : ''}`, run: () => beginEpisode(ep, a) });
-      else list.push({ d: d + 0.3, key: 'chat:' + a.id, label: `Chat with ${a.name.split(' ')[0]}`, run: () => chatter(a) });
+      if (ep) list.push({ d: d - 1, key: 'ep:' + ep.id, label: tr(`Talk to ${a.name.split(' ')[0]}: ${ep.title}`, `${firstName(npcRow(a.id))}에게 말 걸기: ${loc(ep, 'title')}`) + (+ep.reward < 0 ? ` (${usd2(-ep.reward)})` : ''), run: () => beginEpisode(ep, a) });
+      else list.push({ d: d + 0.3, key: 'chat:' + a.id, label: tr(`Chat with ${a.name.split(' ')[0]}`, `${josa(firstName(npcRow(a.id)), '과', '와')} 잡담`), run: () => chatter(a) });
     });
     Object.keys(Z.places).forEach(pid => {
       const pl = Z.places[pid];
       if (!pl || !pl.at) return;
       const d = Math.hypot(pl.at[0] - player.pos.x, pl.at[1] - player.pos.z);
       if (d > PLACE_R) return;
-      open.filter(e => isPhone(e) && e.place === pid).forEach(ep => list.push({ d: d - 1, key: 'ep:' + ep.id, label: `Phone ${npcRow(ep.npc).name.split(' ')[0]}: ${ep.title}`, run: () => beginEpisode(ep, null) }));
+      open.filter(e => isPhone(e) && e.place === pid).forEach(ep => list.push({ d: d - 1, key: 'ep:' + ep.id, label: tr(`Phone ${npcRow(ep.npc).name.split(' ')[0]}: ${ep.title}`, `${firstName(npcRow(ep.npc))}에게 전화: ${loc(ep, 'title')}`), run: () => beginEpisode(ep, null) }));
       placeActions(pid).forEach((a, i) => list.push(Object.assign({ d: d + 0.1 + i * 0.01 }, a)));
     });
     list.sort((a, b) => a.d - b.d);
@@ -2775,11 +3010,11 @@
   function chatter(a) {
     a.chatAt = elapsed;
     const c = remark(a);
-    say(a, personal(c.line), c.line_ko, 3.5);
+    say(a, personal(c.line), c.line_ko && personalKo(c.line_ko), 3.5);
     speak(personal(c.line), voiceOf(a.row));
     play(a, 'interact-right', { once: true });
   }
-  function work() {
+  function workHour() {
     advanceMinutes(60);
     toast('You worked for an hour.', '한 시간 일했어요.', null, 2.4);
     player.sit = true;
@@ -2792,18 +3027,21 @@
   // ---------------------------------------------------------------- conversations: an episode's turns
   const dlg = $('dialog');
   let talk = null;          // { ep, turns, idx, actor, misses }
-  const personal = (s) => s == null ? '' : String(s).replace(/\{name\}/g, G ? G.name : heroOf(DEFAULT_HERO).name);
+  const personal = (s) => s == null ? '' : String(s).replace(/\{name\}/g, G ? G.name : heroOf(DEFAULT_HERO).name);          // English: shown and spoken
+  const personalKo = (s) => s == null ? '' : String(s).replace(/\{name\}/g, (G ? hero() : heroOf(DEFAULT_HERO)).name_ko || (G ? G.name : ''));
+  const shown = (en, ko) => KO() && ko ? personalKo(ko) : personal(en);          // a line on the screen, in its language
+  const myName = () => !G ? '' : KO() && hero().name_ko ? hero().name_ko : G.name;
   function speakerOf(id) {
     if (!id) return talk && talk.actor;
     if (id === 'player' || id === 'you') return player;
     return npcActors[id] || (talk && talk.ep.npc === id ? talk.actor : null);
   }
-  const speakerName = (id) => !id ? (talk ? npcRow(talk.ep.npc).name : '') : (id === 'player' || id === 'you') ? (G ? G.name : 'You') : npcRow(id).name;
+  const speakerName = (id) => !id ? (talk ? fullName(npcRow(talk.ep.npc)) : '') : (id === 'player' || id === 'you') ? myName() : fullName(npcRow(id));
   function beginEpisode(ep, actor) {
-    if (+ep.reward < 0 && G.money + +ep.reward < 0) { toast(`You can't afford this (${usd2(-ep.reward)}).`, '돈이 부족해요.', 'bad'); return; }
+    if (+ep.reward < 0 && G.money + +ep.reward < 0) { toast(`You can't afford this (${usd2(-ep.reward)}).`, `돈이 부족해요 (${usd2(-ep.reward)}).`, 'bad'); return; }
     const turns = TURNS[ep.id] || [];
     actor = actor || npcActors[ep.npc] || null;
-    talk = { ep, turns, idx: 0, actor, misses: 0 };
+    talk = { ep, turns, idx: 0, actor, misses: 0, points: 0, best: 0 };
     state = 'talk';
     goalTarget = null;
     hideBubbles();
@@ -2816,72 +3054,83 @@
     $('side').hidden = true;
     showTurn();
   }
+  // A turn: the line, what you want to get across (the prompt), and four things you could say: the right one and three
+  // that sound fine but miss (a wrong fact, the wrong tone for the person, or not what was asked). A wrong one gets a
+  // reaction (turns.reactions) and you pick again; points go by how many tries it took (TURN_POINTS).
+  const TURN_POINTS = [10, 5, 2, 0];
+  const turnText = (t, k) => shown(t[k], t[k + '_ko']);
+  const choiceText = (t, i) => i < 0 ? turnText(t, 'model') : shown((t.distractors || [])[i], (t.distractors_ko || [])[i]);
   function showTurn() {
     const t = talk.turns[talk.idx];
     talk.misses = 0;
+    talk.wrong = [];
+    talk.showing = 'line';
+    talk.fb = null;
+    talk.order = shuffle([-1].concat((t.distractors || []).slice(0, 3).map((_, i) => i)));
     dlg.classList.remove('answered');
-    dlg.querySelector('.ep').textContent = talk.ep.title;
-    dlg.querySelector('.step').textContent = `${talk.idx + 1} / ${talk.turns.length}`;
-    dlg.querySelector('.situation').textContent = personal(t.situation);
-    dlg.querySelector('.situation-ko').textContent = t.situation_ko || '';
-    dlg.querySelector('.who').textContent = speakerName(t.speaker) + ':';
-    dlg.querySelector('.say').textContent = personal(t.line);
-    dlg.querySelector('.line-ko').textContent = '';
-    dlg.querySelector('.prompt').textContent = personal(t.prompt);
-    dlg.querySelector('.prompt-ko').textContent = t.prompt_ko || '';
-    feedback('', '');
-    const model = personal(t.model);
-    const box = dlg.querySelector('.choices');
-    box.innerHTML = '';
-    shuffle([model].concat((t.distractors || []).slice(0, 3).map(personal))).forEach(text => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = text;
-      b.addEventListener('click', () => {
-        if (dlg.classList.contains('answered')) return;
-        if (text === model) { b.classList.add('right'); answered(text); }
-        else { b.classList.add('wrong'); b.disabled = true; feedback('miss', 'Not quite. Read the situation again.', '상황을 다시 읽어 보세요.'); }
-      });
-      box.appendChild(b);
-    });
-    dlg.querySelector('.typing input').value = '';
+    relangTurn();
     dlg.querySelector('.leave').hidden = false;
     dlg.querySelector('.next').hidden = true;
-    setMode(settings.mode === 'choose' ? 'choose' : 'type');
     const who = speakerOf(t.speaker);
-    if (who && who !== player) { say(who, personal(t.line), null, 4); play(who, 'interact-right', { once: true }); }
+    if (who && who !== player) { say(who, personal(t.line), t.line_ko && personalKo(t.line_ko), 4); play(who, 'interact-right', { once: true }); }
     speak(personal(t.line), voiceOf(npcRow(t.speaker || talk.ep.npc)));
-    if (!model && !(t.answers || []).length) { dlg.classList.add('answered'); showNext(); }
   }
-  function setMode(mode) {
-    settings.mode = mode;
-    saveSettings();
-    dlg.dataset.mode = mode;
-    dlg.querySelectorAll('.mode button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === mode)));
-    if (mode === 'type' && !dlg.classList.contains('answered') && !document.body.classList.contains('touch')) setTimeout(() => dlg.querySelector('.typing input').focus(), 0);
+  // what the conversation window shows, in the language of the screen (again when the language changes)
+  function relangTurn() {
+    const t = talk.turns[talk.idx];
+    if (!t) return;
+    dlg.querySelector('.ep').textContent = loc(talk.ep, 'title');
+    dlg.querySelector('.step').textContent = `${talk.idx + 1} / ${talk.turns.length}`;
+    dlg.querySelector('.situation').textContent = turnText(t, 'situation');
+    const reply = talk.showing === 'reply', rs = t.reply_speaker || t.speaker;
+    dlg.querySelector('.who').textContent = speakerName(reply ? rs : t.speaker) + ':';
+    dlg.querySelector('.say').textContent = reply ? shown(t.reply_line, t.reply_ko) : turnText(t, 'line');
+    dlg.querySelector('.prompt').textContent = turnText(t, 'prompt');
+    renderChoices();
+    if (talk.fb) feedback(talk.fb[0], talk.fb[1], talk.fb[2]); else feedback('', '');
+    const next = dlg.querySelector('.next');
+    next.textContent = talk.idx + 1 < talk.turns.length ? tr('Continue ▸', '계속 ▸') : tr('Finish ▸', '마치기 ▸');
+  }
+  function renderChoices() {
+    const t = talk.turns[talk.idx], box = dlg.querySelector('.choices');
+    box.innerHTML = '';
+    talk.order.forEach(i => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = choiceText(t, i);
+      if (talk.wrong.includes(i)) { b.classList.add('wrong'); b.disabled = true; }
+      b.addEventListener('click', () => pick(i));
+      box.appendChild(b);
+    });
   }
   function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
   function feedback(kind, en, ko) {
     const f = dlg.querySelector('.feedback');
     f.className = 'feedback ' + kind;
-    f.innerHTML = en ? esc(en) + (ko ? `<span class="ko">${esc(ko)}</span>` : '') : '';
+    f.textContent = en ? tr(en, ko) : '';
+    if (talk) talk.fb = en ? [kind, en, ko] : null;
   }
-  dlg.querySelector('.typing').addEventListener('submit', (e) => {
-    e.preventDefault();
+  // you said something that missed: you hear yourself, then how it went down
+  function pick(i) {
     if (!talk || dlg.classList.contains('answered')) return;
+    if (i < 0) { answered(); return; }
     const t = talk.turns[talk.idx];
-    const input = dlg.querySelector('.typing input');
-    const text = input.value.trim();
-    if (!text) return;
-    const same = M.normalize(text) === M.normalize(personal(t.model));
-    if (same || !(t.answers || []).length || M.match(text, t.answers)) { answered(text); return; }
+    if (talk.wrong.includes(i)) return;
     talk.misses++;
-    const hints = t.hints || [], hko = t.hints_ko || [];
-    if (talk.misses >= 3) feedback('miss', `Try saying: "${personal(t.model)}"`, '예시 답을 따라 입력해 보세요.');
-    else feedback('miss', 'Hint: ' + (hints[talk.misses - 1] || hints[0] || M.skeleton(t.model)), hko[talk.misses - 1] || hko[0] || '');
-    input.select();
-  });
-  dlg.querySelectorAll('.mode button').forEach(b => b.addEventListener('click', () => setMode(b.dataset.mode)));
+    talk.wrong.push(i);
+    renderChoices();
+    const said = personal((t.distractors || [])[i]);
+    say(player, said, personalKo((t.distractors_ko || [])[i] || ''), 3);
+    speak(said, heroVoice());
+    play(player, 'emote-no', { once: true });
+    const re = personal((t.reactions || [])[i] || ''), reKo = personalKo((t.reactions_ko || [])[i] || '');
+    const name = speakerName(t.speaker).split(' ')[0], nameEn = npcRow(t.speaker || talk.ep.npc).name.split(' ')[0];
+    if (!re) { feedback('miss', "That didn't come out right. Try something else.", '말이 잘못 나갔어요. 다른 말을 골라 보세요.'); return; }
+    feedback('miss', `${nameEn}: “${re}”`, `${name}: “${reKo || re}”`);
+    const who = speakerOf(t.speaker);
+    if (who && who !== player) { say(who, re, reKo, 3.6); play(who, 'emote-no', { once: true }); }
+    speak(re, voiceOf(npcRow(t.speaker || talk.ep.npc)), true);
+  }
   dlg.querySelector('.leave').addEventListener('click', () => { endTalk(); toast('You can pick up the conversation later.', '나중에 다시 이야기할 수 있어요.', null, 2.4); });
   function endTalk() {
     dlg.hidden = true;
@@ -2892,25 +3141,27 @@
     goalTimer = 0;
   }
   let replyTimer = null;
-  function answered(text) {
-    const t = talk.turns[talk.idx], mine = talk;
-    (talk.said = talk.said || [])[talk.idx] = text;          // kept for Menu > Conversations
+  function answered() {
+    const t = talk.turns[talk.idx], mine = talk, text = personal(t.model);
+    const pts = TURN_POINTS[Math.min(talk.misses, TURN_POINTS.length - 1)];
+    talk.points += pts;
+    talk.best += TURN_POINTS[0];
+    addScore(pts, `${talk.ep.title} (${talk.idx + 1})`, `${talk.ep.title_ko || talk.ep.title} (${talk.idx + 1})`);
     dlg.classList.add('answered');
     dlg.querySelector('.leave').hidden = true;
-    say(player, text, null, 3.4);
+    say(player, text, t.model_ko && personalKo(t.model_ko), 3.4);
     speak(text, heroVoice());          // you say it aloud, in your own voice; the reply waits for you to finish
     play(player, 'emote-yes', { once: true });
-    feedback('ok', '✓ ' + text);
+    feedback('ok', `✓ ${text}  +${pts}`, `✓ ${turnText(t, 'model')}  +${pts}`);
     clearTimeout(replyTimer);
     replyTimer = setTimeout(() => {
       if (talk !== mine) return;
       if (t.reply_line) {
         const rs = t.reply_speaker || t.speaker;
-        dlg.querySelector('.who').textContent = speakerName(rs) + ':';
-        dlg.querySelector('.say').textContent = personal(t.reply_line);
-        dlg.querySelector('.line-ko').textContent = t.reply_ko || '';
+        talk.showing = 'reply';
+        relangTurn();
         const who = speakerOf(rs);
-        if (who && who !== player) { say(who, personal(t.reply_line), null, 4.5); play(who, 'interact-left', { once: true }); }
+        if (who && who !== player) { say(who, personal(t.reply_line), t.reply_ko && personalKo(t.reply_ko), 4.5); play(who, 'interact-left', { once: true }); }
         speak(personal(t.reply_line), voiceOf(npcRow(rs || talk.ep.npc)), true);
       }
       showNext();
@@ -2918,7 +3169,7 @@
   }
   function showNext() {
     const next = dlg.querySelector('.next');
-    next.textContent = talk && talk.idx + 1 < talk.turns.length ? 'Continue ▸' : 'Finish ▸';
+    next.textContent = talk && talk.idx + 1 < talk.turns.length ? tr('Continue ▸', '계속 ▸') : tr('Finish ▸', '마치기 ▸');
     next.hidden = false;
     next.focus();
   }
@@ -2928,25 +3179,25 @@
     if (talk.idx < talk.turns.length) showTurn(); else completeEpisode();
   });
   function completeEpisode() {
-    const ep = talk.ep;
+    const ep = talk.ep, got = talk.points, best = talk.best;
     dlg.hidden = true;
     $('side').hidden = false;
-    if (talk.said && talk.said.length) (G.said = G.said || {})[ep.id] = talk.said.map(x => x == null ? null : String(x).slice(0, 200));
     talk = null;
     G.done[ep.id] = true;
-    if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend');
+    (G.epScore = G.epScore || {})[ep.id] = [got, best];
+    if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend', { ko: ep.title_ko });
     if (ep.energy) G.energy = clamp(G.energy + +ep.energy, 0, E_MAX);
-    const learned = rows('phrases').filter(p => p.episode === ep.id && !G.phrases.includes(p.id));
-    learned.forEach(p => G.phrases.push(p.id));
-    logEvent('episode', ep.title, 0, { id: ep.id });
+    rows('phrases').filter(p => p.episode === ep.id && !G.phrases.includes(p.id)).forEach(p => G.phrases.push(p.id));
+    logEvent('episode', ep.title, 0, { id: ep.id, ko: ep.title_ko });
     saveGame();
     npcSig = '';
     const body = [];
-    if (ep.summary) body.push(`<p>${esc(personal(ep.summary))}</p>${ep.summary_ko ? `<p class="ko">${esc(ep.summary_ko)}</p>` : ''}`);
-    if (+ep.reward > 0) body.push(`<p><b>${usd2(+ep.reward)}</b> added to your account.</p>`);
-    if (+ep.reward < 0) body.push(`<p>You paid <b>${usd2(-ep.reward)}</b>. Balance: ${usd2(G.money)}.</p>`);
-    if (learned.length) body.push(`<p><b>Expressions to remember</b> <small>(kept with the conversation: Menu &gt; Conversations)</small></p>` + phraseRows(learned));
-    showCard({ kicker: 'Conversation complete', title: ep.title, body: body.join(''), ok: 'Continue', state: 'card' }, () => { goalTimer = 0; });
+    if (ep.summary) body.push(`<p>${esc(shown(ep.summary, ep.summary_ko))}</p>`);
+    if (best) body.push(`<p class="score-line">★ <b>+${got}</b> ${tr(`of ${best} points${got === best ? ': you got every turn right the first time.' : '.'}`, `/ ${best}점${got === best ? ': 모든 말을 한 번에 맞게 했어요.' : '.'}`)} ${tr('Score', '점수')} <b>${score()}</b></p>`);
+    if (+ep.reward > 0) body.push(tr(`<p><b>${usd2(+ep.reward)}</b> added to your account.</p>`, `<p>계좌에 <b>${usd2(+ep.reward)}</b>가 들어왔어요.</p>`));
+    if (+ep.reward < 0) body.push(tr(`<p>You paid <b>${usd2(-ep.reward)}</b>. Balance: ${usd2(G.money)}.</p>`, `<p><b>${usd2(-ep.reward)}</b>를 냈어요. 잔액: ${usd2(G.money)}.</p>`));
+    if (!G.mission && G.day <= MISSION_DAYS) { const [got, all] = missionCount(); if (all) body.push(`<p class="score-line">${tr('Missions', '미션')} <b>${got} / ${all}</b>${got === all ? tr(' · all done!', ' · 모두 완료!') : ''}</p>`); }
+    showCard({ kicker: tr('Conversation complete', '대화 끝'), title: loc(ep, 'title'), body: body.join(''), ok: tr('Continue', '계속'), state: 'card' }, () => { goalTimer = 0; checkMissions(); });
   }
 
   // ---------------------------------------------------------------- panels: shop, bus, inventory, conversations, calendar
@@ -2975,157 +3226,181 @@
   }
   panel.querySelector('.close').addEventListener('click', closePanel);
   function note(text, bad) { const n = panel.querySelector('.panel-note'); n.textContent = text; n.className = 'panel-note' + (bad ? ' bad' : ''); }
-  function phraseRows(list) {
-    return list.map(p => `<div class="row"><button type="button" class="play" data-say="${esc(p.text)}" aria-label="Play">▶</button>
-      <div class="main"><div class="t">${esc(personal(p.text))}</div><div class="s">${esc(p.meaning_ko || '')}${p.note ? ' · ' + esc(p.note) : ''}</div>${p.note_ko ? `<div class="s ko">${esc(p.note_ko)}</div>` : ''}</div></div>`).join('');
-  }
   function renderPanel() {
     const h = panel.querySelector('h2'), sub = panel.querySelector('.sub'), body = panel.querySelector('.panel-body');
-    sub.textContent = 'Balance ' + usd2(G.money);
+    sub.textContent = tr('Balance ', '잔액 ') + usd2(G.money);
     panel.classList.toggle('wide', panelKind === 'tv');
     if (panelKind === 'shop') {
-      h.textContent = place(panelArg).name;
-      body.innerHTML = itemsAt(panelArg).map(i => `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
-        <div class="main"><div class="t">${esc(i.name)}</div><div class="s">${esc(i.name_ko || '')}${i.energy ? ` · energy +${i.energy}` : ''}${/meal|drink/.test(i.kind) ? ' · eat now' : i.kind === 'fare' ? '' : ' · to your bag'}${i.kind === 'gear' && G.inventory[i.id] ? ' · you have one' : ''}${usesOf(i) > 1 ? ` · ${usesOf(i)} ${i.kind === 'gear' ? 'uses' : 'portions'}` : ''}${+i.shelf_days > 0 ? ` · keeps ${+i.shelf_days} days` : ''}${+i.cook_only ? ' · needs cooking' : ''}${i.note ? ' · ' + esc(i.note) : ''}</div></div>
-        <span class="price">${onTheHouse(i) ? `<s>${usd2(+i.price)}</s> Free` : +i.price ? usd2(+i.price) : 'Free'}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? 'Pay' : /meal|drink/.test(i.kind) && !+i.price ? 'Take' : 'Buy'}</button></div>`).join('') || '<p class="empty">Nothing for sale here.</p>';
+      h.textContent = loc(place(panelArg));
+      body.innerHTML = itemsAt(panelArg).map(i => {
+        const facts = KO() ? [i.energy ? `에너지 +${i.energy}` : '', /meal|drink/.test(i.kind) ? '바로 먹음' : i.kind === 'fare' ? '' : '가방에 넣음', i.kind === 'gear' && G.inventory[i.id] ? '이미 있음' : '',
+          usesOf(i) > 1 ? `${usesOf(i)}${i.kind === 'gear' ? '회' : '회분'}` : '', +i.shelf_days > 0 ? `${+i.shelf_days}일 보관` : '', +i.cook_only ? '익혀 먹어야 함' : '', i.note_ko || i.note || '']
+          : [i.energy ? `energy +${i.energy}` : '', /meal|drink/.test(i.kind) ? 'eat now' : i.kind === 'fare' ? '' : 'to your bag', i.kind === 'gear' && G.inventory[i.id] ? 'you have one' : '',
+            usesOf(i) > 1 ? `${usesOf(i)} ${i.kind === 'gear' ? 'uses' : 'portions'}` : '', +i.shelf_days > 0 ? `keeps ${+i.shelf_days} days` : '', +i.cook_only ? 'needs cooking' : '', i.note || ''];
+        return `<div class="row"><button type="button" class="play" data-say="${esc(i.name)}" aria-label="Say it">▶</button>
+        <div class="main"><div class="t">${esc(loc(i))}</div><div class="s">${esc(facts.filter(Boolean).join(' · '))}</div></div>
+        <span class="price">${onTheHouse(i) ? `<s>${usd2(+i.price)}</s> ${tr('Free', '무료')}` : +i.price ? usd2(+i.price) : tr('Free', '무료')}</span><button type="button" data-buy="${esc(i.id)}">${i.kind === 'fare' ? tr('Pay', '내기') : /meal|drink/.test(i.kind) && !+i.price ? tr('Take', '받기') : tr('Buy', '사기')}</button></div>`; }).join('') || `<p class="empty">${tr('Nothing for sale here.', '여기서 파는 게 없어요.')}</p>`;
       const list = itemsAt(panelArg);
       let top = '';
-      if (tipAsked(panelArg)) top += `<div class="row tips"><div class="main"><div class="t">Add a tip?</div><div class="s">${tableService(panelArg) ? '15 to 20% is usual when you are served at a table' : 'Up to you at a counter'}<span class="ko"> · ${tableService(panelArg) ? '자리에서 서빙을 받으면 보통 15~20%' : '카운터에서는 선택'}</span></div></div>
-        <div class="mode" role="group" aria-label="Tip">${TIPS.map(t => `<button type="button" data-tip="${t}" aria-pressed="${Math.abs(tipRate(panelArg) * 100 - t) < 0.01}">${t ? t + '%' : 'No tip'}</button>`).join('')}</div></div>`;
+      if (tipAsked(panelArg)) top += `<div class="row tips"><div class="main"><div class="t">${tr('Add a tip?', '팁을 줄까요?')}</div><div class="s">${tableService(panelArg) ? tr('15 to 20% is usual when you are served at a table', '자리에서 서빙을 받으면 보통 15~20%') : tr('Up to you at a counter', '카운터에서는 선택')}</div></div>
+        <div class="mode" role="group" aria-label="Tip">${TIPS.map(t => `<button type="button" data-tip="${t}" aria-pressed="${Math.abs(tipRate(panelArg) * 100 - t) < 0.01}">${t ? t + '%' : tr('No tip', '팁 없음')}</button>`).join('')}</div></div>`;
       if (list.some(punchable)) { const n = punches(panelArg);
-        top += `<div class="row punch"><div class="main"><div class="t">Punch card <span class="dots">${'●'.repeat(Math.min(n, PUNCH_N - 1))}${'○'.repeat(Math.max(0, PUNCH_N - 1 - n))}</span></div><div class="s">${n >= PUNCH_N - 1 ? 'Your next drink is on the house!' : `Buy ${PUNCH_N - 1} drinks, get the next one free`}<span class="ko"> · ${n >= PUNCH_N - 1 ? '다음 음료는 무료예요!' : `음료 ${PUNCH_N - 1}잔을 사면 다음 한 잔은 무료`}</span></div></div></div>`; }
-      if (TAX && list.some(taxed)) top += `<p class="fine">Prices do not include ${pct(TAX)} sales tax.${list.some(i => !taxed(i)) ? ' Groceries are not taxed.' : ''}<span class="ko"> 표시 가격에는 판매세 ${pct(TAX)}가 빠져 있어요.</span></p>`;
-      else if (list.length && list.every(i => i.kind === 'grocery')) top += `<p class="fine">No sales tax on groceries in ${esc(CFG.city)}.<span class="ko"> ${esc(CFG.city)}에서는 식료품에 판매세가 없어요.</span></p>`;
+        top += `<div class="row punch"><div class="main"><div class="t">${tr('Punch card', '스탬프 카드')} <span class="dots">${'●'.repeat(Math.min(n, PUNCH_N - 1))}${'○'.repeat(Math.max(0, PUNCH_N - 1 - n))}</span></div><div class="s">${n >= PUNCH_N - 1 ? tr('Your next drink is on the house!', '다음 음료는 무료예요!') : tr(`Buy ${PUNCH_N - 1} drinks, get the next one free`, `음료 ${PUNCH_N - 1}잔을 사면 다음 한 잔은 무료`)}</div></div></div>`; }
+      if (TAX && list.some(taxed)) top += `<p class="fine">${tr(`Prices do not include ${pct(TAX)} sales tax.${list.some(i => !taxed(i)) ? ' Groceries are not taxed.' : ''}`, `표시 가격에는 판매세 ${pct(TAX)}가 빠져 있어요.${list.some(i => !taxed(i)) ? ' 식료품은 면세예요.' : ''}`)}</p>`;
+      else if (list.length && list.every(i => i.kind === 'grocery')) top += `<p class="fine">${tr(`No sales tax on groceries in ${esc(CFG.city)}.`, `${esc(CFG.city)}에서는 식료품에 판매세가 없어요.`)}</p>`;
       body.innerHTML = top + body.innerHTML;
     } else if (panelKind === 'bus') {
-      h.textContent = 'Bus';
+      h.textContent = tr('Bus', '버스');
       const here = panelArg;
       const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || portalsOf(Z).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
       const pass = rows('items').find(i => busItem(i) && /pass/.test(i.id));
       const nb = nextBus(G.minute), every = busEvery(), off = isWeekend(G.day) || dayOff(G.day);
-      const times = every ? `<p class="fine">${nb == null ? `No more buses tonight: the last one left at ${clock(hm(CFG.bus_last, 1350))}.` : `Next bus at <b>${clock(nb)}</b>${nb - G.minute >= 1 ? `, in ${Math.ceil(nb - G.minute)} min` : ', boarding now'}.`}
-        Every ${every} minutes ${off ? (dayOff(G.day) ? 'today (holiday timetable)' : 'on weekends') : 'on weekdays'}, ${clock(hm(CFG.bus_first, 360))} – ${clock(hm(CFG.bus_last, 1350))}.<span class="ko"> ${off ? '주말·공휴일' : '평일'}에는 ${every}분마다 다닙니다. 다음 버스를 기다렸다가 탑니다.</span></p>` : '';
-      body.innerHTML = times + stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')} · about 15 minutes</div></div>
-        <span class="price">${hasPass() ? 'Pass' : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}" ${nb == null ? 'disabled' : ''}>Ride</button></div>`).join('') || '<p class="empty">No stops on this line.</p>';
-      if (pass && !hasPass()) body.innerHTML += `<div class="row"><div class="main"><div class="t">${esc(pass.name)}</div><div class="s">${esc(pass.name_ko || '')}${pass.note ? ' · ' + esc(pass.note) : ''}</div></div>
-        <span class="price">${usd2(+pass.price)}</span><button type="button" data-pass="${esc(pass.id)}">Buy</button></div>`;
+      const times = every ? `<p class="fine">${tr(`${nb == null ? `No more buses tonight: the last one left at ${clock(hm(CFG.bus_last, 1350))}.` : `Next bus at <b>${clock(nb)}</b>${nb - G.minute >= 1 ? `, in ${Math.ceil(nb - G.minute)} min` : ', boarding now'}.`}
+        Every ${every} minutes ${off ? (dayOff(G.day) ? 'today (holiday timetable)' : 'on weekends') : 'on weekdays'}, ${clock(hm(CFG.bus_first, 360))} – ${clock(hm(CFG.bus_last, 1350))}.`,
+        `${nb == null ? `오늘 버스는 끊겼어요. 막차는 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요.` : `다음 버스 <b>${clockKo(nb)}</b>${nb - G.minute >= 1 ? ` (${Math.ceil(nb - G.minute)}분 뒤)` : ' (지금 탑승 중)'}.`}
+        ${off ? (dayOff(G.day) ? '오늘은 공휴일 시간표로' : '주말에는') : '평일에는'} ${every}분마다, ${clockKo(hm(CFG.bus_first, 360))}~${clockKo(hm(CFG.bus_last, 1350))}.`)}</p>` : '';
+      body.innerHTML = times + stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(loc(place(pid)))}</div><div class="s">${tr('about 15 minutes', '약 15분')}</div></div>
+        <span class="price">${hasPass() ? tr('Pass', '정기권') : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}" ${nb == null ? 'disabled' : ''}>${tr('Ride', '타기')}</button></div>`).join('') || `<p class="empty">${tr('No stops on this line.', '이 노선에는 정류장이 없어요.')}</p>`;
+      if (pass && !hasPass()) body.innerHTML += `<div class="row"><div class="main"><div class="t">${esc(loc(pass))}</div><div class="s">${esc(tr(pass.note || '', pass.note_ko))}</div></div>
+        <span class="price">${usd2(+pass.price)}</span><button type="button" data-pass="${esc(pass.id)}">${tr('Buy', '사기')}</button></div>`;
     } else if (panelKind === 'inventory') {
-      h.textContent = 'Inventory';
+      h.textContent = tr('Inventory', '가방');
       const canEat = zoneId === hero().home_zone || zoneId === 'hotel';
       const all = lots().map((l, n) => ({ l, n })).filter(x => x.l.left > 0).sort((a, b) => (gone(b.l) - gone(a.l)) || ((bestBy(a.l) || 999) - (bestBy(b.l) || 999)) || String(a.l.id).localeCompare(b.l.id));
-      sub.textContent = `${all.length} item${all.length === 1 ? '' : 's'}`;
-      const closet = ITEMS.detergent ? `<p class="fine">👕 Clean clothes: <b>${cleanClothes()} of ${CLOSET}</b> outfits${G.dirtyDay === G.day ? " (you're wearing yesterday's)" : ''}. Do laundry at the door of your home.<span class="ko"> 깨끗한 옷 ${cleanClothes()}벌. 빨래는 집 현관에서 합니다.</span></p>` : '';
-      const head = closet + (RECIPES.length && all.length ? `<p class="fine">${atHome() ? '<button type="button" data-cook-open="1">Cook a meal</button> ' : ''}Groceries keep for a while, then go bad. Some need cooking: use the kitchen at home.<span class="ko"> 식료품은 기한이 지나면 상합니다. 익혀야 먹는 것은 집 부엌에서 요리하세요.</span></p>` : '');
+      sub.textContent = tr(`${all.length} item${all.length === 1 ? '' : 's'}`, `${all.length}개`);
+      const closet = ITEMS.detergent ? `<p class="fine">${tr(`👕 Clean clothes: <b>${cleanClothes()} of ${CLOSET}</b> outfits${G.dirtyDay === G.day ? " (you're wearing yesterday's)" : ''}. Do laundry at the door of your home.`, `👕 깨끗한 옷: <b>${CLOSET}벌 중 ${cleanClothes()}벌</b>${G.dirtyDay === G.day ? ' (어제 옷을 입고 있어요)' : ''}. 빨래는 집 현관에서 합니다.`)}</p>` : '';
+      const head = closet + (RECIPES.length && all.length ? `<p class="fine">${atHome() ? `<button type="button" data-cook-open="1">${tr('Cook a meal', '요리하기')}</button> ` : ''}${tr('Groceries keep for a while, then go bad. Some need cooking: use the kitchen at home.', '식료품은 기한이 지나면 상합니다. 익혀야 먹는 것은 집 부엌에서 요리하세요.')}</p>` : '');
       body.innerHTML = head + all.map(({ l, n }) => {
         const i = ITEMS[l.id] || { id: l.id, name: pretty(l.id), energy: 0 }, by = bestBy(l), bad = gone(l), u = usesOf(i);
-        const when = by == null ? '' : bad ? `went bad after ${dateShort(by).replace(/^\w+, /, '')}` : by === G.day ? 'best by today' : by === G.day + 1 ? 'best by tomorrow' : `best by ${dateShort(by)}`;
-        const btn = bad ? `<button type="button" class="danger" data-toss="${n}">Throw out</button>`
-          : +i.cook_only ? '<span class="price">Needs cooking</span>'
-            : i.energy ? `<button type="button" data-eat="${n}" ${canEat ? '' : 'disabled'}>${canEat ? 'Eat' : 'Eat at home'}</button>` : '';
-        return `<div class="row${bad ? ' bad' : by != null && by <= G.day + 1 ? ' soon' : ''}"><div class="main"><div class="t">${esc(i.name)}</div>
-          <div class="s">${esc(i.name_ko || '')}${u > 1 ? ` · ${l.left} of ${u} ${i.kind === 'gear' ? 'uses' : 'portions'} left` : ''}${i.energy && !bad && !+i.cook_only ? ` · energy +${i.energy}` : ''}${when ? ` · <span class="by">${esc(when)}</span>` : ''}</div></div>${btn}</div>`; }).join('')
-        || '<p class="empty">Your bag is empty. Groceries you buy at the market go here.</p>';
+        const when = by == null ? '' : bad ? tr(`went bad after ${dateShort(by).replace(/^\w+, /, '')}`, `${dMonth(by)} 지나 상함`) : by === G.day ? tr('best by today', '오늘까지') : by === G.day + 1 ? tr('best by tomorrow', '내일까지') : tr(`best by ${dateShort(by)}`, `${dShort(by)}까지`);
+        const btn = bad ? `<button type="button" class="danger" data-toss="${n}">${tr('Throw out', '버리기')}</button>`
+          : +i.cook_only ? `<span class="price">${tr('Needs cooking', '익혀야 함')}</span>`
+            : i.energy ? `<button type="button" data-eat="${n}" ${canEat ? '' : 'disabled'}>${canEat ? tr('Eat', '먹기') : tr('Eat at home', '집에서 먹기')}</button>` : '';
+        const facts = [u > 1 ? tr(`${l.left} of ${u} ${i.kind === 'gear' ? 'uses' : 'portions'} left`, `${u}${i.kind === 'gear' ? '회' : '회분'} 중 ${l.left} 남음`) : '', i.energy && !bad && !+i.cook_only ? tr(`energy +${i.energy}`, `에너지 +${i.energy}`) : ''].filter(Boolean);
+        return `<div class="row${bad ? ' bad' : by != null && by <= G.day + 1 ? ' soon' : ''}"><div class="main"><div class="t">${esc(loc(i))}</div>
+          <div class="s">${esc(facts.join(' · '))}${when ? `${facts.length ? ' · ' : ''}<span class="by">${esc(when)}</span>` : ''}</div></div>${btn}</div>`; }).join('')
+        || `<p class="empty">${tr('Your bag is empty. Groceries you buy at the market go here.', '가방이 비었어요. 마켓에서 산 식료품이 여기 들어와요.')}</p>`;
     } else if (panelKind === 'cook') {
-      h.textContent = 'Cook a meal';
+      h.textContent = tr('Cook a meal', '요리하기');
       const able = RECIPES.filter(canCook);
-      sub.textContent = `${able.length} of ${RECIPES.length} recipes`;
-      body.innerHTML = `<p class="fine">A recipe takes one portion of each ingredient, the oldest first. Buy what is missing at Fairview Market.<span class="ko"> 재료마다 1회분씩, 오래된 것부터 씁니다. 없는 재료는 마켓에서 사세요.</span></p>`
+      sub.textContent = tr(`${able.length} of ${RECIPES.length} recipes`, `요리 ${RECIPES.length}가지 중 ${able.length}가지 가능`);
+      body.innerHTML = `<p class="fine">${tr('A recipe takes one portion of each ingredient, the oldest first. Buy what is missing at Fairview Market.', '재료마다 1회분씩, 오래된 것부터 씁니다. 없는 재료는 페어뷰 마켓에서 사세요.')}</p>`
         + RECIPES.slice().sort((a, b) => canCook(b) - canCook(a)).map(r => {
           const ok = canCook(r), steps = String(r.steps || '').split(' | ').filter(Boolean), ko = String(r.steps_ko || '').split(' | ');
           return `<div class="row recipe${ok ? '' : ' lack'}"><button type="button" class="play" data-say="${esc(r.name + '. ' + steps.join(' '))}" aria-label="Play">▶</button>
-            <div class="main"><div class="t">${esc(r.name)}</div><div class="s">${esc(r.name_ko || '')} · ${r.minutes} min · energy +${r.energy}${r.tool ? ' · ' + esc(r.tool) : ''}</div>
-            <div class="s need">${needs(r).map(id => `<span class="${portions(id) ? 'have' : 'miss'}">${portions(id) ? '✓' : '✗'} ${esc(shortName(id).toLowerCase())}</span>`).join(' ')}</div>
-            ${steps.length ? `<details><summary>How to make it</summary><ol>${steps.map((t, k) => `<li>${esc(t)}<span class="ko"> ${esc(ko[k] || '')}</span></li>`).join('')}</ol></details>` : ''}</div>
-            <button type="button" data-cook="${esc(r.id)}" ${ok && atHome() ? '' : 'disabled'}>${!atHome() ? 'At home' : ok ? 'Cook' : 'Missing'}</button></div>`; }).join('');
+            <div class="main"><div class="t">${esc(loc(r))}</div><div class="s">${tr(`${r.minutes} min · energy +${r.energy}`, `${r.minutes}분 · 에너지 +${r.energy}`)}${r.tool && !KO() ? ' · ' + esc(r.tool) : ''}</div>
+            <div class="s need">${needs(r).map(id => `<span class="${portions(id) ? 'have' : 'miss'}">${portions(id) ? '✓' : '✗'} ${esc(itemName(id))}</span>`).join(' ')}</div>
+            ${steps.length ? `<details><summary>${tr('How to make it', '만드는 법')}</summary><ol>${steps.map((t, k) => `<li>${esc(tr(t, ko[k]))}</li>`).join('')}</ol></details>` : ''}</div>
+            <button type="button" data-cook="${esc(r.id)}" ${ok && atHome() ? '' : 'disabled'}>${!atHome() ? tr('At home', '집에서') : ok ? tr('Cook', '요리') : tr('Missing', '재료 부족')}</button></div>`; }).join('');
     } else if (panelKind === 'calendar') {
-      h.textContent = 'Calendar';
+      h.textContent = tr('Calendar', '달력');
       const up = Object.keys(HOLIDAYS).sort().map(k => [Math.round((Date.parse(k) - START) / 864e5) + 1, HOLIDAYS[k]]).filter(x => START != null && x[0] > Math.floor((G.day - 1) / 7) * 7 + 7).slice(0, 3);
-      sub.textContent = `Week ${Math.floor((G.day - 1) / 7) + 1}`;
+      sub.textContent = tr(`Week ${Math.floor((G.day - 1) / 7) + 1}`, `${Math.floor((G.day - 1) / 7) + 1}주차`);
       const d0 = Math.floor((G.day - 1) / 7) * 7 + 1;
       let html = '';
       for (let d = d0; d < d0 + 7; d++) {
-        const evs = calendar().filter(c => c.day === d).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
+        const evs = calendar().filter(c => c.day === d && !(fired() && d >= G.work.fired && firedOut(c.place))).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
         const extra = [];
-        if (PAYDAYS.includes(d)) extra.push(`Payday: ${usd(+hero().salary_net)} direct deposit`);
-        if (isRentDay(d)) extra.push(`${hero().housing_name || 'Rent'} due: ${usd(+hero().housing)}`);
-        billsDue(d).forEach(b => extra.push(`Autopay: ${b.name} ${usd2(+b.amount)}`));
+        if (PAYDAYS.includes(d) && !fired()) extra.push(tr(`Payday: ${usd(+hero().salary_net)} direct deposit`, `월급날: ${usd(+hero().salary_net)} 계좌 입금`));
+        if (isRentDay(d)) extra.push(tr(`${hero().housing_name || 'Rent'} due: ${usd(+hero().housing)}`, `${hero().housing_name_ko || '월세'} 납부: ${usd(+hero().housing)}`));
+        billsDue(d).forEach(b => extra.push(tr(`Autopay: ${b.name} ${usd2(+b.amount)}`, `자동이체: ${loc(b)} ${usd2(+b.amount)}`)));
         const hol = holidayOf(d);
-        if (hol) extra.unshift(`${hol.name}${hol.kind === 'federal' ? ' (federal holiday: banks and post offices closed)' : ''}`);
+        if (hol) extra.unshift(tr(`${hol.name}${hol.kind === 'federal' ? ' (federal holiday: banks and post offices closed)' : ''}`, `${loc(hol)}${hol.kind === 'federal' ? ' (연방 공휴일: 은행·우체국 휴무)' : ''}`));
+        const rec = G.work && G.work.record[d];
+        if (rec) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND[rec][0], ATTEND[rec][1])}`);
         if (!evs.length && !extra.length && d !== G.day) continue;
-        html += `<h3>${dateLong(d)} · Day ${d}${d === G.day ? ' · today' : ''}</h3>`;
+        html += `<h3>${tr(`${dateLong(d)} · Day ${d}${d === G.day ? ' · today' : ''}`, `${dateKo(d)} · ${d}일째${d === G.day ? ' · 오늘' : ''}`)}</h3>`;
         html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
         html += evs.map(c => { const done = c.episode && G.done[c.episode]; const past = d < G.day || (d === G.day && hm(c.time, 0) < G.minute - 60);
-          return `<div class="row${done ? ' done' : ''}${past && !done ? ' past' : ''}"><span class="when">${esc(c.time)}</span><div class="main"><div class="t">${esc(c.title)}</div><div class="s">${c.place ? esc(place(c.place).name) : ''}${c.title_ko ? ' · ' + esc(c.title_ko) : ''}</div></div></div>`; }).join('');
-        if (!evs.length && !extra.length) html += '<p class="empty">Nothing scheduled.</p>';
+          return `<div class="row${done ? ' done' : ''}${past && !done ? ' past' : ''}"><span class="when">${esc(c.time)}</span><div class="main"><div class="t">${esc(loc(c, 'title'))}</div><div class="s">${c.place ? esc(loc(place(c.place))) : ''}</div></div></div>`; }).join('');
+        if (!evs.length && !extra.length) html += `<p class="empty">${tr('Nothing scheduled.', '일정 없음.')}</p>`;
       }
-      if (up.length) html += '<h3>Coming up</h3>' + up.map(x => `<div class="row"><span class="when">${esc(dateShort(x[0]).replace(/^\w+, /, ''))}</span><div class="main"><div class="t">${esc(x[1].name)}</div><div class="s">${esc(x[1].note || '')}<span class="ko"> ${esc(x[1].name_ko || '')}: ${esc(x[1].note_ko || '')}</span></div></div></div>`).join('');
+      if (up.length) html += `<h3>${tr('Coming up', '다가오는 날')}</h3>` + up.map(x => `<div class="row"><span class="when">${esc(dMonth(x[0]))}</span><div class="main"><div class="t">${esc(loc(x[1]))}</div><div class="s">${esc(tr(x[1].note || '', x[1].note_ko))}</div></div></div>`).join('');
       body.innerHTML = html;
     } else if (panelKind === 'phone') {
-      h.textContent = 'Phone';
+      h.textContent = tr('Phone', '휴대전화');
       const list = inbox(), fresh = list.filter(m => m.fresh).length;
-      sub.textContent = fresh ? `${fresh} new` : `${list.length} messages`;
+      sub.textContent = fresh ? tr(`${fresh} new`, `새 메시지 ${fresh}개`) : tr(`${list.length} messages`, `메시지 ${list.length}개`);
       const ICON = { text: '💬', email: '✉️', voicemail: '📞', alert: '🔔' };
       body.innerHTML = list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
-        <div class="main"><div class="s">${ICON[m.kind] || ''} ${esc(MSG_KIND[m.kind] || 'Message')} · ${esc(dateShort(m.day))}, ${clock(m.minute)}</div><div class="t">${esc(senderName(m.sender))}${m.subject ? ` <span class="subj">${esc(m.subject)}</span>` : ''}</div>
-        <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}${replyBox(m)}</div></div>`).join('')
-        || '<p class="empty">No messages yet. Texts, emails and alerts from your bank arrive here.</p>';
+        <div class="main"><div class="s">${ICON[m.kind] || ''} ${esc(tr(MSG_KIND[m.kind] || 'Message', MSG_KIND_KO[m.kind] || '메시지'))} · ${esc(dShort(m.day))}, ${clk(m.minute)}</div><div class="t">${esc(senderName(m.sender))}${m.subject ? ` <span class="subj">${esc(tr(m.subject, m.subject_ko))}</span>` : ''}</div>
+        <div class="b">${esc(shown(m.body, m.body_ko))}</div>${replyBox(m)}</div></div>`).join('')
+        || `<p class="empty">${tr('No messages yet. Texts, emails and alerts from your bank arrive here.', '아직 메시지가 없어요. 문자, 이메일, 은행 알림이 여기로 와요.')}</p>`;
       readAll();
     } else if (panelKind === 'tv') {
       tvPanel(h, sub, body);
     } else if (panelKind === 'radio') {
-      h.textContent = 'Radio';
+      h.textContent = tr('Radio', '라디오');
       const show = radioShow();
-      sub.textContent = `${STATION} · ${clock(G.minute)}`;
-      body.innerHTML = `<p class="fine"><button type="button" data-say="${esc(show.map(x => x.en).join(' '))}">▶ Listen to it all</button> Local radio: the weather in Fahrenheit, traffic, the news of the town.<span class="ko"> 지역 라디오: 화씨 날씨, 교통, 동네 소식.</span></p>`
-        + show.map(x => `<div class="row msg"><button type="button" class="play" data-say="${esc(x.en)}" aria-label="Play">▶</button><div class="main"><div class="s">📻 ${esc(RADIO_KIND[x.kind] || pretty(x.kind))}</div>
-        <div class="b">${esc(x.en)}</div>${x.ko ? `<div class="s ko">${esc(x.ko)}</div>` : ''}</div></div>`).join('');
+      sub.textContent = `${STATION} · ${clk(G.minute)}`;
+      body.innerHTML = `<p class="fine"><button type="button" data-say="${esc(show.map(x => x.en).join(' '))}">${tr('▶ Listen to it all', '▶ 전부 듣기')}</button> ${tr('Local radio: the weather in Fahrenheit, traffic, the news of the town.', '지역 라디오: 날씨, 교통, 동네 소식.')}</p>`
+        + show.map(x => `<div class="row msg"><button type="button" class="play" data-say="${esc(x.en)}" aria-label="Play">▶</button><div class="main"><div class="s">📻 ${esc(tr(RADIO_KIND[x.kind] || pretty(x.kind), RADIO_KIND_KO[x.kind]))}</div>
+        <div class="b">${esc(tr(x.en, x.ko))}</div></div></div>`).join('');
     } else if (panelKind === 'mailbox') {
-      h.textContent = 'Mailbox';
+      h.textContent = tr('Mailbox', '우편함');
       const got = G.mailGot = G.mailGot || {}, list = myMail().slice().reverse(), fresh = list.filter(m => !got[m.id]).map(m => m.id);
-      sub.textContent = fresh.length ? `${fresh.length} new` : `${list.length} kept`;
+      sub.textContent = fresh.length ? tr(`${fresh.length} new`, `새 우편 ${fresh.length}통`) : tr(`${list.length} kept`, `${list.length}통 보관`);
       body.innerHTML = (list.map(m => `<div class="row msg${fresh.includes(m.id) ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" aria-label="Play">▶</button>
-        <div class="main"><div class="s">${MAIL_ICON[m.kind] || ''} ${esc(MAIL_KIND[m.kind] || 'Mail')} · ${esc(dateShort(m.day))}</div><div class="t">${esc(m.sender)}${m.subject ? ` <span class="subj">${esc(m.subject)}</span>` : ''}</div>
-        <div class="b">${esc(m.body)}</div>${m.body_ko ? `<div class="s ko">${esc(m.body_ko)}</div>` : ''}</div></div>`).join('')
-        || `<p class="empty">The mailbox is empty. The mail comes after ${clock(mailTime())}, Monday to Saturday.</p>`)
-        + (list.length && !fresh.length ? `<p class="fine">${mailDay(G.day) ? (G.minute < mailTime() ? `Nothing new yet. Today's mail comes after ${clock(mailTime())}.` : 'Nothing new today.') : 'No mail on Sundays and federal holidays.'}<span class="ko"> 우편은 일요일과 연방 공휴일에는 오지 않아요.</span></p>` : '');
+        <div class="main"><div class="s">${MAIL_ICON[m.kind] || ''} ${esc(tr(MAIL_KIND[m.kind] || 'Mail', MAIL_KIND_KO[m.kind] || '우편'))} · ${esc(dShort(m.day))}</div><div class="t">${esc(m.sender)}${m.subject ? ` <span class="subj">${esc(tr(m.subject, m.subject_ko))}</span>` : ''}</div>
+        <div class="b">${esc(shown(m.body, m.body_ko))}</div></div></div>`).join('')
+        || `<p class="empty">${tr(`The mailbox is empty. The mail comes after ${clock(mailTime())}, Monday to Saturday.`, `우편함이 비었어요. 우편은 월~토요일 ${clockKo(mailTime())} 이후에 와요.`)}</p>`)
+        + (list.length && !fresh.length ? `<p class="fine">${mailDay(G.day) ? (G.minute < mailTime() ? tr(`Nothing new yet. Today's mail comes after ${clock(mailTime())}.`, `아직 새 우편이 없어요. 오늘 우편은 ${clockKo(mailTime())} 이후에 와요.`) : tr('Nothing new today.', '오늘은 새 우편이 없어요.')) : tr('No mail on Sundays and federal holidays.', '일요일과 연방 공휴일에는 우편이 오지 않아요.')}</p>` : '');
       fresh.forEach(id => { got[id] = 1; });
     } else if (panelKind === 'talks' || panelKind === 'phrasebook') {
       // the conversations you have had, newest first: what was said to you, what you answered and the reply, then the
       // expressions the conversation taught (what used to be the Phrasebook); every line can be heard again
-      h.textContent = 'Conversations';
+      h.textContent = tr('Conversations', '지난 대화');
       const had = G.log.filter(l => l.type === 'episode' && l.id && EPISODES[l.id] && G.done[l.id]).slice().reverse();
-      sub.textContent = `${had.length} finished · ${G.phrases.length} expressions`;
+      sub.textContent = tr(`${had.length} finished`, `${had.length}개 끝냄`);
       const sayBtn = (text, who) => `<button type="button" class="play" data-say="${esc(text)}" data-voice="${esc(who || '')}" aria-label="Play">▶</button>`;
       body.innerHTML = had.map((l, n) => {
-        const ep = EPISODES[l.id], said = (G.said || {})[l.id] || [];
-        const lines = (TURNS[l.id] || []).map((t, i) => {
-          const who = t.speaker || ep.npc, mine = personal(said[i] || t.model), rs = t.reply_speaker || who;
-          return `${t.situation ? `<p class="scene">${esc(personal(t.situation))}<span class="ko"> ${esc(t.situation_ko || '')}</span></p>` : ''}
-            <div class="said">${sayBtn(personal(t.line), who)}<div><b>${esc(npcRow(who).name.split(' ')[0])}</b> ${esc(personal(t.line))}</div></div>
-            ${mine ? `<div class="said me">${sayBtn(mine, G.hero)}<div><b>${esc(G.name)}</b> ${esc(mine)}${said[i] && M.normalize(said[i]) !== M.normalize(personal(t.model)) ? `<span class="model">Example: ${esc(personal(t.model))}</span>` : ''}</div></div>` : ''}
-            ${t.reply_line ? `<div class="said">${sayBtn(personal(t.reply_line), rs)}<div><b>${esc(npcRow(rs).name.split(' ')[0])}</b> ${esc(personal(t.reply_line))}<span class="ko"> ${esc(t.reply_ko || '')}</span></div></div>` : ''}`;
+        const ep = EPISODES[l.id], pts = (G.epScore || {})[l.id];
+        const lines = (TURNS[l.id] || []).map(t => {
+          const who = t.speaker || ep.npc, rs = t.reply_speaker || who;
+          return `${t.situation ? `<p class="scene">${esc(turnText(t, 'situation'))}</p>` : ''}
+            <div class="said">${sayBtn(personal(t.line), who)}<div><b>${esc(firstName(npcRow(who)))}</b> ${esc(turnText(t, 'line'))}</div></div>
+            <div class="said me">${sayBtn(personal(t.model), G.hero)}<div><b>${esc(myName())}</b> ${esc(turnText(t, 'model'))}</div></div>
+            ${t.reply_line ? `<div class="said">${sayBtn(personal(t.reply_line), rs)}<div><b>${esc(firstName(npcRow(rs)))}</b> ${esc(shown(t.reply_line, t.reply_ko))}</div></div>` : ''}`;
         }).join('');
-        const learned = G.phrases.map(id => PHRASES[id]).filter(p => p && p.episode === l.id);
-        const words = learned.length ? `<h4>Expressions</h4><div class="words">${phraseRows(learned)}</div>` : '';
-        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${dateShort(l.day)} · ${clock(l.minute)}</span> <b>${esc(ep.title)}</b><span class="with"> with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}</span><span class="ko"> ${esc(ep.title_ko || '')}</span></summary>${lines}${words}</details>`;
-      }).join('') || '<p class="empty">Conversations you finish are kept here, so you can read and hear them again.</p>';
+        return `<details class="talk"${n ? '' : ' open'}><summary><span class="when">${dShort(l.day)} · ${clk(l.minute)}${pts ? ` · ★ ${pts[0]}/${pts[1]}` : ''}</span> <b>${esc(loc(ep, 'title'))}</b><span class="with"> ${tr(`with ${esc(npcRow(ep.npc).name)} · ${esc(place(ep.place).name)}`, `${esc(fullName(npcRow(ep.npc)))} · ${esc(loc(place(ep.place)))}`)}</span></summary>${lines}</details>`;
+      }).join('') || `<p class="empty">${tr('Conversations you finish are kept here, so you can read and hear them again.', '끝낸 대화가 여기 남아요. 다시 읽고 들을 수 있어요.')}</p>`;
     } else if (panelKind === 'bank') {
-      h.textContent = 'Bank';
-      sub.textContent = 'Checking ···4821';
+      h.textContent = tr('Bank', '은행');
+      sub.textContent = tr('Checking ···4821', '입출금 계좌 ···4821');
       const soon = [];
       for (let d = G.day + 1; d <= G.day + 14; d++) {
-        const when = dateShort(d);
-        if (PAYDAYS.includes(d)) soon.push([when, 'Paycheck (direct deposit)', +hero().salary_net]);
-        if (isRentDay(d)) soon.push([when, hero().housing_name || 'Rent', -hero().housing]);
-        billsDue(d).forEach(b => soon.push([when, b.name + ' (autopay)', -b.amount]));
+        const when = dShort(d);
+        if (PAYDAYS.includes(d) && !fired()) soon.push([when, tr('Paycheck (direct deposit)', '급여 (계좌 입금)'), +hero().salary_net]);
+        if (isRentDay(d)) soon.push([when, tr(hero().housing_name || 'Rent', hero().housing_name_ko || '월세'), -hero().housing]);
+        billsDue(d).forEach(b => soon.push([when, tr(b.name + ' (autopay)', loc(b) + ' (자동이체)'), -b.amount]));
       }
-      const KIND = { income: 'Deposit', spend: 'Debit card', bill: 'Autopay', fee: 'Bank fee' };
+      const KIND = { income: ['Deposit', '입금'], spend: ['Debit card', '체크카드'], bill: ['Autopay', '자동이체'], fee: ['Bank fee', '은행 수수료'] };
       const line = (when, text, amount, kind) => `<div class="row"><span class="when">${esc(when)}</span><div class="main"><div class="t">${esc(text)}</div>${kind ? `<div class="s">${esc(kind)}</div>` : ''}</div><span class="price ${amount < 0 ? 'out' : 'in'}">${amount < 0 ? '−' : '+'}${usd2(Math.abs(amount)).replace('−', '')}</span></div>`;
       const past = G.log.filter(l => l.amount).slice().reverse().slice(0, 60);
-      body.innerHTML = `<div class="sum"><div><b>${usd2(G.money)}</b>available balance</div></div>
-        <h3>Coming up</h3>${soon.map(x => line(x[0], x[1], x[2])).join('') || '<p class="empty">Nothing in the next two weeks.</p>'}
-        <h3>Recent transactions</h3>${past.map(l => line(`${dateShort(l.day).replace(/^\w+, /, '')} · ${clock(l.minute)}`, l.text, l.amount,
-          (/direct deposit/i.test(l.text) ? 'Direct deposit' : KIND[l.type] || '') + (l.tax ? ` · tax ${usd2(l.tax)}` : '') + (l.tip ? ` · tip ${usd2(l.tip)}` : ''))).join('') || '<p class="empty">No transactions yet.</p>'}`;
+      body.innerHTML = `<div class="sum"><div><b>${usd2(G.money)}</b>${tr('available balance', '사용 가능 잔액')}</div></div>
+        <h3>${tr('Coming up', '예정')}</h3>${soon.map(x => line(x[0], x[1], x[2])).join('') || `<p class="empty">${tr('Nothing in the next two weeks.', '앞으로 2주 동안 없음.')}</p>`}
+        <h3>${tr('Recent transactions', '최근 거래')}</h3>${past.map(l => line(`${dMonth(l.day)} · ${clk(l.minute)}`, logText(l), l.amount,
+          (/direct deposit/i.test(l.text) ? tr('Direct deposit', '계좌 입금') : KIND[l.type] ? tr(KIND[l.type][0], KIND[l.type][1]) : '') + (l.tax ? tr(` · tax ${usd2(l.tax)}`, ` · 세금 ${usd2(l.tax)}`) : '') + (l.tip ? tr(` · tip ${usd2(l.tip)}`, ` · 팁 ${usd2(l.tip)}`) : ''))).join('') || `<p class="empty">${tr('No transactions yet.', '아직 거래가 없어요.')}</p>`}`;
+    } else if (panelKind === 'work') {
+      // the score and the work record: how you stand with your manager, every working day so far, and the points
+      const w = work(), st = standing();
+      h.textContent = tr('Work record', '근무 기록');
+      sub.textContent = `${CFG.company} · ${tr(hero().role, hero().role_ko)}`;
+      const days = Object.keys(w.record).map(Number).sort((a, b) => b - a);
+      const left = Math.max(0, +CFG.fire_points - w.pts);
+      const say = fired() ? tr(`You were let go on ${dateLong(w.fired)}. Your badge no longer opens the office.`, `${dateKo(w.fired)}에 해고되었어요. 출입증으로 더는 사무실에 들어갈 수 없어요.`)
+        : w.warned === 2 ? tr('Final warning from HR: one more late morning or missed day and you are out.', '인사팀의 최종 경고: 한 번만 더 지각하거나 결근하면 해고예요.')
+          : w.warned === 1 ? tr('Your manager has talked to you about being on time. Be in by ' + clock(hm(CFG.work_start, 540)) + '.', `매니저가 제시간에 오라고 했어요. ${clockKo(hm(CFG.work_start, 540))}까지 출근하세요.`)
+            : tr(`Be at the office by ${clock(hm(CFG.late_after, 555))} on working days. Late mornings and missed days add up, and too many of them get you fired.`, `평일에는 ${clockKo(hm(CFG.late_after, 555))}까지 사무실에 오세요. 지각과 결근이 쌓이면 해고될 수 있어요.`);
+      const pts = (G.points || []).slice().reverse().slice(0, 40);
+      body.innerHTML = `<div class="sum"><div><b>★ ${score()}</b>${tr('score', '점수')}</div><div class="standing ${st[2]}"><b>${tr(st[0], st[1])}</b>${tr('standing', '평가')}</div><div><b>${fired() ? '—' : w.pts + ' / ' + CFG.fire_points}</b>${tr('strikes', '벌점')}</div></div>
+        <p class="fine">${esc(say)}${!fired() && w.pts ? tr(` ${left} more strike${left === 1 ? '' : 's'} and you are let go (late ${CFG.late_points}, in after noon ${CFG.noon_points}, a missed day ${CFG.absent_points}; five on-time days in a row take one off).`, ` 벌점 ${left}점이 더 쌓이면 해고예요 (지각 ${CFG.late_points}, 오후 출근 ${CFG.noon_points}, 결근 ${CFG.absent_points}; 5일 연속 정시 출근하면 1점 감소).`) : ''}</p>
+        ${(() => { const [got, all] = missionCount(); const m = G.mission;
+          return `<h3>${tr('Two weeks of missions', '2주 미션')}</h3><p class="fine">${m && m.all ? tr(`🎉 All ${all} done${m.bonus ? `: bonus ${usd(m.bonus)}` : ''}. ${freePlay() ? 'Free play now.' : `Free play from ${dateLong(MISSION_DAYS + 1)}.`}`, `🎉 ${all}개 모두 완료${m.bonus ? `: 보너스 ${usd(m.bonus)}` : ''}. ${freePlay() ? '지금은 자유 플레이.' : `${dateKo(MISSION_DAYS + 1)}부터 자유 플레이.`}`)
+            : freePlay() ? tr(`${got} of ${all} done. The two weeks are over: free play now.`, `${all}개 중 ${got}개 완료. 2주가 끝나 지금은 자유 플레이.`)
+              : tr(`<b>${got} of ${all}</b> done, until ${dateLong(MISSION_DAYS)}. Finish all of them for a ${usd(+CFG.mission_bonus || 0)} bonus and ${+CFG.mission_points || 0} points.`, `${dateKo(MISSION_DAYS)}까지 <b>${all}개 중 ${got}개</b> 완료. 모두 해내면 보너스 ${usd(+CFG.mission_bonus || 0)}와 ${+CFG.mission_points || 0}점.`)}</p>`; })()}
+        <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
+        <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
     } else if (panelKind === 'map') {
       renderMapPanel(h, sub, body);
     }
@@ -3144,7 +3419,7 @@
     if (b.dataset.cook) cook(b.dataset.cook);
     if (b.dataset.cookOpen) openPanel('cook');
     if (b.dataset.ride) ride(b.dataset.ride);
-    if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note("You can't afford that.", true); else { pay(-it.price, it.name, 'spend'); G.pass = G.day; saveGame(); renderPanel(); note('Day pass bought. Ride as much as you like today.'); } }
+    if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note(tr("You can't afford that.", '돈이 부족해요.'), true); else { pay(-it.price, it.name, 'spend', { ko: it.name_ko }); G.pass = G.day; saveGame(); renderPanel(); note(tr('Day pass bought. Ride as much as you like today.', '1일 승차권을 샀어요. 오늘은 마음껏 타세요.')); } }
   });
   $('card').addEventListener('click', (e) => { const b = e.target.closest('button[data-say]'); if (b) speak(b.dataset.say); });
   // ---------------------------------------------------------------- the map (Menu > Map, M): the town, or the room you are in
@@ -3213,11 +3488,11 @@
   }
   function renderMapPanel(h, sub, body) {
     const spec = zoneSpec(mapZone());
-    h.textContent = MAP.tab === 'room' && spec.id !== 'city' ? spec.name : `${CFG.city} · town map`;
-    sub.textContent = `${weekday(G.day)}, ${clock(G.minute)}`;
-    const tabs = zoneId && zoneId !== 'city' ? `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="town" aria-selected="${MAP.tab !== 'room'}">Town</button><button type="button" role="tab" data-tab="room" aria-selected="${MAP.tab === 'room'}">${esc(zoneName(zoneId)[0])}</button></div>` : '';
+    h.textContent = MAP.tab === 'room' && spec.id !== 'city' ? loc(spec) : tr(`${CFG.city} · town map`, `${zoneName('city')[1] || CFG.city} 지도`);
+    sub.textContent = tr(`${weekday(G.day)}, ${clock(G.minute)}`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${clockKo(G.minute)}`);
+    const tabs = zoneId && zoneId !== 'city' ? `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="town" aria-selected="${MAP.tab !== 'room'}">${tr('Town', '시내')}</button><button type="button" role="tab" data-tab="room" aria-selected="${MAP.tab === 'room'}">${esc(tr(zoneName(zoneId)[0], zoneName(zoneId)[1]))}</button></div>` : '';
     body.innerHTML = `${tabs}<canvas class="map" aria-label="Map"></canvas>
-      <div class="legend"><span><i class="you"></i>You</span><span><i class="person"></i>People</span><span><i class="bang">!</i>Someone to talk to</span><span><i class="goal"></i>Where to go</span><span><i class="door"></i>Door</span></div>
+      <div class="legend"><span><i class="you"></i>${tr('You', '나')}</span><span><i class="person"></i>${tr('People', '사람')}</span><span><i class="bang">!</i>${tr('Someone to talk to', '이야기할 사람')}</span><span><i class="goal"></i>${tr('Where to go', '갈 곳')}</span><span><i class="door"></i>${tr('Door', '문')}</span></div>
       <div class="map-list"></div>`;
     MAP.canvas = body.querySelector('canvas.map');
     body.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { MAP.tab = b.dataset.tab; renderPanel(); }));
@@ -3337,9 +3612,7 @@
       g.restore();
     });
     (M.areas || []).forEach(a => {
-      const ko = document.body.classList.contains('ko-on') && a.name_ko;
-      halo(a.name, X(a.at[0]), Y(a.at[1]) - (ko ? 6 : 0), 'italic 600 11px ' + getComputedStyle(document.body).fontFamily, a.water ? '#2f6f9f' : MAPC.area);
-      if (ko) halo(a.name_ko, X(a.at[0]), Y(a.at[1]) + 7, '10px ' + getComputedStyle(document.body).fontFamily, a.water ? '#2f6f9f' : MAPC.area);
+      halo(loc(a), X(a.at[0]), Y(a.at[1]), 'italic 600 11px ' + getComputedStyle(document.body).fontFamily, a.water ? '#2f6f9f' : MAPC.area);
     });
     // ----- doors (portals) and places
     portalsOf(spec).forEach(p => {
@@ -3347,7 +3620,7 @@
       g.fillStyle = MAPC.door; g.fillRect(X(p.at[0]) - w / 2, Y(p.at[1]) - d / 2, w, d);
       g.strokeStyle = '#fff'; g.lineWidth = 1; g.strokeRect(X(p.at[0]) - w / 2, Y(p.at[1]) - d / 2, w, d);
     });
-    const font = getComputedStyle(document.body).fontFamily, koOn = document.body.classList.contains('ko-on');
+    const font = getComputedStyle(document.body).fontFamily;
     const labels = [];
     Object.keys(spec.places).forEach(pid => {
       const pl = spec.places[pid];
@@ -3356,7 +3629,7 @@
       const x = X(pl.at[0]), y = Y(pl.at[1]);
       if (isDoor) { g.fillStyle = MAPC.pin; g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); }
       else { g.beginPath(); g.arc(x, y, 5.5, 0, Math.PI * 2); g.fillStyle = MAPC.pin; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke(); g.beginPath(); g.arc(x, y, 2, 0, Math.PI * 2); g.fillStyle = '#fff'; g.fill(); }
-      labels.push({ x, y: y - 9, text: info.name, sub: koOn ? info.name_ko : null, w: 0 });
+      labels.push({ x, y: y - 9, text: loc(info), sub: null, w: 0 });
     });
     // ----- the goal, the people, you
     const goal = goalOnMap(mz, spec);
@@ -3370,10 +3643,10 @@
       const x = X(at.at[0]) + (at.inside ? (j % 3) * 9 - 9 : 0), y = Y(at.at[1]) + (at.inside ? 10 + Math.floor(j / 3) * 9 : 0);
       g.beginPath(); g.arc(x, y, 4.5, 0, Math.PI * 2); g.fillStyle = MAPC.person; g.fill(); g.strokeStyle = MAPC.personEdge; g.lineWidth = 1.2; g.stroke();
       if (open.some(e => e.npc === n.id && !isPhone(e))) { g.beginPath(); g.arc(x + 4, y - 5, 5, 0, Math.PI * 2); g.fillStyle = MAPC.bang; g.fill(); halo('!', x + 4, y - 5, 'bold 8px ' + font, '#fff'); g.lineWidth = 1; }
-      if (!at.inside) labels.push({ x: x + 7, y, text: String(n.name).split(' ')[0], person: true, left: true });
+      if (!at.inside) labels.push({ x: x + 7, y, text: firstName(n), person: true, left: true });
       else if (j === 0) {
-        const names = cast().filter(m => { const q = personOnMap(m, mz, spec); return q && q.inside === at.inside; }).map(m => String(m.name).split(' ')[0]);
-        const where = TRAVEL_ZONES.includes(at.inside) ? ` · ${zoneName(at.inside)[0].split(',')[0]}` : '';      // by the shuttle: say where they are
+        const names = cast().filter(m => { const q = personOnMap(m, mz, spec); return q && q.inside === at.inside; }).map(m => firstName(m));
+        const where = TRAVEL_ZONES.includes(at.inside) ? ` · ${tr(zoneName(at.inside)[0].split(',')[0], zoneName(at.inside)[1])}` : '';      // by the shuttle: say where they are
         labels.push({ x: x + 12, y: y + 4, text: (names.length > 2 ? `${names[0]}, ${names[1]} +${names.length - 2}` : names.join(', ')) + where, person: true, left: true });
       }
     });
@@ -3385,7 +3658,7 @@
       else { g.beginPath(); g.arc(0, 0, 6, 0, Math.PI * 2); }
       g.fillStyle = MAPC.you; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.6; g.stroke();
       g.restore();
-      labels.push({ x: x + 9, y, text: 'You' + (you.inside ? ` · in ${zoneName(you.inside)[0].split(',')[0]}` : ''), you: true, left: true });
+      labels.push({ x: x + 9, y, text: tr('You', '나') + (you.inside ? tr(` · in ${zoneName(you.inside)[0].split(',')[0]}`, ` · ${zoneName(you.inside)[1] || zoneName(you.inside)[0]} 안`) : ''), you: true, left: true });
     }
     // labels last, so that they lie over everything, each in a small box; you and the people first, then the
     // places, each label at the first of a few spots round its mark that is clear of the labels already placed
@@ -3419,18 +3692,18 @@
       Object.keys(spec.places).forEach(pid => {
         const pl = spec.places[pid];
         if (!pl || pl.guessed) return;
-        const people = cast().filter(n => { const at = personOnMap(n, mz, spec); return at && !at.inside && Math.hypot(at.at[0] - pl.at[0], at.at[1] - pl.at[1]) < 2.2; }).map(n => String(n.name).split(' ')[0]);
+        const people = cast().filter(n => { const at = personOnMap(n, mz, spec); return at && !at.inside && Math.hypot(at.at[0] - pl.at[0], at.at[1] - pl.at[1]) < 2.2; }).map(n => firstName(n));
         const acts = placeActions(pid).map(a => a.label.replace(/ \(.*\)$/, ''));
-        const talk = open.filter(e => (isPhone(e) ? e.place === pid : cast().some(n => n.id === e.npc && (npcPlaceNow(n) === pid)))).map(e => e.title);
+        const talk = open.filter(e => (isPhone(e) ? e.place === pid : cast().some(n => n.id === e.npc && (npcPlaceNow(n) === pid)))).map(e => loc(e, 'title'));
         if (!people.length && !acts.length && !talk.length) return;
-        items.push(`<div class="row"><div class="main"><div class="t">${esc(place(pid).name)}</div><div class="s">${esc(place(pid).name_ko || '')}${people.length ? ' · ' + esc(people.join(', ')) : ''}${acts.length ? ' · ' + esc(acts.join(', ')) : ''}</div>${talk.length ? `<div class="s talk">! ${esc(talk.join(' · '))}</div>` : ''}</div></div>`);
+        items.push(`<div class="row"><div class="main"><div class="t">${esc(loc(place(pid)))}</div><div class="s">${esc(people.concat(acts).join(' · '))}</div>${talk.length ? `<div class="s talk">! ${esc(talk.join(' · '))}</div>` : ''}</div></div>`);
       });
       if (mz === 'city') {
         const gone = cast().filter(n => !personOnMap(n, mz, spec));
-        const away = gone.filter(n => npcPlaceNow(n)).map(n => `${String(n.name).split(' ')[0]} (${zoneName(zoneOfPlace(npcPlaceNow(n)))[0]})`);
-        const off = gone.filter(n => !npcPlaceNow(n)).map(n => String(n.name).split(' ')[0]);
-        if (off.length) items.push(`<div class="row"><div class="main"><div class="t">Off today or gone home</div><div class="s">${esc(off.join(', '))}</div></div></div>`);
-        if (away.length) items.push(`<div class="row"><div class="main"><div class="t">Out of town</div><div class="s">${esc(away.join(', '))} · by the airport shuttle</div></div></div>`);
+        const away = gone.filter(n => npcPlaceNow(n)).map(n => { const zn = zoneName(zoneOfPlace(npcPlaceNow(n))); return `${firstName(n)} (${tr(zn[0], zn[1])})`; });
+        const off = gone.filter(n => !npcPlaceNow(n)).map(n => firstName(n));
+        if (off.length) items.push(`<div class="row"><div class="main"><div class="t">${tr('Off today or gone home', '쉬는 날이거나 퇴근함')}</div><div class="s">${esc(off.join(', '))}</div></div></div>`);
+        if (away.length) items.push(`<div class="row"><div class="main"><div class="t">${tr('Out of town', '출장 중')}</div><div class="s">${esc(away.join(', '))}${tr(' · by the airport shuttle', ' · 공항 셔틀로')}</div></div></div>`);
       }
       list.innerHTML = items.join('');
     }
@@ -3439,12 +3712,12 @@
   function buy(id) {
     const i = ITEMS[id];
     if (!i || !G) return false;
-    if (i.place && (closedNow(i.place) || closedNow(zoneOfPlace(i.place)))) { if (!panel.hidden) note('Sorry, we are closed.', true); return false; }
+    if (i.place && (closedNow(i.place) || closedNow(zoneOfPlace(i.place)))) { if (!panel.hidden) note(tr('Sorry, we are closed.', '죄송해요, 영업이 끝났어요.'), true); return false; }
     const b = billFor(i), price = b.total;
-    if (G.money < price) { if (!panel.hidden) note(`You can't afford that (${receipt(b)}).`, true); speak("Sorry, you can't afford that."); return false; }
-    pay(-price, i.name, 'spend', b.tax || b.tip ? { tax: b.tax, tip: b.tip } : null);
+    if (G.money < price) { if (!panel.hidden) note(tr(`You can't afford that (${receipt(b)}).`, `돈이 부족해요 (${receipt(b)}).`), true); speak("Sorry, you can't afford that."); return false; }
+    pay(-price, i.name, 'spend', Object.assign({ ko: i.name_ko }, b.tax || b.tip ? { tax: b.tax, tip: b.tip } : null));
     speak(i.name);
-    if (i.kind === 'fare') note(`Paid ${usd2(price)}: ${i.name}.`);
+    if (i.kind === 'fare') note(tr(`Paid ${usd2(price)}: ${i.name}.`, `${usd2(price)} 냈어요: ${loc(i)}.`));
     else if (/^(meal|drink)$/.test(i.kind)) {
       G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
       advanceMinutes(i.kind === 'meal' ? 20 : 5);
@@ -3452,17 +3725,17 @@
       if (punchable(i)) {
         G.punch = G.punch || {};
         G.punch[i.place] = b.free ? 0 : punches(i.place) + 1;
-        card = b.free ? ' This one was on the house.' : onTheHouse(i) ? ' Your punch card is full: the next drink is free.' : ` Punch card: ${punches(i.place)} of ${PUNCH_N - 1}.`;
+        card = b.free ? tr(' This one was on the house.', ' 이번 잔은 무료예요.') : onTheHouse(i) ? tr(' Your punch card is full: the next drink is free.', ' 스탬프가 다 찼어요. 다음 음료는 무료예요.') : tr(` Punch card: ${punches(i.place)} of ${PUNCH_N - 1}.`, ` 스탬프 ${PUNCH_N - 1}개 중 ${punches(i.place)}개.`);
       }
-      note(`${i.name}: ${receipt(b)}. Energy +${i.energy || 0}.${card}`);
+      note(`${loc(i)}: ${receipt(b)}. ${tr('Energy', '에너지')} +${i.energy || 0}.${card}`);
       if (player) play(player, 'interact-right', { once: true });
     } else if (i.kind === 'grocery') {
       addLot(id);
       const by = bestBy({ id, day: G.day });
-      note(`${i.name} is in your bag (${G.inventory[id]}).${by != null ? ` Best by ${dateShort(by)}.` : ''}`);
+      note(tr(`${i.name} is in your bag (${G.inventory[id]}).${by != null ? ` Best by ${dateShort(by)}.` : ''}`, `${loc(i)}을(를) 가방에 넣었어요 (${G.inventory[id]}).${by != null ? ` ${dShort(by)}까지 먹으세요.` : ''}`));
     } else {
       addLot(id);
-      note(`${i.name}: ${receipt(b)}. It is in your bag.`);
+      note(tr(`${i.name}: ${receipt(b)}. It is in your bag.`, `${loc(i)}: ${receipt(b)}. 가방에 넣었어요.`));
     }
     saveGame();
     if (!panel.hidden) { const n = panel.querySelector('.panel-note').textContent; renderPanel(); panel.querySelector('.panel-note').textContent = n; }
@@ -3472,7 +3745,7 @@
     const l = ITEMS[n] ? goodLots(n)[0] : lots()[+n];
     if (!l || l.left < 1 || gone(l)) return false;
     const id = l.id, i = ITEMS[id] || { energy: 0, name: pretty(id) };
-    if (+i.cook_only) { if (!panel.hidden) note(`The ${shortName(id).toLowerCase()} needs cooking.`, true); return false; }
+    if (+i.cook_only) { if (!panel.hidden) note(tr(`The ${shortName(id).toLowerCase()} needs cooking.`, `${josa(itemName(id), '은', '는')} 익혀 먹어야 해요.`), true); return false; }
     l.left--;
     syncBag();
     G.energy = clamp(G.energy + (+i.energy || 0), 0, E_MAX);
@@ -3480,16 +3753,16 @@
     logEvent('eat', i.name, 0);
     saveGame();
     renderPanel();
-    note(`You had some ${shortName(id).toLowerCase()}. Energy +${i.energy || 0}.`);
+    note(tr(`You had some ${shortName(id).toLowerCase()}. Energy +${i.energy || 0}.`, `${josa(itemName(id), '을', '를')} 먹었어요. 에너지 +${i.energy || 0}.`));
     return true;
   }
   async function ride(pid) {
     const fare = hasPass() ? 0 : busFare();
-    if (G.money < fare) { note("You can't afford the fare.", true); return; }
+    if (G.money < fare) { note(tr("You can't afford the fare.", '요금이 부족해요.'), true); return; }
     const nb = nextBus(G.minute);
-    if (nb == null) { note(`No more buses tonight. The last one left at ${clock(hm(CFG.bus_last, 1350))}.`, true); return; }
+    if (nb == null) { note(tr(`No more buses tonight. The last one left at ${clock(hm(CFG.bus_last, 1350))}.`, `오늘 버스는 끊겼어요. 막차는 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요.`), true); return; }
     const waited = Math.max(0, Math.round(nb - G.minute));
-    if (fare) pay(-fare, 'Bus fare', 'spend');
+    if (fare) pay(-fare, 'Bus fare', 'spend', { ko: '버스 요금' });
     closePanel();
     advanceMinutes(waited + 15);
     await enterZone('city', pid);
@@ -3511,45 +3784,56 @@
     const eps = today.filter(l => l.type === 'episode');
     const spent = -today.filter(l => l.amount < 0).reduce((s, l) => s + l.amount, 0);
     const earned = today.filter(l => l.amount > 0).reduce((s, l) => s + l.amount, 0);
-    const phrasesToday = eps.reduce((n, l) => n + rows('phrases').filter(p => p.episode === l.id).length, 0);
-    const missed = episodes().filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1));
+    const gained = (G.points || []).filter(p => p.day === day).reduce((n, p) => n + p.n, 0);
+    const missed = episodes().filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1) && !firedOut(e.place, e));
     const away = TRAVEL_ZONES.includes(zoneId);
     logEvent('sleep', late ? 'Fell asleep' : 'Slept', 0);
     const inAt = G.inDay === day ? G.inAt : null, wasLate = G.lateDay === day;
     hush = true;
+    const wasFired = fired();
+    const att = closeDay(day, away);           // a working day you never came in: a strike (and maybe the end of the job)
+    const firedNow = !wasFired && fired();
+    const missionNote = closeMissions(day);          // the last day of the two weeks: free play from tomorrow
     G.day += 1;
     G.minute = DAY_START;
     G.energy = late ? Math.round(E_MAX * 0.8) : E_MAX;          // asleep on your feet at 11 PM is not a night's rest
     G.wet = 0;
     const morning = [];
-    if (late) morning.push('You stayed up too late and did not sleep well. You start the day a little tired.<span class="ko"> 너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.</span>');
+    if (firedNow) morning.push(tr(`📧 <b>You've been let go.</b> ${esc(CFG.company)} ended your job for missing too much work. Your badge no longer works, and your final paycheck has been deposited.`, `📧 <b>해고되었습니다.</b> 결근이 너무 잦아 ${esc(CFG.company)}에서 고용을 끝냈어요. 출입증은 이제 안 열리고, 마지막 급여는 계좌에 들어왔어요.`));
+    else if (att === 'absent') morning.push(tr(`⚠️ You didn't show up for work yesterday. ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 출근하지 않았어요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
+    if (missionNote) morning.push(missionNote);
+    if (late) morning.push(tr('You stayed up too late and did not sleep well. You start the day a little tired.', '너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.'));
     const hol = holidayOf(G.day);
-    if (hol) morning.push(`🗓️ <b>${esc(hol.name)}</b>${hol.kind === 'federal' ? ' (federal holiday)' : ''}. ${esc(hol.note || '')}<span class="ko"> ${esc(hol.name_ko || '')}: ${esc(hol.note_ko || '')}</span>`);
-    const me = hero(), housing = me.housing_name || 'Rent';
-    if (PAYDAYS.includes(G.day)) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income'); notify(CFG.bank_name, `A direct deposit of ${usd2(+me.salary_net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(+me.salary_net)}가 계좌에 입금되었습니다. (post: 입금이 반영되다)`); morning.push(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)}).`); }
-    if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill'); notify(CFG.bank_name, `${housing} payment of ${usd2(+me.housing)} was sent from checking ···4821.`, `${/mortgage/i.test(housing) ? '주택 담보 대출 상환금' : '월세'} ${usd2(+me.housing)}가 계좌에서 나갔습니다.`); morning.push(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`); }
-    billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill'); notify(CFG.bank_name, `Autopay: ${usd2(+b.amount)} was paid to ${b.name} from checking ···4821.`, `자동이체: ${b.name_ko || b.name} ${usd2(+b.amount)}가 빠져나갔습니다.`); morning.push(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.<span class="ko"> 자동이체: ${esc(b.name_ko || b.name)}</span>`); });
-    if (G.feeDay === G.day) morning.push(`The bank charged a <b>${usd2(+CFG.overdraft_fee)}</b> overdraft fee.<span class="ko"> 은행이 초과 인출 수수료 ${usd2(+CFG.overdraft_fee)}를 부과했어요.</span>`);
-    if (G.money < 0) morning.push('Your account is <b>overdrawn</b>. Spend carefully until payday.<span class="ko"> 계좌 잔액이 마이너스예요. 월급날까지 아껴 쓰세요.</span>');
+    if (hol) morning.push(tr(`🗓️ <b>${esc(hol.name)}</b>${hol.kind === 'federal' ? ' (federal holiday)' : ''}. ${esc(hol.note || '')}`, `🗓️ <b>${esc(loc(hol))}</b>${hol.kind === 'federal' ? ' (연방 공휴일)' : ''}. ${esc(hol.note_ko || '')}`));
+    const me = hero(), housing = me.housing_name || 'Rent', housingKo = me.housing_name_ko || (/mortgage/i.test(housing) ? '주택 담보 대출' : '월세');
+    if (PAYDAYS.includes(G.day) && !fired()) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income', { ko: '급여 (계좌 입금)' }); notify(CFG.bank_name, `A direct deposit of ${usd2(+me.salary_net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(+me.salary_net)}가 계좌 ···4821에 입금되었습니다.`); morning.push(tr(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)}).`, `월급날: <b>${usd2(+me.salary_net)}</b>가 계좌에 들어왔어요 (세전 ${usd(+me.salary_gross)}).`)); }
+    if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill', { ko: housingKo }); notify(CFG.bank_name, `${housing} payment of ${usd2(+me.housing)} was sent from checking ···4821.`, `${housingKo} ${usd2(+me.housing)}가 계좌에서 나갔습니다.`); morning.push(tr(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`, `${housingKo}: <b>${usd2(+me.housing)}</b>를 ${/mortgage/i.test(housing) ? '은행에' : '집주인에게'} 냈어요.`)); }
+    billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill', { ko: b.name_ko }); notify(CFG.bank_name, `Autopay: ${usd2(+b.amount)} was paid to ${b.name} from checking ···4821.`, `자동이체: ${b.name_ko || b.name} ${usd2(+b.amount)}가 빠져나갔습니다.`); morning.push(tr(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.`, `자동이체: ${esc(b.name_ko || b.name)} <b>${usd2(+b.amount)}</b>.`)); });
+    if (G.feeDay === G.day) morning.push(tr(`The bank charged a <b>${usd2(+CFG.overdraft_fee)}</b> overdraft fee.`, `은행이 초과 인출 수수료 <b>${usd2(+CFG.overdraft_fee)}</b>를 물렸어요.`));
+    if (G.money < 0) morning.push(tr(`Your account is <b>overdrawn</b>. Spend carefully${fired() ? '' : ' until payday'}.`, `계좌 잔액이 <b>마이너스</b>예요. ${fired() ? '' : '월급날까지 '}아껴 쓰세요.`));
     hush = false;
     kitchenNews().forEach(m => morning.push(m));
     if (ITEMS.detergent) { const w = wakeDressed(); if (w) morning.push(w); }
     const wx = weatherOf(G.day);
     const sun = sunOf(G.day);
-    morning.unshift(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}${sun ? ` ${sunText(G.day)}.` : ''}<span class="ko"> ${esc(wx.forecast_ko || '')} (최고 ${toC(wx.high_f)}°C${sun ? `, 해돋이 ${hhmm(sun.rise)} · 해넘이 ${hhmm(sun.set)}` : ''})</span>`);
-    const cal = calendar().filter(c => c.day === G.day).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
-    const body = `<div class="sum"><div><b>${eps.length}</b>conversations</div><div><b>${phrasesToday}</b>new phrases</div><div><b>${usd2(spent)}</b>spent</div><div><b>${usd2(earned)}</b>earned</div></div>
-      ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(l.text)}</li>`).join('') + '</ul>' : ''}
-      ${missed.length ? `<p>Missed: ${missed.map(e => esc(e.title)).join(', ')}</p>` : ''}
-      ${inAt != null ? `<p>You got to work at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.<span class="ko"> ${hhmm(inAt)}에 출근했어요${wasLate ? ' (지각)' : ''}.</span></p>` : ''}
-      <h3>${dateLong(G.day)} · Day ${G.day}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
-      ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(c.title)}${c.place ? ' · ' + esc(place(c.place).name) : ''}</li>`).join('') + '</ul>' : `<p>${G.day % 7 === 6 || G.day % 7 === 0 ? 'Weekend. No work today.' : 'Nothing on the calendar.'}</p>`}
-      <p>Balance: <b>${usd2(G.money)}</b></p>`;
+    morning.unshift(tr(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}${sun ? ` ${sunText(G.day)}.` : ''}`,
+      `${WX_ICON[wx.kind] || ''} <b>${WX_NAME_KO[wx.kind] || wx.kind}</b>, 최고 ${toC(wx.high_f)}°C, 최저 ${toC(wx.low_f)}°C. ${esc(wx.forecast_ko || '')}${sun ? ` 해돋이 ${clockKo(sun.rise)}, 해넘이 ${clockKo(sun.set)}.` : ''}`));
+    const cal = calendar().filter(c => c.day === G.day && !firedOut(c.place)).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
+    const workAt = !isWeekend(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '';
+    const body = `<div class="sum"><div><b>${eps.length}</b>${tr('conversations', '대화')}</div><div><b>${gained >= 0 ? '+' : '−'}${Math.abs(gained)}</b>${tr('points', '점수')}</div><div><b>${usd2(spent)}</b>${tr('spent', '지출')}</div><div><b>${usd2(earned)}</b>${tr('earned', '수입')}</div></div>
+      ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(logText(l))}</li>`).join('') + '</ul>' : ''}
+      ${missed.length ? `<p>${tr('Missed', '놓친 일')}: ${missed.map(e => esc(loc(e, 'title'))).join(', ')}</p>` : ''}
+      ${inAt != null ? `<p>${tr(`You got to work at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.`, `<b>${clockKo(inAt)}</b>에 출근했어요${wasLate ? ' (지각)' : inAt <= hm(CFG.work_start, 540) ? ' (정시)' : ''}.`)}</p>` : ''}
+      <p>${tr('Score', '점수')} <b>★ ${score()}</b> · ${tr(standing()[0], standing()[1])}${day <= MISSION_DAYS ? ` · ${tr('Missions', '미션')} <b>${missionCount().join(' / ')}</b>` : ''}</p>
+      <h3>${tr(`${dateLong(G.day)} · Day ${G.day}`, `${dateKo(G.day)} · ${G.day}일째`)}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
+      ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(loc(c, 'title'))}${c.place ? ' · ' + esc(loc(place(c.place))) : ''}</li>`).join('') + '</ul>' : `<p>${isWeekend(G.day) ? tr('Weekend. No work today.', '주말이에요. 오늘은 출근하지 않아요.') : tr('Nothing on the calendar.', '달력에 일정이 없어요.')}</p>`}
+      ${workAt ? `<p>${workAt}</p>` : ''}
+      <p>${tr('Balance', '잔액')}: <b>${usd2(G.money)}</b></p>`;
     saveGame();
     state = 'sleep';
     const wake = pid && zoneId ? [zoneId, pid] : away ? ['hotel', 'hotel_room'] : [hero().home_zone, hero().home_bed];
     const p = enterZone(wake[0], wake[1]).then(() => { if (player) player.heading += 0; saveGame(); });
-    showCard({ kicker: late ? 'You fell asleep' : 'Good night', title: `${dateLong(day)} is over`, body, ok: 'Start the day', state: 'sleep' }, () => { goalTimer = 0; });
+    showCard({ kicker: late ? tr('You fell asleep', '잠들었어요') : tr('Good night', '잘 자요'), title: tr(`${dateLong(day)} is over`, `${dateKo(day)}이 지났어요`), body, ok: tr('Start the day', '하루 시작'), state: 'sleep' }, () => { goalTimer = 0; });
     return p;
   }
 
@@ -3560,7 +3844,7 @@
     card.querySelector('.kicker').textContent = c.kicker || '';
     card.querySelector('h2').textContent = c.title || '';
     card.querySelector('.card-body').innerHTML = c.body || '';
-    card.querySelector('.ok').textContent = c.ok || 'Continue';
+    card.querySelector('.ok').textContent = c.ok || tr('Continue', '계속');
     card.hidden = false;
     state = c.state || 'card';
     cardDone = then || null;
@@ -3582,6 +3866,7 @@
     $('menu-btn').setAttribute('aria-expanded', String(!m.hidden));
   }
   $('menu-btn').addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
+  $('hud-score').addEventListener('click', () => { if (G && state === 'play') openPanel('work'); });
   document.addEventListener('click', (e) => { if (!$('menu').hidden && !e.target.closest('#menu')) toggleMenu(false); });
   $('menu').addEventListener('click', (e) => {
     const b = e.target.closest('button');
@@ -3590,7 +3875,7 @@
     if (what === 'graphics') { settings.gfx = gfxHigh() ? 'low' : 'high'; saveSettings(); applyQuality(); return; }
     toggleMenu(false);
     if (what === 'title') { saveGame(); showTitle(); }
-    else if (what === 'reset') { if (confirm(`Delete ${G ? G.name + "'s" : 'your'} saved game and start over?`)) { resetGame(); } }
+    else if (what === 'reset') { if (confirm(tr(`Delete ${G ? G.name + "'s" : 'your'} saved game and start over?`, `${G ? myName() + '의 ' : ''}저장된 게임을 지우고 처음부터 할까요?`))) { resetGame(); } }
     else openPanel(what);
   });
   function resetGame() {
@@ -3611,10 +3896,9 @@
     b.type = 'button';
     b.setAttribute('role', 'radio');
     b.dataset.hero = h.id;
-    b.innerHTML = `<b></b><span></span><span class="ko"></span>`;
-    b.querySelector('b').textContent = h.name;
-    b.querySelector('span').textContent = h.role;
-    b.querySelector('.ko').textContent = h.role_ko || '';
+    b.innerHTML = `<b></b><span></span>`;
+    b.querySelector('b').textContent = loc(h);
+    b.querySelector('span').textContent = tr(h.role, h.role_ko);
     b.addEventListener('click', () => { chosen = h.id; replaceArmed = false; markChosen(); newGameLabel(); });
     charBox.appendChild(b);
   });
@@ -3622,14 +3906,16 @@
     const h = heroOf(chosen);
     charBox.querySelectorAll('button').forEach(b => {
       b.setAttribute('aria-checked', String(b.dataset.hero === chosen));
+      b.querySelector('b').textContent = loc(heroOf(b.dataset.hero));
+      b.querySelector('span').textContent = loc(heroOf(b.dataset.hero), 'role');
       const m = heroOf(b.dataset.hero).model;
       b.classList.toggle('nomodel', !!packs[m] && packs[m].status === 'missing');
     });
     const info = $('hero-info');
-    if (info) info.innerHTML = `<p class="who"><b>${esc(h.full_name || h.name)}</b> · ${esc(h.role)}</p><p>${esc(h.bio || '')}</p><p class="ko">${esc(h.bio_ko || '')}</p>
-      <dl><dt>Home</dt><dd>${esc(h.home_name || zoneName(h.home_zone)[0])}<span class="ko"> ${esc(h.home_name_ko || '')}</span></dd>
-      <dt>English</dt><dd>${esc(h.level || '')}<span class="ko"> ${esc(h.level_ko || '')}</span></dd>
-      <dt>Money</dt><dd>${usd(+h.start_money)} to start · ${usd(+h.salary_net)} every other Friday · ${esc(String(h.housing_name || 'Rent').toLowerCase())} ${usd(+h.housing)}</dd></dl>`;
+    if (info) info.innerHTML = `<p class="who"><b>${esc(tr(h.full_name || h.name, h.full_name_ko))}</b> · ${esc(loc(h, 'role'))}</p><p>${esc(loc(h, 'bio'))}</p>
+      <dl><dt>${tr('Home', '집')}</dt><dd>${esc(tr(h.home_name || zoneName(h.home_zone)[0], h.home_name_ko))}</dd>
+      <dt>${tr('Story', '이야기')}</dt><dd>${tr(`${missionsOf(h.id)} missions in two weeks (all of them: a bonus), then free play`, `2주 동안 미션 ${missionsOf(h.id)}개(모두 해내면 보너스), 그다음은 자유 플레이`)}</dd>
+      <dt>${tr('Money', '돈')}</dt><dd>${tr(`${usd(+h.start_money)} to start · ${usd(+h.salary_net)} every other Friday · ${esc(String(h.housing_name || 'Rent').toLowerCase())} ${usd(+h.housing)}`, `처음 ${usd(+h.start_money)} · 격주 금요일 ${usd(+h.salary_net)} · ${esc(h.housing_name_ko || '월세')} ${usd(+h.housing)}`)}</dd></dl>`;
     setPreview(h.model);
   }
   const preview = { renderer: null, scene: null, camera: null, actor: null, model: null };
@@ -3689,18 +3975,18 @@
       go.type = 'button';
       go.className = 'go';
       go.innerHTML = `<b></b><span></span>`;
-      go.querySelector('b').textContent = g.name;
-      go.querySelector('span').textContent = `${heroOf(g.hero).role} · ${weekday(g.day).slice(0, 3)} Day ${g.day}, ${clock(g.minute)} · ${usd(g.money)}`;
+      go.querySelector('b').textContent = KO() && heroOf(g.hero).name === g.name ? loc(heroOf(g.hero)) : g.name;
+      go.querySelector('span').textContent = tr(`${heroOf(g.hero).role} · ${weekday(g.day).slice(0, 3)} Day ${g.day}, ${clock(g.minute)} · ${usd(g.money)}`, `${loc(heroOf(g.hero), 'role')} · ${g.day}일째 (${WEEKDAYS_KO[(g.day - 1) % 7][0]}) ${clockKo(g.minute)} · ${usd(g.money)}`) + (g.score != null ? ` · ★ ${Math.round(g.score)}` : '') + (g.work && g.work.fired ? tr(' · let go', ' · 해고됨') : '');
       go.addEventListener('click', () => continueGame(g.name));
       const del = document.createElement('button');
       del.type = 'button';
       del.className = 'del';
       del.textContent = '✕';
-      del.setAttribute('aria-label', `Delete ${g.name}'s game`);
-      del.title = 'Delete this saved game';
+      del.setAttribute('aria-label', tr(`Delete ${g.name}'s game`, `${g.name}의 게임 지우기`));
+      del.title = tr('Delete this saved game', '저장된 게임 지우기');
       let armed = 0;
       del.addEventListener('click', () => {
-        if (!armed) { armed = setTimeout(() => { armed = 0; del.textContent = '✕'; del.classList.remove('armed'); }, 4000); del.textContent = 'Delete?'; del.classList.add('armed'); return; }
+        if (!armed) { armed = setTimeout(() => { armed = 0; del.textContent = '✕'; del.classList.remove('armed'); }, 4000); del.textContent = tr('Delete?', '지울까요?'); del.classList.add('armed'); return; }
         clearTimeout(armed);
         deleteSave(g.name);
         renderSaves();
@@ -3716,9 +4002,10 @@
     const name = heroOf(chosen).name, taken = !!allSaves()[name];
     const btn = $('new-game'), note = $('new-note');
     if (btn.disabled) return;
-    btn.textContent = `New game as ${name}`;
+    const ko = loc(heroOf(chosen)), last = ko.charCodeAt(ko.length - 1), batchim = last >= 0xac00 && last <= 0xd7a3 && (last - 0xac00) % 28 && (last - 0xac00) % 28 !== 8;
+    btn.textContent = tr(`New game as ${name}`, `${ko}${batchim ? '으로' : '로'} 새 게임`);
     note.hidden = !(taken && replaceArmed);
-    if (taken && replaceArmed) note.textContent = `${name} already has a saved game (continue it from the list above). Click again to start over and replace it.`;
+    if (taken && replaceArmed) note.textContent = tr(`${name} already has a saved game (continue it from the list above). Click again to start over and replace it.`, `${loc(heroOf(chosen))}의 저장된 게임이 있어요(위 목록에서 이어 하세요). 한 번 더 누르면 처음부터 다시 시작하고 덮어씁니다.`);
   }
   function continueGame(name) {
     const s = allSaves()[name];
@@ -3743,9 +4030,10 @@
     phoneBadge();
     if (fresh) {
       if (G.hero === DEFAULT_HERO) toast(`${dateLong(G.day)}. Welcome to ${CFG.city}, ${G.name}!`, `${dateKo(G.day)}. ${CFG.city}에 온 걸 환영해요!`, 'good', 4);
-      else toast(`${dateLong(G.day)}. Good morning, ${G.name}!`, `${dateKo(G.day)}. 좋은 아침이에요, ${G.name}!`, 'good', 4);
+      else toast(`${dateLong(G.day)}. Good morning, ${G.name}!`, `${dateKo(G.day)}. 좋은 아침이에요, ${hero().name_ko || G.name}!`, 'good', 4);
       const wx = weatherOf(G.day);
-      if (wx.forecast) setTimeout(() => toast(`${WX_ICON[wx.kind] || ''} ${wx.high_f}°F today. ${wx.forecast}`, `오늘 최고 ${toC(wx.high_f)}°C. ${wx.forecast_ko || ''}`, null, 5), 4200);
+      if (wx.forecast) setTimeout(() => toast(`${WX_ICON[wx.kind] || ''} ${wx.high_f}°F today. ${wx.forecast}`, `${WX_ICON[wx.kind] || ''} 오늘 최고 ${toC(wx.high_f)}°C. ${wx.forecast_ko || ''}`, null, 5), 4200);
+      setTimeout(() => toast(`Work starts at ${clock(hm(CFG.work_start, 540))}. Don't be late: being late or missing work too often gets you fired.`, `업무는 ${clockKo(hm(CFG.work_start, 540))}에 시작해요. 지각이나 결근이 잦으면 해고될 수 있어요.`, null, 6), 9000);
       logEvent('start', 'New game', 0);
       saveGame();
     }
@@ -3776,7 +4064,7 @@
     get propList() { return zoneAll; }, get solids() { return solids; }, get movers() { return movers; },
     get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
     get dark() { return darkAt(hourNow() * 60); }, get solarMinute() { return solarHour(hourNow(), sunDay()) * 60; },
-    get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get weekend() { return !!G && isWeekend(G.day); },
+    get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get lang() { return settings.lang; }, get weekend() { return !!G && isWeekend(G.day); },
     get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
     shelter, get raining() { return raining(); },          // an umbrella over a person (life.js: the passers-by)
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
@@ -3902,14 +4190,14 @@
     markChosen();
     const btn = $('new-game');
     btn.disabled = false;
-    btn.textContent = 'New game';
+    btn.textContent = tr('New game', '새 게임');
     showTitle();
     newGameLabel();
     ready = true;
     enterZone('city').catch(e => console.error(e));        // the backdrop behind the title
   }
   const ZONE_ORDER = [];
-  boot().catch(e => { console.error(e); $('new-game').textContent = 'Could not start'; });
+  boot().catch(e => { console.error(e); $('new-game').textContent = tr('Could not start', '시작할 수 없어요'); });
 
   // ---------------------------------------------------------------- for tests (headless Chrome): SO.debug
   const wait = (ms) => new Promise(r => setTimeout(r, ms));
@@ -3942,6 +4230,12 @@
     set speed(v) { debugSpeed = +v || 1; }, set fast(v) { fastMode = !!v; },
     get gfx() { return gfxHigh() ? 'high' : 'low'; }, set gfx(v) { settings.gfx = v === 'low' ? 'low' : 'high'; applyQuality(); },
     get hero() { return G ? G.hero : null; }, get heroes() { return HEROES.map(h => h.id); },
+    // the language of the screen, the score and the work record; wrong(n) picks the n-th wrong answer of the turn on screen
+    get lang() { return settings.lang; }, set lang(v) { settings.lang = v === 'ko' ? 'ko' : 'en'; langBox.value = settings.lang; saveSettings(); applyLang(); },
+    get mission() { return G ? { count: missionCount(), state: G.mission || null, free: freePlay() } : null; },
+    get score() { return score(); }, get work() { return G ? JSON.parse(JSON.stringify(work())) : null; }, get standing() { return standing()[0]; },
+    get choices() { return Array.from(dlg.querySelectorAll('.choices button')).map(b => b.textContent); },
+    wrong(n) { if (!talk) return null; const i = talk.order.filter(x => x >= 0)[n || 0]; pick(i); return dlg.querySelector('.feedback').textContent; },
     tour: { async start() { await startTour(); return state; }, do(what) { tourDo(what); return Object.assign({}, tour); }, get view() { return Object.assign({}, tour); }, get ref() { return tour; } },
     // the jogging game: jog.start(story) and what a run says about itself; jog.press(0 | 1) steps, jog.auto(n) lands the next n steps on the beat
     jog: {
@@ -4024,8 +4318,7 @@
     // finish what is on screen now: answer the turn with the model answer, continue, or close a card or panel
     async advance() {
       if (state === 'talk' && talk) {
-        const t = talk.turns[talk.idx];
-        if (!dlg.classList.contains('answered')) answered(personal(t.model));
+        if (!dlg.classList.contains('answered')) answered();
         await until(() => !dlg.querySelector('.next').hidden, 4000);
         dlg.querySelector('.next').click();
         await wait(60);

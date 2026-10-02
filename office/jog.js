@@ -49,10 +49,10 @@
     return { pts, cum, length, at };
   })();
   // where you are on the loop, in words
-  function stretch(s) {
+  function stretch(s, ko) {
     const p = route.at(s);
-    if (Math.abs(p.dz) > 0.7) return p.dz > 0 ? 'West side' : 'East side';
-    return p.dx > 0 ? 'Along the beach' : 'Along the river';
+    if (Math.abs(p.dz) > 0.7) return p.dz > 0 ? (ko ? '서쪽 길' : 'West side') : (ko ? '동쪽 길' : 'East side');
+    return p.dx > 0 ? (ko ? '해변을 따라' : 'Along the beach') : (ko ? '강을 따라' : 'Along the river');
   }
 
   // ------------------------------------------------------------ the trail in the city
@@ -233,27 +233,28 @@
     const me = { x: 0, z: 0, dx: 0, dz: 1 }, tmp = {};
     const name = opts.name || 'You';
     const fovBefore = cam.fov;
+    const ko = api.lang === 'ko', L = (en, k) => ko ? k : en;          // the language of the screen (game.js settings.lang)
 
     // ----- the screen
     const el = document.createElement('div');
     el.id = 'jog';
     el.innerHTML = `
       <div class="jog-top">
-        <div class="cell"><span>Time</span><b class="time">0:00.00</b></div>
-        <div class="cell"><span>Place</span><b class="place">1st</b></div>
-        <div class="cell"><span>Speed</span><b class="speed">0.0 mph</b></div>
-        <div class="cell"><span>Score</span><b class="score">0</b></div>
+        <div class="cell"><span>${L('Time', '시간')}</span><b class="time">0:00.00</b></div>
+        <div class="cell"><span>${L('Place', '순위')}</span><b class="place">1st</b></div>
+        <div class="cell"><span>${L('Speed', '속도')}</span><b class="speed">0.0 mph</b></div>
+        <div class="cell"><span>${L('Score', '점수')}</span><b class="score">0</b></div>
       </div>
       <div class="jog-way"><div class="bar"><i></i></div><span class="where"></span></div>
       <div class="jog-judge"></div>
       <div class="jog-count"></div>
-      <div class="jog-pace"><span>Pace</span><div class="bar"><i></i></div><b class="combo"></b></div>
+      <div class="jog-pace"><span>${L('Pace', '페이스')}</span><div class="bar"><i></i></div><b class="combo"></b></div>
       <canvas class="jog-lane" width="360" height="200"></canvas>
-      <div class="jog-pads"><button type="button" class="pad l" aria-label="Left foot">← Left<small>A · F</small></button><button type="button" class="pad r" aria-label="Right foot">Right →<small>D · J</small></button></div>
-      <button type="button" class="jog-stop">Stop</button>
-      <p class="jog-help">Step on the beat: <b>left, right, left, right</b>. Good timing builds your pace.<span class="ko"> 박자에 맞춰 왼발, 오른발을 번갈아 누르세요. 박자가 맞을수록 빨라집니다.</span></p>
+      <div class="jog-pads"><button type="button" class="pad l" aria-label="${L('Left foot', '왼발')}">${L('← Left', '← 왼발')}<small>A · F</small></button><button type="button" class="pad r" aria-label="${L('Right foot', '오른발')}">${L('Right →', '오른발 →')}<small>D · J</small></button></div>
+      <button type="button" class="jog-stop">${L('Stop', '그만')}</button>
+      <p class="jog-help">${L('Step on the beat: <b>left, right, left, right</b>. Good timing builds your pace.', '박자에 맞춰 <b>왼발, 오른발</b>을 번갈아 누르세요. 박자가 맞을수록 빨라집니다.')}</p>
       <div class="jog-result" hidden><div class="card"><p class="kicker"></p><h2></h2><div class="card-body"></div>
-        <div class="buttons"><button type="button" class="again">Run again</button><button type="button" class="done ghost">Done</button></div></div></div>`;
+        <div class="buttons"><button type="button" class="again">${L('Run again', '다시 달리기')}</button><button type="button" class="done ghost">${L('Done', '끝')}</button></div></div></div>`;
     document.body.appendChild(el);
     document.body.classList.add('jogging');
     const $ = (q) => el.querySelector(q);
@@ -366,12 +367,11 @@
         perfect: tally.perfect, good: tally.good, ok: tally.ok, miss: tally.miss, name };
       const before = records(), news = keepRecord(result), rec = records();
       result.bestTime = news.time; result.bestScore = news.score;
-      $('.jog-result .kicker').textContent = news.time ? 'New best time!' : place === 1 ? 'You won the race' : 'Fairview Loop';
-      $('.jog-result h2').textContent = `${fmt(result.time)} · ${ordinal(place)} of ${result.runners}`;
-      $('.jog-result .card-body').innerHTML = `<div class="sum"><div><b>${score.toLocaleString('en-US')}</b>score</div><div><b>${result.accuracy}%</b>on the beat</div><div><b>×${best}</b>best streak</div></div>
-        <p>Perfect ${tally.perfect} · Good ${tally.good} · OK ${tally.ok} · Missed ${tally.miss}</p>
-        <p>Best time: <b>${fmt(rec.time)}</b>${news.time && before.time ? ` (was ${fmt(before.time)})` : ''} · Best score: <b>${(rec.score || 0).toLocaleString('en-US')}</b></p>
-        <p class="ko">기록 ${fmt(result.time)}, ${result.runners}명 중 ${place}등. 박자 정확도 ${result.accuracy}%.</p>`;
+      $('.jog-result .kicker').textContent = news.time ? L('New best time!', '최고 기록!') : place === 1 ? L('You won the race', '1등으로 들어왔어요') : L('Fairview Loop', '페어뷰 순환로');
+      $('.jog-result h2').textContent = L(`${fmt(result.time)} · ${ordinal(place)} of ${result.runners}`, `${fmt(result.time)} · ${result.runners}명 중 ${place}등`);
+      $('.jog-result .card-body').innerHTML = `<div class="sum"><div><b>${score.toLocaleString('en-US')}</b>${L('score', '점수')}</div><div><b>${result.accuracy}%</b>${L('on the beat', '박자 정확도')}</div><div><b>×${best}</b>${L('best streak', '최고 연속')}</div></div>
+        <p>Perfect ${tally.perfect} · Good ${tally.good} · OK ${tally.ok} · ${L('Missed', 'Miss')} ${tally.miss}</p>
+        <p>${L('Best time', '최고 기록')}: <b>${fmt(rec.time)}</b>${news.time && before.time ? L(` (was ${fmt(before.time)})`, ` (이전 ${fmt(before.time)})`) : ''} · ${L('Best score', '최고 점수')}: <b>${(rec.score || 0).toLocaleString('en-US')}</b></p>`;
       $('.jog-result').hidden = false;
       el.classList.add('over');
       if (api.speak && opts.voice) api.speak(place === 1 ? 'Yes! New personal best!' : 'Whew. Good run.', opts.voice);
@@ -450,11 +450,11 @@
       sea.near(pz);
       // the numbers
       $('.time').textContent = fmt(runT);
-      $('.place').textContent = ordinal(place);
+      $('.place').textContent = ko ? place + '등' : ordinal(place);
       $('.speed').textContent = (v * 1.6).toFixed(1) + ' mph';
       $('.score').textContent = score.toLocaleString('en-US');
       $('.jog-way .bar i').style.width = (s / route.length * 100).toFixed(1) + '%';
-      $('.jog-way .where').textContent = phase === 'ready' ? 'Fairview Loop' : stretch(s);
+      $('.jog-way .where').textContent = phase === 'ready' ? L('Fairview Loop', '페어뷰 순환로') : stretch(s, ko);
       $('.jog-pace .bar i').style.width = (pace * 100).toFixed(0) + '%';
       $('.jog-pace .combo').textContent = combo >= 2 ? '×' + combo : '';
       drawLane();

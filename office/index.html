@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sim Office</title>
-<meta name="description" content="Commute to a software job in a small American city and learn workplace English, one conversation at a time.">
+<meta name="description" content="Live a working life in a small American city: commute to a software job, show up on time, pay the bills and get through the week.">
 <meta name="theme-color" content="#16233b">
 <link rel="stylesheet" href="game.css">
 </head>
@@ -19,26 +19,28 @@
   <div class="brand">Sim Office</div>
   <div class="clock"><span id="hud-day"></span> <b id="hud-time"></b> <span id="hud-weather"></span></div>
   <div class="money" id="hud-money"></div>
-  <div class="energy" title="Energy"><span class="lbl">Energy</span><div class="meter"><div class="fill" id="hud-energy"></div></div></div>
-  <label class="opt"><input type="checkbox" id="voice-on" checked> <span>Voice</span></label>
-  <label class="opt"><input type="checkbox" id="ko-on"> <span class="long">Korean help</span><span class="short">KO</span></label>
-  <button type="button" id="menu-btn" aria-haspopup="true" aria-expanded="false" title="Menu">Menu</button>
+  <button type="button" class="score" id="hud-score" data-open="work" title="Score"></button>
+  <div class="energy" title="Energy"><span class="lbl" data-ko="에너지">Energy</span><div class="meter"><div class="fill" id="hud-energy"></div></div></div>
+  <label class="opt"><input type="checkbox" id="voice-on" checked> <span data-ko="음성">Voice</span></label>
+  <label class="opt lang"><span class="long" aria-hidden="true">🌐</span><select id="lang" aria-label="Language"><option value="en">English</option><option value="ko">한국어</option></select></label>
+  <button type="button" id="menu-btn" aria-haspopup="true" aria-expanded="false" title="Menu" data-ko="메뉴" data-ko-label="메뉴">Menu</button>
   <nav id="menu" hidden>
     <button type="button" data-open="phone">Phone</button>
-    <button type="button" data-open="talks">Conversations</button>
-    <button type="button" data-open="inventory">Inventory</button>
-    <button type="button" data-open="calendar">Calendar</button>
-    <button type="button" data-open="bank">Bank</button>
-    <button type="button" data-open="map">Map</button>
+    <button type="button" data-open="work" data-ko="근무 기록">Work record</button>
+    <button type="button" data-open="talks" data-ko="지난 대화">Conversations</button>
+    <button type="button" data-open="inventory" data-ko="가방">Inventory</button>
+    <button type="button" data-open="calendar" data-ko="달력">Calendar</button>
+    <button type="button" data-open="bank" data-ko="은행">Bank</button>
+    <button type="button" data-open="map" data-ko="지도">Map</button>
     <button type="button" data-open="graphics" id="gfx-btn">Graphics: High</button>
-    <button type="button" data-open="title">Title screen</button>
-    <button type="button" data-open="reset" class="danger">Reset game</button>
+    <button type="button" data-open="title" data-ko="처음 화면">Title screen</button>
+    <button type="button" data-open="reset" class="danger" data-ko="게임 초기화">Reset game</button>
   </nav>
 </header>
 
 <aside id="side">
-  <div id="goal" hidden><div class="en"></div><div class="ko"></div></div>
-  <div id="next" hidden><div class="en"></div><div class="ko"></div></div>
+  <div id="goal" hidden></div>
+  <div id="next" hidden></div>
 </aside>
 <div id="toasts" aria-live="polite"></div>
 
@@ -48,28 +50,18 @@
 <section id="dialog" hidden>
   <div class="head"><span class="ep"></span><span class="step"></span></div>
   <p class="situation"></p>
-  <p class="situation-ko ko"></p>
   <p class="line"><b class="who"></b> <span class="say"></span></p>
-  <p class="line-ko ko"></p>
   <p class="prompt"></p>
-  <p class="prompt-ko ko"></p>
   <div class="choices"></div>
-  <form class="typing" autocomplete="off">
-    <input type="text" name="answer" placeholder="Type what you say, in English" spellcheck="false" aria-label="Your answer">
-    <button type="submit">Say</button>
-  </form>
   <p class="feedback"></p>
   <div class="foot">
-    <div class="mode" role="group" aria-label="Answer mode">
-      <button type="button" data-mode="type">Type</button><button type="button" data-mode="choose">Choose</button>
-    </div>
-    <button type="button" class="leave">Walk away</button>
+    <button type="button" class="leave" data-ko="자리 뜨기">Walk away</button>
     <button type="button" class="next" hidden>Continue ▸</button>
   </div>
 </section>
 
 <section id="panel" hidden>
-  <div class="panel-head"><h2></h2><span class="sub"></span><button type="button" class="close" aria-label="Close">Close</button></div>
+  <div class="panel-head"><h2></h2><span class="sub"></span><button type="button" class="close" aria-label="Close" data-ko="닫기" data-ko-label="닫기">Close</button></div>
   <div class="panel-body"></div>
   <p class="panel-note"></p>
 </section>
@@ -78,8 +70,7 @@
   <div class="card">
     <p class="kicker">Fairview · Seaside Labs</p>
     <h1>Sim Office</h1>
-    <p>Work at Seaside Labs, a software company in a small American city. Pick who you are: each has a job, a home and conversations of their own. Commute, grab a coffee, and get through the week in English.</p>
-    <p class="ko">미국 소도시의 소프트웨어 회사 시사이드 랩스에서 일합니다. 누가 될지 고르세요. 사람마다 맡은 일과 집, 나누는 대화가 다릅니다.</p>
+    <p data-ko="미국 소도시의 소프트웨어 회사 시사이드 랩스에서 일하며 살아 봅니다. 누가 될지 고르세요. 사람마다 맡은 일과 집, 만나는 사람이 다릅니다. 출근하고, 커피를 사고, 장을 보고, 공과금을 내세요. 첫 2주에는 미션이 있고(모두 해내면 보너스), 그다음은 자유 플레이입니다. 지각과 결근이 잦으면 해고됩니다.">Live and work at Seaside Labs, a software company in a small American city. Pick who you are: each has a job, a home and people of their own. Commute, grab a coffee, shop and pay the bills. The first two weeks have missions (finish them all for a bonus), then it's free play. Be late or miss work too often and you'll be let go.</p>
     <div class="who-row">
       <canvas id="preview" width="180" height="220" aria-label="Your character"></canvas>
       <div class="who-form">
@@ -87,16 +78,17 @@
         <div id="hero-info"></div>
       </div>
     </div>
-    <p class="keys">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Conversations <kbd>T</kbd> · Phone <kbd>P</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd> · Bank <kbd>B</kbd> · Map <kbd>M</kbd><br>
+    <p class="keys" data-ko="걷기: <kbd>↑</kbd><kbd>↓</kbd> 또는 <kbd>W</kbd><kbd>S</kbd> · 돌기: <kbd>←</kbd><kbd>→</kbd> 또는 <kbd>A</kbd><kbd>D</kbd> · 달리기: <kbd>Shift</kbd> · 말 걸기·사용: <kbd>E</kbd> · 지난 대화 <kbd>T</kbd> · 휴대전화 <kbd>P</kbd> · 가방 <kbd>I</kbd> · 달력 <kbd>C</kbd> · 은행 <kbd>B</kbd> · 지도 <kbd>M</kbd> · 근무 기록 <kbd>R</kbd><br>
+      <span class=&quot;touch-only&quot;>휴대전화에서는 왼쪽 아래 원을 끄세요.</span>">Walk: <kbd>↑</kbd><kbd>↓</kbd> or <kbd>W</kbd><kbd>S</kbd> · Turn: <kbd>←</kbd><kbd>→</kbd> or <kbd>A</kbd><kbd>D</kbd> · Run: <kbd>Shift</kbd> · Talk / use: <kbd>E</kbd> · Conversations <kbd>T</kbd> · Phone <kbd>P</kbd> · Inventory <kbd>I</kbd> · Calendar <kbd>C</kbd> · Bank <kbd>B</kbd> · Map <kbd>M</kbd> · Work record <kbd>R</kbd><br>
       <span class="touch-only">On a phone, drag the circle at the bottom left.</span></p>
     <div id="saves" class="saves" hidden aria-label="Saved games"></div>
     <div class="buttons">
       <button type="button" id="new-game" disabled>Loading…</button>
-      <button type="button" id="tour-game" class="ghost" title="Fly over Fairview with the keyboard">Look around town</button>
-      <button type="button" id="jog-game" class="ghost" title="A mini-game on its own: run the Fairview Loop and keep the rhythm of your steps">Jogging mini-game</button>
+      <button type="button" id="tour-game" class="ghost" title="Fly over Fairview with the keyboard" data-ko="마을 둘러보기" data-ko-label="키보드로 페어뷰 위를 날아다니며 구경합니다">Look around town</button>
+      <button type="button" id="jog-game" class="ghost" title="A mini-game on its own: run the Fairview Loop and keep the rhythm of your steps" data-ko="조깅 미니 게임" data-ko-label="따로 하는 미니 게임: 페어뷰 순환로를 달리며 발걸음 박자를 맞춥니다">Jogging mini-game</button>
     </div>
     <p id="new-note" class="note" hidden></p>
-    <p class="small">People: Quaternius (quaternius.com), CC0. Props and places: Kenney (www.kenney.nl), CC0. three.js (MIT). All places, companies and people are fictional.</p>
+    <p class="small" data-ko="인물: Quaternius (quaternius.com), CC0. 소품과 장소: Kenney (www.kenney.nl), CC0. three.js (MIT). 모든 장소, 회사, 인물은 가상입니다.">People: Quaternius (quaternius.com), CC0. Props and places: Kenney (www.kenney.nl), CC0. three.js (MIT). All places, companies and people are fictional.</p>
   </div>
 </div>
 
@@ -106,12 +98,13 @@
     <button type="button" data-tour="time">Time: Morning</button>
     <button type="button" data-tour="weather">Weather: Sunny</button>
     <button type="button" data-tour="auto">Circling: on</button>
-    <button type="button" data-tour="in" aria-label="Closer">＋</button>
-    <button type="button" data-tour="out" aria-label="Farther">－</button>
-    <button type="button" data-tour="back" class="back">Back</button>
+    <button type="button" data-tour="in" aria-label="Closer" data-ko-label="가까이">＋</button>
+    <button type="button" data-tour="out" aria-label="Farther" data-ko-label="멀리">－</button>
+    <button type="button" data-tour="back" class="back" data-ko="돌아가기">Back</button>
   </div>
-  <p class="tour-keys"><kbd>↑</kbd><kbd>↓</kbd> / <kbd>W</kbd><kbd>S</kbd> move · <kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> turn · <kbd>Q</kbd><kbd>E</kbd> sideways · <kbd>Z</kbd><kbd>X</kbd> closer, farther · <kbd>R</kbd><kbd>F</kbd> higher, lower · <kbd>Shift</kbd> faster · <kbd>Space</kbd> circling · <kbd>T</kbd> time · <kbd>Y</kbd> weather · <kbd>Esc</kbd> back
-    <span class="touch-only">Drag to turn. </span><span class="ko">방향키·WASD로 이동과 회전, Q E 옆으로, Z X 확대·축소, R F 높이, T 시간대, Y 날씨, Esc 돌아가기. 마우스로 끌어서 돌리고 휠로 확대합니다.</span></p>
+  <p class="tour-keys" data-ko="<kbd>↑</kbd><kbd>↓</kbd> / <kbd>W</kbd><kbd>S</kbd> 이동 · <kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> 회전 · <kbd>Q</kbd><kbd>E</kbd> 옆으로 · <kbd>Z</kbd><kbd>X</kbd> 확대·축소 · <kbd>R</kbd><kbd>F</kbd> 높이 · <kbd>Shift</kbd> 빠르게 · <kbd>Space</kbd> 자동 회전 · <kbd>T</kbd> 시간대 · <kbd>Y</kbd> 날씨 · <kbd>Esc</kbd> 돌아가기
+    <span class=&quot;touch-only&quot;>끌어서 돌립니다. </span>"><kbd>↑</kbd><kbd>↓</kbd> / <kbd>W</kbd><kbd>S</kbd> move · <kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd> turn · <kbd>Q</kbd><kbd>E</kbd> sideways · <kbd>Z</kbd><kbd>X</kbd> closer, farther · <kbd>R</kbd><kbd>F</kbd> higher, lower · <kbd>Shift</kbd> faster · <kbd>Space</kbd> circling · <kbd>T</kbd> time · <kbd>Y</kbd> weather · <kbd>Esc</kbd> back
+    <span class="touch-only">Drag to turn. </span></p>
 </div>
 
 <div id="card" hidden>
@@ -123,7 +116,6 @@
   </div>
 </div>
 
-<script src="../lib/matcher.js"></script>
 <script src="../vendor/three-game.min.js"></script>
 <script src="../vendor/yuka.min.js"></script>
 <script src="data/db.js"></script>

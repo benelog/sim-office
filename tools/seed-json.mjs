@@ -1,7 +1,7 @@
 // Try seed files before they are pushed: office/data/db.js plus the rows of the given seed files, as a db.js.
 //   node tools/seed-json.mjs db/seed/51-derek.sql [more.sql] --out /tmp/db-try.js [--json /tmp/db-try.json]
 // Then: node tools/db-lint.mjs /tmp/db-try.js, or SO_DB_JSON=/tmp/db-try.json tools/office-check.sh <outdir>.
-// Reads only `REPLACE INTO <table> (<columns>) VALUES (…), (…)` statements (split like tools/dolt.mjs: a semicolon
+// Reads `REPLACE INTO <table> (<columns>) VALUES (…), (…)` and `DELETE FROM <table> WHERE <col> IN (…) [AND <col> = …]` statements (split like tools/dolt.mjs: a semicolon
 // at the end of a line). Also says which statements are too long for the DoltHub write API.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,7 +18,7 @@ vm.runInContext(fs.readFileSync(path.join(root, 'office', 'data', 'db.js'), 'utf
 const DB = JSON.parse(JSON.stringify(ctx.window.SO_DB));
 const KEYS = { config: ['k'], places: ['id'], npcs: ['id'], chatter: ['npc', 'seq'], episodes: ['id'], turns: ['episode', 'seq'], phrases: ['id'], items: ['id'],
   calendar: ['hero', 'day', 'time'], schedule: ['npc', 'seq'], weather: ['day'], smalltalk: ['topic', 'seq'], bills: ['id'], heroes: ['id'], messages: ['id'], holidays: ['date'], recipes: ['id'], replies: ['id'], mail: ['id'], radio: ['id'], tv: ['id'] };
-const JSON_COLS = { turns: ['answers', 'distractors', 'hints', 'hints_ko'] };
+const JSON_COLS = { turns: ['answers', 'distractors', 'hints', 'hints_ko', 'distractors_ko', 'reactions', 'reactions_ko'] };
 const DEFAULTS = { episodes: { hero: 'jun' }, calendar: { hero: 'jun' }, messages: { hero: 'all', kind: 'text' }, holidays: { kind: 'observance' }, replies: { tone: 'good', delay: 10 }, mail: { hero: 'all', kind: 'junk' }, radio: { kind: 'news', sort: 0 }, tv: { kind: 'news', live: 0, sort: 0 } };
 const PAD = 3 + 'sim-office seed '.length * 64 + 1;
 let bad = 0;
@@ -60,6 +60,20 @@ for (const file of files) {
     const where = `${path.basename(file)} statement ${n + 1}`;
     const size = encodeURIComponent(sql).length + PAD;
     if (size > 15500) { console.log(`${where}: too long for the DoltHub API (${size} bytes URL-encoded, limit 15500): split the VALUES list`); bad++; }
+    const del = /^DELETE\s+FROM\s+`?(\w+)`?\s+WHERE\s+([\s\S]+)$/i.exec(sql);
+    if (del) {          // DELETE FROM t WHERE col IN (…) [AND col = v …]
+      const t = del[1], conds = del[2].split(/\s+AND\s+/i).map(c => {
+        const mm = /^`?(\w+)`?\s*(=|IN)\s*([\s\S]+)$/i.exec(c.trim());
+        if (!mm) return null;
+        const vals = values(/^IN$/i.test(mm[2]) ? mm[3] : `(${mm[3]})`, where)[0].map(String);
+        return (r) => vals.includes(String(r[mm[1]] ?? (DEFAULTS[t] || {})[mm[1]]));
+      });
+      if (!DB[t] || conds.some(c => !c)) { console.log(`${where}: cannot read this DELETE (left out): ${sql.slice(0, 60)}`); bad++; return; }
+      const before = DB[t].length;
+      DB[t] = DB[t].filter(r => !conds.every(c => c(r)));
+      console.log(`${where}: ${t} ${before - DB[t].length} row(s) deleted`);
+      return;
+    }
     const m = /^REPLACE\s+INTO\s+`?(\w+)`?\s*\(([^)]*)\)\s*VALUES\s*([\s\S]*)$/i.exec(sql);
     if (!m) { console.log(`${where}: not a REPLACE INTO … VALUES statement (left out): ${sql.slice(0, 60)}`); return; }
     const t = m[1], cols = m[2].split(',').map(s => s.trim().replace(/`/g, ''));

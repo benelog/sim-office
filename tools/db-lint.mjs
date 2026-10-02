@@ -10,8 +10,7 @@ const dbFile = process.argv[2] || path.join(root, 'office', 'data', 'db.js');
 const ctx = { window: {} };
 vm.createContext(ctx);
 vm.runInContext(fs.readFileSync(dbFile, 'utf8'), ctx, { filename: dbFile });
-vm.runInContext(fs.readFileSync(path.join(root, 'lib', 'matcher.js'), 'utf8'), ctx, { filename: 'lib/matcher.js' });
-const DB = ctx.window.SO_DB, M = ctx.window.LP_MATCHER;
+const DB = ctx.window.SO_DB;
 if (!DB) { console.error('no window.SO_DB in ' + dbFile); process.exit(2); }
 
 // Kenney Food Kit nodes available in the `food` pack (office/PLAN.md section 4).
@@ -94,24 +93,17 @@ for (const [ep, list] of Object.entries(turnsBy)) {
     for (const who of [t.speaker, t.reply_speaker]) if (who && !npcs.has(who) && who !== 'player') bad(w, `speaker "${who}" not in npcs`);
     const hero = (rows('episodes').find(e => e.id === ep) || {}).hero || 'jun';
     for (const who of [t.speaker, t.reply_speaker]) if (who === hero) bad(w, `speaker "${who}" is the hero of this episode (the player)`);
+    // multiple choice only (2026-10-02): the model and three plausible wrong answers, each with how the other person reacts,
+    // all in English and Korean (the screen shows one language). answers/hints are no longer used by the game.
     if (!t.line || !t.prompt || !t.model) bad(w, 'line, prompt and model are required');
-    const groups = t.answers;
-    if (!Array.isArray(groups) || !groups.length) { bad(w, 'answers is not a non-empty array'); continue; }
-    for (const g of groups) {
-      const ok = typeof g === 'string' || (g && typeof g === 'object' && (Array.isArray(g.all) || Array.isArray(g.any)) &&
-        Object.keys(g).every(k => k === 'all' || k === 'any'));
-      if (!ok) bad(w, `bad answer group ${JSON.stringify(g)}`);
+    const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    for (const k of ['distractors', 'distractors_ko', 'reactions', 'reactions_ko']) if (!isStrArr(t[k], 3)) bad(w, `${k} must be 3 strings`);
+    if (isStrArr(t.distractors, 3)) for (const d of t.distractors) if (norm(d) === norm(t.model)) bad(w, `distractor equals model: "${d}"`);
+    if (isStrArr(t.distractors, 3)) {
+      const longest = Math.max(...t.distractors.map(d => d.length));
+      if (t.model.length > longest * 1.3) warn(w, `the model (${t.model.length}) is much longer than every wrong answer (${longest}): a giveaway`);
     }
-    if (!M.match(t.model, groups)) bad(w, `model does not match answers: "${t.model}"`);
-    if (!isStrArr(t.distractors, 3)) bad(w, 'distractors must be 3 strings');
-    else for (const d of t.distractors) {
-      if (M.match(d, groups)) bad(w, `distractor matches answers: "${d}"`);
-      if (M.normalize(d) === M.normalize(t.model)) bad(w, `distractor equals model: "${d}"`);
-    }
-    if (!isStrArr(t.hints, 2)) bad(w, 'hints must be 2 strings');
-    if (t.hints_ko != null && !isStrArr(t.hints_ko, 2)) bad(w, 'hints_ko must be 2 strings');
-    if (!t.situation_ko && t.situation) warn(w, 'no situation_ko');
-    if (!t.prompt_ko) warn(w, 'no prompt_ko');
+    for (const k of ['situation', 'line', 'prompt', 'model']) if (t[k] && !t[k + '_ko']) warn(w, `no ${k}_ko`);
   }
 }
 

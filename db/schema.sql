@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS places (
 CREATE TABLE IF NOT EXISTS npcs (
   id varchar(32) PRIMARY KEY,
   name varchar(80) NOT NULL,
+  name_ko varchar(80),
   role varchar(80),
   role_ko varchar(80),
   model varchar(32) NOT NULL,
@@ -67,10 +68,11 @@ CREATE TABLE IF NOT EXISTS episodes (
   hero varchar(16) NOT NULL DEFAULT 'jun'
 );
 
--- One turn of an episode. The npc (or `speaker`) says `line`; `prompt` tells the player what to say;
--- answers = [{all:[kw…]}, {any:[kw…]}] keyword groups for typed answers (lib/matcher.js); model = the example
--- answer (also the correct choice); distractors = 3 wrong choices; hints = shown after misses; reply = what
--- the npc says after a good answer (may be empty).
+-- One turn of an episode. The npc (or `speaker`) says `line`; `prompt` is what the player wants to get across (an
+-- intent, not a script); model = the right thing to say; distractors = 3 wrong choices that sound plausible (a wrong
+-- fact, the wrong tone for the person, or not what was asked), reactions = what the other person says to each of
+-- them; reply = what the npc says after the right answer (may be empty). Every text has a Korean twin (_ko): the
+-- screen shows one language (multiple choice only since 2026-10-02; answers and hints are no longer used).
 CREATE TABLE IF NOT EXISTS turns (
   episode varchar(40) NOT NULL,
   seq int NOT NULL,
@@ -88,6 +90,11 @@ CREATE TABLE IF NOT EXISTS turns (
   reply_speaker varchar(32),
   reply_line text,
   reply_ko text,
+  line_ko text,
+  model_ko text,
+  distractors_ko json,
+  reactions json,
+  reactions_ko json,
   PRIMARY KEY (episode, seq)
 );
 
@@ -116,6 +123,7 @@ CREATE TABLE IF NOT EXISTS items (
   energy int DEFAULT 0,
   place varchar(32),
   note varchar(255),
+  note_ko varchar(255),
   shelf_days int,
   uses int NOT NULL DEFAULT 1,
   cook_only tinyint NOT NULL DEFAULT 0
@@ -175,7 +183,8 @@ CREATE TABLE IF NOT EXISTS bills (
   amount decimal(7,2) NOT NULL,
   day int NOT NULL,
   every int NOT NULL DEFAULT 30,
-  note varchar(255)
+  note varchar(255),
+  note_ko varchar(255)
 );
 
 -- The people you can play. Each has a home of their own (a zone, with a bed, a kitchen, a desk and the door in
@@ -185,6 +194,8 @@ CREATE TABLE IF NOT EXISTS heroes (
   id varchar(16) PRIMARY KEY,
   name varchar(40) NOT NULL,
   full_name varchar(80) NOT NULL,
+  name_ko varchar(40),
+  full_name_ko varchar(80),
   role varchar(80) NOT NULL,
   role_ko varchar(80),
   model varchar(32) NOT NULL,
@@ -203,6 +214,7 @@ CREATE TABLE IF NOT EXISTS heroes (
   salary_gross int NOT NULL,
   housing int NOT NULL,
   housing_name varchar(40) NOT NULL DEFAULT 'Rent',
+  housing_name_ko varchar(40),
   level varchar(80),
   level_ko varchar(80),
   sort int DEFAULT 0
@@ -220,6 +232,7 @@ CREATE TABLE IF NOT EXISTS messages (
   kind varchar(12) NOT NULL DEFAULT 'text',
   sender varchar(60) NOT NULL,
   subject varchar(120),
+  subject_ko varchar(120),
   body text NOT NULL,
   body_ko text
 );
@@ -275,6 +288,7 @@ CREATE TABLE IF NOT EXISTS mail (
   kind varchar(12) NOT NULL DEFAULT 'junk',
   sender varchar(60) NOT NULL,
   subject varchar(120),
+  subject_ko varchar(120),
   body text NOT NULL,
   body_ko text
 );

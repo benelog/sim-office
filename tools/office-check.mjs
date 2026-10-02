@@ -96,6 +96,8 @@ try {
     const played = [];
     const days = +process.env.SO_DAYS || 3;
     for (let day = 1; day <= days; day++) {
+      // a working day: in at the office by 8 (on time), as a player would be, before the day's conversations
+      if (await ev('SO.debug.day % 7 !== 6 && SO.debug.day % 7 !== 0')) { await ev('SO.debug.setTime(8 * 60)'); await ev("SO.debug.goto('office', 'office_door')"); }
       if (await ev('SO.debug.day') !== day) break;
       for (let t = 7 * 60; t <= 22 * 60 + 30; t += 30) {
         await ev(`SO.debug.setTime(${t})`);
@@ -125,6 +127,8 @@ try {
       await sleep(600);
     }
     log('played:', played.join(' ') || '(none)');
+    log('mission:', JSON.stringify(await ev('SO.debug.mission')), 'score', await ev('SO.debug.score'), 'work', JSON.stringify(await ev('SO.debug.work')));
+    if (await ev('SO.debug.state') === 'card') { await shot('mission-card'); await ev('SO.debug.closeCard()'); }
     for (const p of ['talks', 'calendar', 'inventory']) {
       await ev(`SO.debug.panel('${p}')`);
       await sleep(400);
@@ -154,6 +158,41 @@ try {
       await shot('panel-shop');
       await ev('SO.debug.closeCard()');
     }
+    // the screen in Korean: a conversation (a wrong answer and how it goes down) and the work record
+    await ev("SO.debug.lang = 'ko'");
+    const koEp = await ev("SO.debug.episodes()[0] || (SO_DB.episodes.find(e => (e.hero || 'jun') === SO.debug.hero) || {}).id");
+    if (koEp) {
+      await ev(`SO.debug.startEpisode(${JSON.stringify(koEp)})`);
+      await sleep(1200);
+      log('ko choices:', JSON.stringify(await ev('SO.debug.choices')));
+      log('ko wrong answer:', await ev('SO.debug.wrong(1)'));
+      await sleep(700);
+      await shot('ko-talk-wrong');
+      await ev("document.querySelector('#dialog .leave').click()");
+    }
+    for (const p of ['work', 'calendar', 'bank']) { await ev(`SO.debug.panel('${p}')`); await sleep(400); await shot('ko-panel-' + p); await ev('SO.debug.closeCard()'); }
+    await ev("SO.debug.lang = 'en'");
+    // late three mornings in a row: a text from the manager, a final warning from HR, then let go; after that the badge
+    // no longer opens the door of the office
+    await ev(`SO.debug.start('${process.env.SO_HERO || 'jun'}')`);
+    for (let d = 1; d <= 3; d++) {
+      await ev('SO.debug.closeCard()');
+      await ev("SO.debug.goto('city', 'office_door')");
+      await ev('SO.debug.setTime(10 * 60)');
+      await ev("SO.debug.arrive('office', 'office_door')");
+      await sleep(900);
+      log(`late on day ${d}:`, JSON.stringify(await ev('({ standing: SO.debug.standing, score: SO.debug.score, strikes: SO.debug.work.pts, state: SO.debug.state })')));
+      if (d < 3) { await ev('SO.debug.sleep()'); await sleep(600); await ev('SO.debug.advance()'); }
+    }
+    await shot('fired');
+    await ev('SO.debug.closeCard()');
+    await sleep(1200);
+    await ev('SO.debug.setTime(8 * 60)');
+    await ev("SO.debug.arrive('office', 'office_door')");
+    await sleep(500);
+    await shot('fired-stopped-at-door');
+    log('after: zone', await ev('SO.debug.zone'), 'state', await ev('SO.debug.state'), 'open', JSON.stringify(await ev('SO.debug.episodes()')));
+    await ev('SO.debug.closeCard()');
     // a phone
     await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
     await send('Emulation.setTouchEmulationEnabled', { enabled: true });
@@ -166,9 +205,9 @@ try {
       await ev(`SO.debug.startEpisode(${JSON.stringify(anyEp)})`);
       await sleep(1500);
       await shot('phone-talk');
-      await ev("document.querySelector('#dialog .mode button[data-mode=choose]').click()");
-      await sleep(300);
-      await shot('phone-talk-choose');
+      log('wrong answer:', await ev('SO.debug.wrong(0)'));
+      await sleep(600);
+      await shot('phone-talk-wrong');
       await ev("document.querySelector('#dialog .leave').click()");
     }
     await send('Emulation.clearDeviceMetricsOverride');
