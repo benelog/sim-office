@@ -253,7 +253,7 @@
           { kind: 'board', wall: 'n', along: 7.5, y: 0.78, w: 1.5, h: 0.72, text: 'Sprint 14', frame: '#9aa3ad', rim: 0.03 },
           { kind: 'tv', at: [8.853, -3.8], turn: 270, y: 0.735, w: 0.6, h: 0.33, depth: 0, a: '#2b4c7e', b: '#0f1f3a', text: 'Q3 roadmap: Summit Retail pilot' },
           { kind: 'art', wall: 'n', along: -4.5, y: 0.85, w: 0.62, h: 0.44, frame: '#2e2e33', seed: 2, palette: ['#264653', '#2a9d8f', '#e9c46a', '#f4a261'] },
-          { kind: 'poster', wall: 'n', along: -0.55, y: 0.85, w: 0.4, h: 0.55, frame: '#ffffff', text: 'Open Enrollment', lines: ['Benefits: Nov 1-15', 'Ask Linda in HR'], band: '#3d6fb4' },
+          { kind: 'poster', wall: 'n', along: -0.55, y: 0.85, w: 0.4, h: 0.55, frame: '#ffffff', text: 'Open Enrollment', lines: ['Oct 12-23: HR portal', 'Ask Linda in HR'], band: '#3d6fb4' },
           { kind: 'poster', wall: 's', along: 7.7, y: 0.85, w: 0.45, h: 0.6, frame: '#ffffff', text: 'Lunch & Learn', lines: ['Thursday 12:00', 'Pizza in the kitchen'], band: '#e07a3f' },
           { kind: 'photo', wall: 's', along: 3.5, y: 0.85, w: 0.8, h: 0.5, frame: '#2e2e33', sky: '#8cc4e8' },
           { kind: 'map', wall: 'w', along: -2.5, y: 0.85, w: 0.7, h: 0.5, frame: '#2e2e33', text: 'Fairview' }
