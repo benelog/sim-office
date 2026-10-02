@@ -955,7 +955,7 @@
   // a day away on business
   let checkedIn = null;
   function arrived(z) {
-    if (offWork(G.day)) return;
+    if (myOff(G.day)) return;
     if (TRAVEL_ZONES.includes(z)) G.tripDay = G.day;
     if (z === 'office' && G.outDay === G.day) G.outDay = null;          // back from lunch or an errand
     if (z === 'office' && G.inDay !== G.day && G.minute < 17 * 60) checkedIn = checkIn();
@@ -964,7 +964,7 @@
   // is leaving early (closeDay)
   const EARLY = () => hm(CFG.early_before, 960);
   function leftOffice(z) {
-    if (!G || offWork(G.day) || fired() || G.inDay !== G.day || TRAVEL_ZONES.includes(z) || G.minute >= EARLY()) return;
+    if (!G || myOff(G.day) || fired() || G.inDay !== G.day || TRAVEL_ZONES.includes(z) || G.minute >= EARLY()) return;
     G.outDay = G.day; G.outAt = Math.floor(G.minute);
     toast(`Heading out at ${clock(G.minute)}. Be back before ${clock(EARLY())}, or it counts as leaving early.`, `${clockKo(G.minute)}에 나가요. ${clockKo(EARLY())} 전에 돌아오지 않으면 조퇴예요.`, null, 4.5);
   }
@@ -1732,13 +1732,13 @@
   const standing = () => !G ? STANDING[0] : fired() ? STANDING[3] : STANDING[(G.work && G.work.warned) || 0];
   const ATTEND = {
     on: ['On time', '정시 출근', 5], late: ['Late', '지각', -10], noon: ['In after noon', '오후 출근', -20], absent: ['Did not come in', '결근', -30],
-    trip: ['Business trip', '출장', 0], sick: ['Called in sick', '병가', 0], early: ['Left early', '조퇴', -10]
+    trip: ['Business trip', '출장', 0], sick: ['Called in sick', '병가', 0], pto: ['PTO', '연차', 0], early: ['Left early', '조퇴', -10]
   };
   // the first time at work on a working day: on time, late, or in after lunch (from travel)
   function checkIn() {
     const w = work(), d = G.day, m = Math.floor(G.minute), start = hm(CFG.work_start, 540);
     G.inDay = d; G.inAt = m;
-    if (w.fired || offWork(d)) return null;
+    if (w.fired || myOff(d)) return null;
     const kind = m <= hm(CFG.late_after, 555) ? 'on' : m < 12 * 60 ? 'late' : 'noon';
     w.record[d] = kind;
     addScore(ATTEND[kind][2], ATTEND[kind][0], ATTEND[kind][1]);
@@ -1761,8 +1761,8 @@
     const w = work();
     if (w.fired || offWork(d)) return null;
     if (w.record[d]) return leftEarly(d, away);
-    const sick = G.sickFor === d;          // you called in sick the evening before (a conversation tagged sick)
-    const kind = sick ? 'sick' : (away || G.tripDay === d) ? 'trip' : G.inDay === d ? null : 'absent';
+    const off = leaveOf(d);          // you texted in sick, or took the day as PTO
+    const kind = off ? (off === 'pto' ? 'pto' : 'sick') : (away || G.tripDay === d) ? 'trip' : G.inDay === d ? null : 'absent';
     if (!kind) return null;
     w.record[d] = kind;
     if (kind !== 'absent') return kind;
@@ -1795,8 +1795,8 @@
       const me = hero().name_ko || G.name;
       if (why === 'early') notify(BOSS, `Hey ${G.name}, I came by your desk this afternoon and you had already left. Everything okay? Unless we've talked about it, please stay at least until ${clock(EARLY())}.`,
         `${me}, 오후에 자리에 가 봤더니 벌써 퇴근했더라고요. 괜찮아요? 미리 얘기한 게 아니면 적어도 ${clockKo(EARLY())}까지는 있어 주세요.`, 'text');
-      else if (why === 'absent') notify(BOSS, `Hey ${G.name}, you didn't come in and I didn't hear from you. Everything okay? If you're sick, call in the evening before.`,
-        `${me}, 출근도 안 하고 연락도 없었네요. 괜찮아요? 아프면 전날 저녁에 연락해 주세요.`, 'text');
+      else if (why === 'absent') notify(BOSS, `Hey ${G.name}, you didn't come in and I didn't hear from you. Everything okay? If you're sick, just text me before standup.`,
+        `${me}, 출근도 안 하고 연락도 없었네요. 괜찮아요? 아프면 스탠드업 전에 문자만 주세요.`, 'text');
       else notify(BOSS, `Hey ${G.name}, I noticed you weren't here on time. Everything okay? We need you at standup. Please be in by ${clock(hm(CFG.work_start, 540))} from now on.`,
         `${me}, 오늘 제시간에 안 왔던데 괜찮아요? 스탠드업에 꼭 있어야 해요. 앞으로는 ${clockKo(hm(CFG.work_start, 540))}까지 와 주세요.`, 'text');
     }
@@ -1808,7 +1808,7 @@
     w.fired = G.day;
     let lastPay = G.day;
     while (lastPay > 0 && !isPayday(lastPay)) lastPay--;
-    const worked = Object.keys(w.record).filter(d => +d > lastPay && /^(on|late|noon|trip|sick)$/.test(w.record[d])).length;
+    const worked = Object.keys(w.record).filter(d => +d > lastPay && /^(on|late|noon|trip|sick|pto)$/.test(w.record[d]) && leaveOf(+d) !== 'unpaid').length;
     const final = cents(+hero().salary_net * worked / 10);
     addScore(-50, 'Let go', '해고');
     notify(HR, `${G.name}, as we discussed, your employment with ${CFG.company} ends today because of repeated lateness and absences. Your badge and your accounts have been turned off.${final ? ` Your final paycheck of ${usd2(final)} has been deposited.` : ''} Please return your laptop to the front desk. We wish you well.`,
@@ -1860,7 +1860,7 @@
   const ROUTINE_OF = {};
   ROUTINES.forEach(r => listOf(r.episodes).forEach(id => { if (!ROUTINE_OF[id]) ROUTINE_OF[id] = r; }));
   function routineOn(r, d) {
-    if (d <= MISSION_DAYS || offWork(d) || !forHero(r.hero, G.hero) || !listOf(r.days).includes(DAY_NAMES[(d - 1) % 7])) return false;
+    if (d <= MISSION_DAYS || myOff(d) || !forHero(r.hero, G.hero) || !listOf(r.days).includes(DAY_NAMES[(d - 1) % 7])) return false;
     if (r.every === '2weeks') return Math.floor((d - 1) / 7) % 2 === (+r.parity || 0);
     if (r.every === 'month') { const t = dateOf(d); return !!t && t.getUTCDate() <= 7; }
     return true;
@@ -1935,7 +1935,7 @@
     play(player, 'sit');
     goalTimer = 0;
     const soon = nextUp();          // no task when something of yours starts soon (it would make you miss it)
-    const t = zoneId === 'office' && !offWork(d) && !(soon && soon[0] < G.minute + 45) && pickTask();
+    const t = zoneId === 'office' && !myOff(d) && !(soon && soon[0] < G.minute + 45) && pickTask();
     if (t) { showTask(t); return; }
     const today = hrs(workedOn(d));
     if (next) toast(`You worked until ${clock(G.minute)} (${today} today). Next: ${next[1].title}.`, `${clockKo(G.minute)}까지 일했어요(오늘 ${today}). 다음: ${loc(next[1], 'title')}.`, null, 3.2);
@@ -1985,7 +1985,7 @@
     const tasks = (G.taskLog || []).filter(x => x.day >= from && x.day <= to);
     return { from, to, came, mins, want: came * WORK_HOURS_DAY * 60, tasks: tasks.length, good: tasks.filter(x => x.n > 0).length };
   }
-  const lastWorkday = (d) => { if (offWork(d)) return false; for (let x = d + 1; x <= Math.floor((d - 1) / 7) * 7 + 7; x++) if (!offWork(x)) return false; return true; };
+  const lastWorkday = (d) => { if (myOff(d)) return false; for (let x = d + 1; x <= Math.floor((d - 1) / 7) * 7 + 7; x++) if (!myOff(x)) return false; return true; };
   // the end of the last working day of a week in free play (from goToSleep): the manager's note, and points
   function weekReview(d) {
     if (!G || d <= MISSION_DAYS || fired() || !lastWorkday(d)) return null;
@@ -2000,6 +2000,131 @@
     if (grade === 'good') notify(BOSS, `Nice week, ${G.name}. You put real time into the sprint work, and it shows.${handled} Have a good weekend!`, `${me}, 이번 주 수고했어요. 스프린트 일에 시간을 제대로 들인 게 보여요.${handledKo} 주말 잘 보내요!`, 'text');
     else if (grade === 'low') notify(BOSS, `Hey ${G.name}, I looked at the board, and your tickets barely moved this week. Is something blocking you? Let's talk about it at our next 1:1, or grab me any time.`, `${me}, 보드를 봤는데 이번 주에 맡은 티켓이 거의 그대로네요. 막힌 게 있어요? 다음 1:1에서 얘기하거나 아무 때나 불러 줘요.`, 'text');
     return { grade, n, mins: s.mins, want: s.want };
+  }
+  // ---------------------------------------------------------------- time off: PTO and sick days
+  // What Maya says on day 4: PTO builds up a little every paycheck (config pto_hours_year, 15 days a year), and sick
+  // days are separate: config sick_hours (40, California's minimum) at the start, back to full on January 1. You text
+  // your manager before standup (config sick_call_by) to be out sick today, or later for the next working day; with no
+  // sick time left it comes out of PTO, and with none of that either the day is unpaid (taken off the next paycheck).
+  // PTO is asked for in the HR portal at least config pto_notice_days ahead, after the missions; the manager answers
+  // the next morning (no: not enough PTO, or the team's sprint planning). A day of leave is a day off for you: no
+  // attendance, no meetings, no week review hours (myOff). G.leave = { pto, sick (hours), days { day: pto | sick |
+  // unpaid }, req [{ day, made, status pending | approved | declined | cancelled, why }], unpaid (days to take off pay) }.
+  const perHero = (v, id, def) => { const s = String(v == null ? '' : v); if (!/:/.test(s)) return s === '' ? def : +s; const m = listOf(s).map(x => x.split(':')).find(x => x[0].trim() === id); return m ? +m[1] : def; };
+  const LEAVE_DAY = 8, SICK_HOURS = +CFG.sick_hours || 40, PTO_NOTICE = +CFG.pto_notice_days || 14;
+  const ptoPerPay = () => Math.round(perHero(CFG.pto_hours_year, G.hero, 120) / 26 * 100) / 100;
+  const leave = () => G.leave || (G.leave = { pto: perHero(CFG.pto_start, G.hero, 0), sick: SICK_HOURS, days: {}, req: [], unpaid: 0 });
+  const leaveOf = (d) => !G ? null : (G.leave && G.leave.days[d]) || (G.sickFor === d ? 'sick' : null);
+  const myOff = (d) => offWork(d) || !!leaveOf(d);          // a day you are not expected at work
+  const days1 = (h) => Math.round(h / LEAVE_DAY * 10) / 10;
+  const leaveText = (h) => tr(`${Math.round(h * 10) / 10} h (${days1(h)} day${days1(h) === 1 ? '' : 's'})`, `${Math.round(h * 10) / 10}시간(${days1(h)}일)`);
+  const nextWorkday = (d) => { while (myOff(d)) d++; return d; };
+  function leaveChanged() { Object.keys(routineMemo).forEach(k => delete routineMemo[k]); goalTimer = 0; }
+  // texting in sick: today before standup if you have not come in yet, otherwise the next working day
+  function sickTarget() {
+    if (!G || fired()) return null;
+    const today = G.minute < hm(CFG.sick_call_by, 570) && !myOff(G.day) && G.inDay !== G.day;
+    if (today) return G.day;
+    let d = G.day + 1;
+    while (offWork(d) || leaveOf(d) === 'pto') d++;          // the next day you would go in (already off sick: nothing to text)
+    return d;
+  }
+  function takeSick(d, quiet) {
+    const L = leave();
+    if (leaveOf(d) || offWork(d)) return null;
+    const from = L.sick >= LEAVE_DAY ? 'sick' : L.pto >= LEAVE_DAY ? 'pto' : 'unpaid';
+    if (from === 'sick') L.sick -= LEAVE_DAY; else if (from === 'pto') L.pto -= LEAVE_DAY; else L.unpaid = (L.unpaid || 0) + 1;
+    L.days[d] = from === 'unpaid' ? 'unpaid' : 'sick';
+    G.sickFor = d;
+    leaveChanged();
+    logEvent('leave', 'Called in sick', 0, { ko: '병가 연락' });
+    const when = d === G.day ? 'today' : weekday(d), whenKo = d === G.day ? '오늘' : WEEKDAYS_KO[(d - 1) % 7];
+    const recent = Object.keys(L.days).filter(x => +x > d - 30 && +x <= d && L.days[x] !== 'pto').length;
+    if (!quiet) {
+      notify(BOSS, `Sorry to hear that, ${G.name}. Take ${when} off and rest. I'll let the team know.${from === 'pto' ? ' You\'re out of sick time, so this comes out of your PTO.' : from === 'unpaid' ? ' You\'re out of sick time and PTO, so this one will be unpaid.' : ''}`,
+        `${hero().name_ko || G.name}, 저런. ${whenKo}은 쉬면서 몸조리해요. 팀에는 내가 말해 둘게요.${from === 'pto' ? ' 병가가 다 떨어져서 이번은 연차에서 빠져요.' : from === 'unpaid' ? ' 병가도 연차도 없어서 이번은 무급이에요.' : ''}`, 'text');
+      if (recent === 3) notify(BOSS, `${G.name}, I noticed you've been out sick a few times this month. No problem with that, but if something's going on, I'm happy to talk. Your health comes first.`,
+        `${hero().name_ko || G.name}, 이번 달에 몇 번 아팠네요. 쉬는 건 괜찮은데, 혹시 무슨 일이 있으면 편하게 얘기해요. 건강이 먼저예요.`, 'text');
+    }
+    return { day: d, from };
+  }
+  function callInSick() {
+    const d = sickTarget();
+    if (d == null) return null;
+    if (leaveOf(d)) { toast(`You're already off on ${dShort(d)}.`, `${dShort(d)}은 이미 쉬는 날이에요.`, null, 3); return null; }
+    const r = takeSick(d);
+    if (r) toast(tr(`You texted ${firstName(NPCS[BOSS])}: out sick ${d === G.day ? 'today' : dShort(d)}.`, `${firstName(NPCS[BOSS])}에게 문자: ${d === G.day ? '오늘' : dShort(d)} 병가.`), null, null, 3.5);
+    return r;
+  }
+  // PTO: the days you can ask for (working days after the missions, at least pto_notice_days ahead, in the next 8 weeks)
+  function ptoDays() {
+    const out = [];
+    for (let d = Math.max(G.day + PTO_NOTICE, MISSION_DAYS + 1); d <= G.day + 56; d++) if (!myOff(d) && !leave().req.some(r => r.day === d && r.status === 'pending')) out.push(d);
+    return out;
+  }
+  const pendingPto = () => leave().req.filter(r => r.status === 'pending').length * LEAVE_DAY;
+  function requestPto(d) {
+    const L = leave();
+    if (fired() || !ptoDays().includes(+d)) return false;
+    if (L.pto - pendingPto() < LEAVE_DAY) { toast(`Not enough PTO: you have ${leaveText(L.pto - pendingPto())} free.`, `연차가 부족해요: 쓸 수 있는 건 ${leaveText(L.pto - pendingPto())}.`, 'bad', 3.5); return false; }
+    L.req.push({ day: +d, made: G.day, status: 'pending' });
+    logEvent('leave', 'Asked for PTO', 0, { ko: '연차 신청' });
+    toast(`PTO request sent for ${dShort(+d)}. ${firstName(NPCS[BOSS])} will answer by tomorrow.`, `${dShort(+d)} 연차를 신청했어요. ${firstName(NPCS[BOSS])}가 내일까지 답할 거예요.`, null, 3.5);
+    return true;
+  }
+  function cancelPto(d) {
+    const L = leave(), r = L.req.find(x => x.day === +d && (x.status === 'pending' || x.status === 'approved'));
+    if (!r || +d <= G.day) return false;
+    if (r.status === 'approved') { L.pto += LEAVE_DAY; delete L.days[d]; leaveChanged(); }
+    r.status = 'cancelled';
+    return true;
+  }
+  // the next morning (from goToSleep): the manager answers PTO requests; payday adds PTO and takes off unpaid days;
+  // January 1 fills the sick time again. Returns lines for the morning card.
+  function leaveMorning() {
+    const L = leave(), out = [], boss = firstName(NPCS[BOSS] || { name: 'Maya' }), me = hero().name_ko || G.name;
+    L.req.filter(r => r.status === 'pending').forEach(r => {
+      const planning = ROUTINES.some(x => x.id === 'planning' && routineOn(x, r.day));
+      if (fired()) r.status = 'declined';
+      else if (L.pto < LEAVE_DAY) { r.status = 'declined'; r.why = 'balance'; }
+      else if (planning) { r.status = 'declined'; r.why = 'planning'; }
+      else { r.status = 'approved'; L.pto -= LEAVE_DAY; L.days[r.day] = 'pto'; leaveChanged(); }
+      if (fired()) return;
+      const day = dateLong(r.day), dayKo = dateKo(r.day);
+      if (r.status === 'approved') {
+        notify(BOSS, `Approved your PTO for ${day}. Enjoy! Just make sure anything urgent is handed off before you go.`, `${dayKo} 연차 승인했어요. 잘 쉬어요! 급한 일은 가기 전에 넘겨 주고요.`, 'text');
+        out.push(tr(`🏖️ ${esc(boss)} approved your PTO for <b>${esc(day)}</b>. PTO left: ${leaveText(L.pto)}.`, `🏖️ ${esc(josa(boss, '이', '가'))} <b>${esc(dayKo)}</b> 연차를 승인했어요. 남은 연차: ${leaveText(L.pto)}.`));
+      } else {
+        const why = r.why === 'planning' ? ['that\'s our sprint planning day, and I need everyone there. Could you pick another day?', '그날은 스프린트 계획 날이라 다 있어야 해요. 다른 날로 골라 줄래요?']
+          : ['you don\'t have enough PTO built up for that yet.', '아직 그만큼 연차가 쌓이지 않았어요.'];
+        notify(BOSS, `Sorry, ${G.name}, I can't approve PTO for ${day}: ${why[0]}`, `${me}, 미안해요. ${dayKo} 연차는 승인하기 어려워요. ${why[1]}`, 'text');
+        out.push(tr(`🗓️ ${esc(boss)} turned down your PTO for <b>${esc(day)}</b>: ${esc(why[0])}`, `🗓️ ${esc(josa(boss, '이', '가'))} <b>${esc(dayKo)}</b> 연차를 거절했어요. ${esc(why[1])}`));
+      }
+    });
+    const t = dateOf(G.day);
+    if (t && t.getUTCMonth() === 0 && t.getUTCDate() === 1) { L.sick = SICK_HOURS; out.push(tr(`🩺 A new year: your sick time is back to ${leaveText(SICK_HOURS)}.`, `🩺 새해가 되어 병가가 ${leaveText(SICK_HOURS)}으로 다시 채워졌어요.`)); }
+    const d = leaveOf(G.day);
+    if (d === 'pto') out.push(tr('🏖️ You\'re on <b>PTO</b> today. No work: the day is yours, and it\'s paid.', '🏖️ 오늘은 <b>연차</b>예요. 출근하지 않아도 되고, 유급이에요.'));
+    else if (d) out.push(tr(`🤒 You're out sick today${d === 'unpaid' ? ' (unpaid)' : ''}. Stay home and rest.`, `🤒 오늘은 병가예요${d === 'unpaid' ? '(무급)' : ''}. 집에서 쉬세요.`));
+    return out;
+  }
+  function sickButton() {
+    const d = sickTarget();
+    if (d == null || leaveOf(d)) return '';
+    return `<button type="button" data-leave="sick">${tr(`🤒 Text ${esc(firstName(NPCS[BOSS]))}: out sick ${d === G.day ? 'today' : esc(dShort(d))}`, `🤒 ${esc(firstName(NPCS[BOSS]))}에게 문자: ${d === G.day ? '오늘' : esc(dShort(d))} 병가`)}</button>`;
+  }
+  function leavePanel() {          // Work record: the balances, the requests, asking for PTO and texting in sick
+    const L = leave(), free = L.pto - pendingPto(), opts = ptoDays();
+    const ST = { pending: ['waiting for an answer', '답을 기다리는 중'], approved: ['approved', '승인됨'], declined: ['turned down', '거절됨'], cancelled: ['cancelled', '취소함'] };
+    const reqs = L.req.filter(r => r.day >= G.day - 7).slice().sort((a, b) => a.day - b.day);
+    const sick = Object.keys(L.days).map(Number).filter(d => L.days[d] !== 'pto').sort((a, b) => b - a).slice(0, 5);
+    return `<h3>${tr('Time off', '휴가')}</h3><div class="sum"><div><b>${leaveText(L.pto)}</b>${tr('PTO', '연차')}</div><div><b>${leaveText(L.sick)}</b>${tr('sick time', '병가')}</div></div>
+      <p class="fine">${tr(`PTO builds up ${ptoPerPay()} h every payday. Ask for it in the HR portal at least ${PTO_NOTICE} days ahead; ${esc(firstName(NPCS[BOSS]))} answers the next morning. Sick time is separate: text your manager before ${clock(hm(CFG.sick_call_by, 570))} to be out today, or later for the next working day. It fills up again on January 1. With no sick time left a sick day comes out of PTO, and then it's unpaid.`,
+        `연차는 월급날마다 ${ptoPerPay()}시간씩 쌓여요. HR 포털에서 적어도 ${PTO_NOTICE}일 전에 신청하면 ${esc(firstName(NPCS[BOSS]))}가 다음 날 아침에 답해요. 병가는 따로예요: ${clockKo(hm(CFG.sick_call_by, 570))} 전에 매니저에게 문자하면 오늘, 그 뒤면 다음 근무일이 병가예요. 1월 1일에 다시 채워져요. 병가가 떨어지면 연차에서, 연차도 없으면 무급이에요.`)}</p>
+      ${reqs.map(r => `<div class="row"><span class="when">${esc(dShort(r.day))}</span><div class="main"><div class="t">${tr('PTO', '연차')}</div><div class="s">${esc(tr(ST[r.status][0], ST[r.status][1]))}</div></div>${(r.status === 'pending' || r.status === 'approved') && r.day > G.day ? `<button type="button" data-leave="cancel:${r.day}">${tr('Cancel', '취소')}</button>` : ''}</div>`).join('')}
+      ${sick.map(d => `<div class="row"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${tr('Sick day', '병가')}${L.days[d] === 'unpaid' ? tr(' (unpaid)', ' (무급)') : ''}</div></div></div>`).join('')}
+      <div class="leave-ask">${opts.length && free >= LEAVE_DAY ? `<select id="pto-day" aria-label="${tr('Day', '날짜')}">${opts.map(d => `<option value="${d}">${esc(dShort(d))}</option>`).join('')}</select> <button type="button" data-leave="pto">${tr('Ask for PTO', '연차 신청')}</button>`
+        : `<span class="fine">${free < LEAVE_DAY ? tr(`Not enough PTO for a day yet (${leaveText(Math.max(0, free))} free).`, `아직 하루치 연차가 없어요(쓸 수 있는 연차 ${leaveText(Math.max(0, free))}).`) : tr('No days to ask for yet.', '아직 신청할 수 있는 날이 없어요.')}</span>`} ${sickButton()}</div>`;
   }
   function checkMissions() {          // after a conversation: was it the last mission?
     if (!G || G.mission || G.day > MISSION_DAYS) return false;
@@ -2575,7 +2700,7 @@
       }
     } else {
       const later = episodes().filter(laterToday).sort(epOrder)[0];
-      const atWork = zoneId === 'office' && !offWork(G.day) && !fired() && G.inDay === G.day && G.minute < 17 * 60, desk = hero().desk;
+      const atWork = zoneId === 'office' && !myOff(G.day) && !fired() && G.inDay === G.day && G.minute < 17 * 60, desk = hero().desk;
       if (later && atWork) {
         en = `Work at your desk until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
         ko = `${clockKo(hm(later.time_from, 0))}까지 자리에서 일하세요. 다음: ${esc(loc(later, 'title'))}`;
@@ -2596,17 +2721,20 @@
       } else if (fired()) {
         en = `You no longer work at ${esc(CFG.company)}. Your time is your own.`;
         ko = `이제 ${esc(CFG.company)} 직원이 아니에요. 시간은 마음대로 쓰세요.`;
-      } else if (G.sickFor === G.day && G.inDay !== G.day) {
+      } else if (leaveOf(G.day) === 'pto' && G.minute < 17 * 60) {
+        en = '<b>PTO today.</b> No work: the day is yours.';
+        ko = '<b>오늘은 연차.</b> 출근하지 않아도 돼요. 마음대로 보내세요.';
+      } else if (leaveOf(G.day) && G.inDay !== G.day) {
         en = 'You called in sick today. Stay home and rest.';
         ko = '오늘은 병가를 냈어요. 집에서 쉬세요.';
-      } else if (!offWork(G.day) && G.inDay !== G.day && G.minute < 17 * 60 && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
+      } else if (!myOff(G.day) && G.inDay !== G.day && G.minute < 17 * 60 && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
         const late = G.minute > hm(CFG.late_after, 555);
         en = `${late ? "You're late! " : ''}Go to work at <b>${esc(CFG.company)}</b>${late ? '' : `: be in by ${clock(hm(CFG.late_after, 555))}`}.`;
         ko = `${late ? '지각이에요! ' : ''}<b>${esc(ZONE_NAMES.office[1] || CFG.company)}</b>에 출근하세요${late ? '' : ` (${clockKo(hm(CFG.late_after, 555))}까지)`}.`;
         warn = late;
         const via = routeTo(zoneId, 'office');
         if (via) goalTarget = { at: via.at, portal: true };
-      } else if (!offWork(G.day) && G.outDay === G.day && G.minute < EARLY() && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
+      } else if (!myOff(G.day) && G.outDay === G.day && G.minute < EARLY() && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
         en = `Head back to work at <b>${esc(CFG.company)}</b> before ${clock(EARLY())}.`;
         ko = `${clockKo(EARLY())} 전에 <b>${esc(ZONE_NAMES.office[1] || CFG.company)}</b>로 돌아가세요.`;
         const via = routeTo(zoneId, 'office');
@@ -2808,7 +2936,7 @@
   // ---------------------------------------------------------------- input
   const keys = {};
   const stick = { x: 0, y: 0, id: null };
-  const typing = (e) => e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
+  const typing = (e) => e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName);
   window.addEventListener('keydown', (e) => {
     if (typing(e)) return;
     keys[e.code] = true;
@@ -3469,7 +3597,7 @@
     const rt = ROUTINE_OF[ep.id] && routinesOn(G.day).find(x => x.ep.id === ep.id);
     if (rt) (G.rdone = G.rdone || {})[rt.key] = 1;          // a meeting is done for today only
     (G.epScore = G.epScore || {})[ep.id] = [got, best];
-    if (/(^|,)\s*sick\s*(,|$)/.test(ep.tags || '')) { let d = G.day + 1; while (offWork(d)) d++; G.sickFor = d; }          // a sick day: the next working day
+    if (/(^|,)\s*sick\s*(,|$)/.test(ep.tags || '')) takeSick(nextWorkday(G.day + 1), true);          // a sick day: the next working day (you told your manager)
     if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend', { ko: ep.title_ko });
     if (ep.energy) G.energy = clamp(G.energy + +ep.energy, 0, E_MAX);
     rows('phrases').filter(p => p.episode === ep.id && !G.phrases.includes(p.id)).forEach(p => G.phrases.push(p.id));
@@ -3592,6 +3720,9 @@
         const hol = holidayOf(d);
         if (hol) extra.unshift(tr(`${hol.name}${hol.kind === 'federal' ? ' (federal holiday: banks and post offices closed)' : ''}`, `${loc(hol)}${hol.kind === 'federal' ? ' (연방 공휴일: 은행·우체국 휴무)' : ''}`));
         if (companyOff(d) && !isWeekend(d)) extra.push(tr(`${CFG.company} closed (paid holiday)`, `${ZONE_NAMES.office[1] || CFG.company} 휴무 (유급 휴일)`));
+        const lv = leaveOf(d), rq = G.leave && G.leave.req.find(r => r.day === d && r.status === 'pending');
+        if (lv && !(G.work && G.work.record[d])) extra.push(lv === 'pto' ? tr('PTO (paid day off)', '연차 (유급 휴가)') : tr('Out sick', '병가'));
+        if (rq) extra.push(tr('PTO requested: waiting for an answer', '연차 신청: 답을 기다리는 중'));
         const rec = G.work && G.work.record[d];
         if (rec) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND[rec][0], ATTEND[rec][1])}`);
         if (rec && G.work.left && G.work.left[d] != null) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND.early[0], ATTEND.early[1])} · ${clk(G.work.left[d])}`);
@@ -3609,7 +3740,8 @@
       const list = inbox(), fresh = list.filter(m => m.fresh).length;
       sub.textContent = fresh ? tr(`${fresh} new`, `새 메시지 ${fresh}개`) : tr(`${list.length} messages`, `메시지 ${list.length}개`);
       const ICON = { text: '💬', email: '✉️', voicemail: '📞', alert: '🔔' };
-      body.innerHTML = list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
+      const sb = G && !fired() && (G.minute >= 17 * 60 || G.minute < hm(CFG.sick_call_by, 570)) ? sickButton() : '';
+      body.innerHTML = (sb ? `<p class="fine leave-ask">${sb}</p>` : '') + list.map(m => `<div class="row msg${m.fresh ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" data-voice="${NPCS[m.sender] ? esc(m.sender) : ''}" aria-label="Play">▶</button>
         <div class="main"><div class="s">${ICON[m.kind] || ''} ${esc(tr(MSG_KIND[m.kind] || 'Message', MSG_KIND_KO[m.kind] || '메시지'))} · ${esc(dShort(m.day))}, ${clk(m.minute)}</div><div class="t">${esc(senderName(m.sender))}${m.subject ? ` <span class="subj">${esc(tr(m.subject, m.subject_ko))}</span>` : ''}</div>
         <div class="b">${esc(shown(m.body, m.body_ko))}</div>${replyBox(m)}</div></div>`).join('')
         || `<p class="empty">${tr('No messages yet. Texts, emails and alerts from your bank arrive here.', '아직 메시지가 없어요. 문자, 이메일, 은행 알림이 여기로 와요.')}</p>`;
@@ -3691,6 +3823,7 @@
             : tr(`Today: <b>${hrs(workedOn(G.day))}</b>. Use “Work for an hour” at your desk.${freePlay() ? '' : ` After the missions your manager expects about ${WORK_HOURS_DAY} h a day.`}`, `오늘: <b>${hrs(workedOn(G.day))}</b>. 자리에서 “한 시간 일하기”를 하세요.${freePlay() ? '' : ` 미션이 끝나면 매니저는 하루 약 ${WORK_HOURS_DAY}시간을 기대해요.`}`);
           return `<h3>${tr('At your desk', '업무')}</h3><p class="fine">${head}</p>${log.map(x => { const t = T[x.id]; if (!t) return ''; const c = (t.choices || [])[x.pick] || {};
             return `<div class="row"><span class="when">${esc(dShort(x.day))}</span><div class="main"><div class="t">${esc((TASK_KIND[t.kind] || ['📌'])[0] + ' ' + shown(t.title, t.title_ko))}</div><div class="s">${esc(shown(c.t, c.t_ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n ? (x.n > 0 ? '+' : '−') + Math.abs(x.n) : ''}</span></div>`; }).join('')}`; })()}
+        ${fired() ? '' : leavePanel()}
         <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}${w.left && w.left[d] != null ? `<div class="s">${esc(tr(ATTEND.early[0], ATTEND.early[1]))} · ${clk(w.left[d])} · −${Math.abs(ATTEND.early[2])}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
         <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
     } else if (panelKind === 'map') {
@@ -3709,6 +3842,11 @@
     if (b.dataset.toss) toss(+b.dataset.toss);
     if (b.dataset.tv && panelKind === 'tv') { const [id, live] = b.dataset.tv.split('|'); if (tvOn(id, live === '1')) renderPanel(); }
     if (b.dataset.cook) cook(b.dataset.cook);
+    if (b.dataset.leave) {
+      const [what, d] = b.dataset.leave.split(':'), y = panel.querySelector('.panel-body').scrollTop;
+      const ok = what === 'sick' ? !!callInSick() : what === 'pto' ? requestPto(+(panel.querySelector('#pto-day') || {}).value) : what === 'cancel' ? cancelPto(+d) : false;
+      if (ok) { saveGame(); renderPanel(); panel.querySelector('.panel-body').scrollTop = y; }
+    }
     if (b.dataset.cookOpen) openPanel('cook');
     if (b.dataset.ride) ride(b.dataset.ride);
     if (b.dataset.pass) { const it = ITEMS[b.dataset.pass]; if (G.money < +it.price) note(tr("You can't afford that.", '돈이 부족해요.'), true); else { pay(-it.price, it.name, 'spend', { ko: it.name_ko }); G.pass = G.day; saveGame(); renderPanel(); note(tr('Day pass bought. Ride as much as you like today.', '1일 승차권을 샀어요. 오늘은 마음껏 타세요.')); } }
@@ -4103,6 +4241,7 @@
         : tr(`📊 This week: <b>${hrs(week.mins)}</b> at your desk (the team expects about ${hrs(week.want)}).`, `📊 이번 주: 자리에서 <b>${hrs(week.mins)}</b> 일함(팀 기대치 약 ${hrs(week.want)}).`));
     if (missionNote) morning.push(missionNote);
     if (late) morning.push(tr('You stayed up too late and did not sleep well. You start the day a little tired.', '너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.'));
+    if (!fired()) leaveMorning().forEach(m => morning.push(m));          // PTO answers, a day off today, the sick time of a new year
     const hol = holidayOf(G.day);
     if (hol) morning.push(tr(`🗓️ <b>${esc(hol.name)}</b>${hol.kind === 'federal' ? ' (federal holiday)' : ''}. ${esc(hol.note || '')}`, `🗓️ <b>${esc(loc(hol))}</b>${hol.kind === 'federal' ? ' (연방 공휴일)' : ''}. ${esc(hol.note_ko || '')}`));
     if (companyOff(G.day) && !isWeekend(G.day) && !fired()) morning.push(tr(`🏖️ ${esc(CFG.company)} is closed today: a paid day off.`, `🏖️ 오늘은 ${esc(ZONE_NAMES.office[1] || CFG.company)} 휴일이에요. 유급 휴일입니다.`));
@@ -4110,7 +4249,14 @@
     if (special.length) morning.push(tr(`🕘 Holiday hours: ${special.map(x => `${esc(hoursName(x.id)[0])} ${x.h[0] === x.h[1] ? 'closed' : clock(x.h[0]) + ' – ' + clock(x.h[1])}`).join(' · ')}.`,
       `🕘 휴일 영업시간: ${special.map(x => `${esc(hoursName(x.id)[1] || hoursName(x.id)[0])} ${x.h[0] === x.h[1] ? '휴무' : clockKo(x.h[0]) + ' – ' + clockKo(x.h[1])}`).join(' · ')}.`));
     const me = hero(), housing = me.housing_name || 'Rent', housingKo = me.housing_name_ko || (/mortgage/i.test(housing) ? '주택 담보 대출' : '월세');
-    if (isPayday(G.day) && !fired()) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income', { ko: '급여 (계좌 입금)' }); notify(CFG.bank_name, `A direct deposit of ${usd2(+me.salary_net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(+me.salary_net)}가 계좌 ···4821에 입금되었습니다.`); morning.push(tr(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)})${payDue(G.day) ? '' : ', early because the bank is closed on payday'}.`, `월급날: <b>${usd2(+me.salary_net)}</b>가 계좌에 들어왔어요 (세전 ${usd(+me.salary_gross)})${payDue(G.day) ? '' : '. 급여일에 은행이 쉬어서 미리 들어왔어요'}.`)); }
+    if (isPayday(G.day) && !fired()) {
+      // unpaid sick days come off this paycheck (a working day is a tenth of two weeks); PTO builds up a little
+      const L = leave(), off = Math.min(10, L.unpaid || 0), cut = cents(+me.salary_net * off / 10), net = cents(+me.salary_net - cut);          // at most the whole paycheck; the rest waits for the next one
+      L.unpaid = (L.unpaid || 0) - off; L.pto = Math.round((L.pto + ptoPerPay()) * 100) / 100;
+      if (net > 0) pay(net, 'Paycheck (direct deposit)', 'income', { ko: '급여 (계좌 입금)' }); notify(CFG.bank_name, `A direct deposit of ${usd2(net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(net)}가 계좌 ···4821에 입금되었습니다.`);
+      morning.push(tr(`Payday: <b>${usd2(net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)})${payDue(G.day) ? '' : ', early because the bank is closed on payday'}.${off ? ` ${usd2(cut)} less for ${off} unpaid day${off === 1 ? '' : 's'} off.` : ''} PTO +${ptoPerPay()} h (now ${leaveText(L.pto)}).`,
+        `월급날: <b>${usd2(net)}</b>가 계좌에 들어왔어요 (세전 ${usd(+me.salary_gross)})${payDue(G.day) ? '' : '. 급여일에 은행이 쉬어서 미리 들어왔어요'}.${off ? ` 무급 휴가 ${off}일로 ${usd2(cut)} 적게 들어왔어요.` : ''} 연차 +${ptoPerPay()}시간(지금 ${leaveText(L.pto)}).`));
+    }
     if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill', { ko: housingKo }); notify(CFG.bank_name, `${housing} payment of ${usd2(+me.housing)} was sent from checking ···4821.`, `${housingKo} ${usd2(+me.housing)}가 계좌에서 나갔습니다.`); morning.push(tr(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`, `${housingKo}: <b>${usd2(+me.housing)}</b>를 ${/mortgage/i.test(housing) ? '은행에' : '집주인에게'} 냈어요.`)); }
     billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill', { ko: b.name_ko }); notify(CFG.bank_name, `Autopay: ${usd2(+b.amount)} was paid to ${b.name} from checking ···4821.`, `자동이체: ${b.name_ko || b.name} ${usd2(+b.amount)}가 빠져나갔습니다.`); morning.push(tr(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.`, `자동이체: ${esc(b.name_ko || b.name)} <b>${usd2(+b.amount)}</b>.`)); });
     if (G.feeDay === G.day) morning.push(tr(`The bank charged a <b>${usd2(+CFG.overdraft_fee)}</b> overdraft fee.`, `은행이 초과 인출 수수료 <b>${usd2(+CFG.overdraft_fee)}</b>를 물렸어요.`));
@@ -4123,7 +4269,7 @@
     morning.unshift(tr(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}${sun ? ` ${sunText(G.day)}.` : ''}`,
       `${WX_ICON[wx.kind] || ''} <b>${WX_NAME_KO[wx.kind] || wx.kind}</b>, 최고 ${toC(wx.high_f)}°C, 최저 ${toC(wx.low_f)}°C. ${esc(wx.forecast_ko || '')}${sun ? ` 해돋이 ${clockKo(sun.rise)}, 해넘이 ${clockKo(sun.set)}.` : ''}`));
     const cal = calendar().filter(c => c.day === G.day && !firedOut(c.place)).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
-    const workAt = !offWork(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '';
+    const workAt = !myOff(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '';
     const body = `<div class="sum"><div><b>${eps.length}</b>${tr('conversations', '대화')}</div><div><b>${gained >= 0 ? '+' : '−'}${Math.abs(gained)}</b>${tr('points', '점수')}</div><div><b>${usd2(spent)}</b>${tr('spent', '지출')}</div><div><b>${usd2(earned)}</b>${tr('earned', '수입')}</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(logText(l))}</li>`).join('') + '</ul>' : ''}
       ${missed.length ? `<p>${tr('Missed', '놓친 일')}: ${missed.map(e => esc(loc(e, 'title'))).join(', ')}</p>` : ''}
@@ -4669,6 +4815,8 @@
     worked: (d) => workedOn(d == null ? G.day : d), get taskLog() { return G ? (G.taskLog || []).slice() : []; },
     task(id) { const t = id ? TASKS.find(x => x.id === id) : pickTask(); if (t) showTask(t); return t ? t.id : null; },          // show a task card (or try the dice)
     pick(i) { return chooseTask(i == null && taskNow ? bestChoice(taskNow.t) : +i); }, week: (d) => weekStats(d == null ? G.day : d),
+    get leave() { return G ? JSON.parse(JSON.stringify(leave())) : null; }, leaveOf: (d) => leaveOf(d == null ? G.day : d),
+    callInSick() { return callInSick(); }, requestPto(d) { return requestPto(d); }, cancelPto(d) { return cancelPto(d); }, ptoDays() { return ptoDays(); },
     routines: (d) => routinesOn(d == null ? G.day : d).map(x => ({ id: x.r.id, ep: x.ep.id, time: x.r.time, done: !!(G.rdone && G.rdone[x.key]) })),
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
     get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },

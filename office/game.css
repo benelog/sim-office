@@ -267,6 +267,8 @@ body.touch .touch-only { display: inline; }
 .card .card-body .choices button { text-align: left; background: #fff; color: var(--ink); border-color: var(--line); font-size: 15px; }
 .card .card-body .choices button:hover { border-color: var(--accent); }
 #card.choose .buttons { display: none; }
+.leave-ask { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+.leave-ask select { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--ink); }
 .card .card-body .score-line b { color: var(--ink); }
 #panel .row .when { width: auto; min-width: 3.4em; }
 @media (max-width: 640px) { .row.tips { flex-wrap: wrap; } }
