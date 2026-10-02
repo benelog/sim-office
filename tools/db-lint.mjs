@@ -157,6 +157,20 @@ for (const m of DB.messages || []) {
 }
 const start = String((DB.config || {}).start_date || '');
 if (start && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(start + 'T00:00:00Z').getUTCDay() !== 1)) bad('config start_date', `"${start}" is not a Monday (YYYY-MM-DD)`);
+// bus delays: chances between 0 and 1, minutes as "a-b", rush hours as "HH:MM-HH:MM", and a full bus's gap within the cap
+{
+  const C = DB.config || {}, RANGE = /^(\d+)-(\d+)$/;
+  for (const k of ['bus_late_chance_rain', 'bus_late_chance_rush', 'bus_late_chance', 'bus_full_chance']) if (C[k] != null && !(+C[k] >= 0 && +C[k] <= 1)) bad(`config ${k}`, `"${C[k]}" is not a chance between 0 and 1`);
+  for (const k of ['bus_late_rain', 'bus_late_rush', 'bus_late', 'bus_full_gap']) {
+    const m = C[k] == null ? null : RANGE.exec(String(C[k]));
+    if (C[k] != null && (!m || +m[1] > +m[2])) bad(`config ${k}`, `"${C[k]}" is not minutes as a-b`);
+    else if (m && C.bus_delay_max != null && +m[2] > +C.bus_delay_max) warn(`config ${k}`, `up to ${m[2]} minutes, more than bus_delay_max ${C.bus_delay_max}`);
+  }
+  if (C.bus_delay_max != null && !(Number.isInteger(+C.bus_delay_max) && +C.bus_delay_max >= 0 && +C.bus_delay_max <= 20)) bad('config bus_delay_max', `"${C.bus_delay_max}" is not 0 to 20 minutes`);
+  if (C.bus_rush != null && String(C.bus_rush).split(',').some(w => { const m = /^\s*(\d\d:\d\d)-(\d\d:\d\d)\s*$/.exec(w); return !m || m[1] >= m[2]; })) bad('config bus_rush', `"${C.bus_rush}" is not HH:MM-HH:MM windows`);
+  if (C.bus_alert_time != null && !HHMM.test(C.bus_alert_time)) bad('config bus_alert_time', `bad time ${C.bus_alert_time}`);
+  if (C.bus_every && C.bus_delay_max != null && +C.bus_delay_max >= +C.bus_every) warn('config bus_delay_max', `a late bus (${C.bus_delay_max} min) can come after the next one (every ${C.bus_every})`);
+}
 for (const h of DB.holidays || []) {
   const w = `holidays ${h.date}`;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(h.date || '') || isNaN(Date.parse(h.date))) bad(w, 'date is not YYYY-MM-DD');

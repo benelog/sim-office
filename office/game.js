@@ -2387,6 +2387,7 @@
   }
   function checkPhone() {          // what has come in by now (only while you are walking about: not in the middle of a conversation)
     if (!G || state !== 'play') return;
+    busAlert();
     G.got = G.got || {};
     const now = G.day * 1440 + G.minute;
     const back = (G.later || []).filter(x => x.at <= now);
@@ -2479,7 +2480,8 @@
       ko: `지금 기온 ${toC(wx.temp)}°C(${wx.temp}°F). ${m < 15 * 60 ? `${w.forecast_ko || ''} 최고 ${toC(w.high_f)}°C, 밤 최저 ${toC(w.low_f)}°C.` : `밤 최저 ${toC(w.low_f)}°C. 내일: ${next.forecast_ko || ''} 최고 ${toC(next.high_f)}°C.`}${sun ? (m < sun.set ? ` 오늘 해넘이 ${hhmm(sun.set)}.` : sunNext ? ` 내일 해돋이 ${hhmm(sunNext.rise)}.` : '') : ''}` });
     const rush = !offWork(d) && !dayOff(d) && ((m >= 6 * 60 && m < 10 * 60) || (m >= 15.5 * 60 && m < 19 * 60));
     const pool = (k) => RADIO.filter(r => r.kind === k && r.day == null);
-    if (rush) rotate(RADIO.filter(r => r.kind === 'traffic' && r.day === d).concat(pool('traffic')), 1, d * 2 + (m >= 12 * 60 ? 1 : 0)).forEach(r => out.push({ kind: 'traffic', en: r.text, ko: r.text_ko }));
+    const bus = rush && busOnAir(d, m);          // how late the buses are running (the bus timetable)
+    if (bus) out.push(bus); else if (rush) rotate(RADIO.filter(r => r.kind === 'traffic' && r.day === d).concat(pool('traffic')), 1, d * 2 + (m >= 12 * 60 ? 1 : 0)).forEach(r => out.push({ kind: 'traffic', en: r.text, ko: r.text_ko }));
     const hol = holidayOf(d);
     if (hol) out.push({ kind: 'holiday', en: `Today is ${hol.name}. ${hol.note || ''}`, ko: `오늘은 ${hol.name_ko || hol.name}. ${hol.note_ko || ''}` });
     const today = RADIO.filter(r => r.day === d && r.kind !== 'traffic' && r.kind !== 'ad');
@@ -2664,13 +2666,91 @@
   // ---------------------------------------------------------------- the bus timetable
   // Every bus_every minutes from bus_first to bus_last (bus_every_weekend on weekends and federal holidays): you
   // wait for the next one, and after the last one you walk.
-  const busEvery = () => +((G && (isWeekend(G.day) || dayOff(G.day)) && CFG.bus_every_weekend) || CFG.bus_every) || 0;
-  function nextBus(min) {          // when the next bus leaves (minutes of the day); null after the last one
-    const every = busEvery(), first = hm(CFG.bus_first, 360), last = hm(CFG.bus_last, 1350);
-    if (!every) return Math.floor(min);
-    if (min <= first) return first;
-    const t = first + Math.ceil((min - first) / every) * every;
-    return t <= last ? t : null;
+  // Buses run late (from game day bus_delay_from): on a rainy day most of them (bus_late_chance_rain) by bus_late_rain
+  // minutes, a few more in the rush; in the rush hours of a working day (bus_rush) about half (bus_late_chance_rush) by
+  // bus_late_rush; at other times now and then (bus_late_chance) by bus_late. In the rush hours a bus can be full
+  // (bus_full_chance, half again in the rain, never two in a row): it drives past and the one behind it comes
+  // bus_full_gap minutes later. Nobody gets on more than bus_delay_max minutes after the time on the timetable. It is
+  // all made from the day and the departure (busRand, not the dice of the moment), so the bus panel, the button, the
+  // ride, the radio's traffic report and Fairview Transit's alert on a rainy morning (transit_sender, bus_alert_time) agree.
+  const busEvery = (d = G ? G.day : 0) => +((d && (isWeekend(d) || dayOff(d)) && CFG.bus_every_weekend) || CFG.bus_every) || 0;
+  const busRange = (v, lo, hi) => { const m = /^\s*(\d+)\s*-\s*(\d+)\s*$/.exec(String(v == null ? '' : v)); return m ? [+m[1], Math.max(+m[1], +m[2])] : [lo, hi]; };
+  const busNum = (v, dflt) => v == null || v === '' || isNaN(+v) ? dflt : +v;
+  const busRand = (d, t, k) => { const x = Math.sin(d * 37.719 + t * 0.6173 + k * 11.13) * 43758.5453; return x - Math.floor(x); };
+  const busPick = (r, x) => r[0] + Math.floor(x * (r[1] - r[0] + 1));
+  const BUS_RUSH = listOf(CFG.bus_rush || '07:00-09:30,16:30-18:30').map(w => w.split('-').map(x => hm(x, 0)));
+  const BUS_WHY = { rain: [' in the rain', '비 때문에 '], rush: [' in the rush-hour traffic', '출퇴근길 정체로 '], other: ['', ''] };
+  const TRANSIT = CFG.transit_sender || 'Fairview Transit', BUS_LINE = String(CFG.bus_line || '12');
+  const busMemo = {};
+  function busDay(d) {             // the day's buses: [{ t: the time on the timetable, late, full, at: when it comes, board: when you get on, why }]
+    if (busMemo[d]) return busMemo[d];
+    const every = busEvery(d), first = hm(CFG.bus_first, 360), last = hm(CFG.bus_last, 1350), out = [];
+    if (!every) return (busMemo[d] = out);
+    const rain = weatherOf(d).kind === 'rain', work = !offWork(d) && !dayOff(d), max = busNum(CFG.bus_delay_max, 15), on = d >= busNum(CFG.bus_delay_from, 2) && max > 0;
+    const R = { rain: busRange(CFG.bus_late_rain, 5, 10), rush: busRange(CFG.bus_late_rush, 3, 8), other: busRange(CFG.bus_late, 1, 3) }, gap = busRange(CFG.bus_full_gap, 4, 8);
+    const P = { rain: busNum(CFG.bus_late_chance_rain, 0.8), rush: busNum(CFG.bus_late_chance_rush, 0.5), other: busNum(CFG.bus_late_chance, 0.1), full: busNum(CFG.bus_full_chance, 0.06) };
+    let before = false;
+    for (let t = first; t <= last; t += every) {
+      const rush = work && BUS_RUSH.some(([a, b]) => t >= a && t < b), why = rain ? 'rain' : rush ? 'rush' : 'other';
+      let late = 0, full = false;
+      if (on) {
+        if (busRand(d, t, 1) < (rain && rush ? 1 - (1 - P.rain) * (1 - P.rush) : P[why])) late = Math.min(max, busPick(R[why], busRand(d, t, 2)) + (rain && rush ? Math.floor(busRand(d, t, 3) * 4) : 0));
+        full = rush && !before && t < last && gap[0] < max && busRand(d, t, 4) < P.full * (rain ? 1.5 : 1);
+        if (full) late = Math.min(late, max - gap[0]);
+      }
+      const at = t + late, board = full ? Math.min(t + max, at + busPick(gap, busRand(d, t, 5))) : at;
+      out.push({ t, late, full, at, board, why: late || full ? why : '' });
+      before = full;
+    }
+    return (busMemo[d] = out);
+  }
+  function busAt(min, d) {         // the first bus you can still get on at min (after a full one, the bus behind it); null after the last
+    if (!busEvery(d)) return { t: Math.floor(min), late: 0, full: false, at: Math.floor(min), board: Math.floor(min), why: '' };
+    return busDay(d == null ? (G ? G.day : 1) : d).find(b => b.board >= min) || null;
+  }
+  function nextBus(min) {          // when you get on the next bus (minutes of the day); null after the last one
+    const b = busAt(min);
+    return b ? b.board : null;
+  }
+  const busLate = (b) => b.board - b.t;
+  function busNext(b, min) {       // the next bus in a few words, for the button at the stop: [en, ko]
+    if (b.full && min <= b.at) return [`the ${clock(b.t)} is full, next ${clock(b.board)}`, `${clockKo(b.t)} 버스 만원, 다음 ${clockKo(b.board)}`];
+    return busLate(b) > 0 ? [`next ${clock(b.board)} (${busLate(b)} min late)`, `다음 ${clockKo(b.board)} (${busLate(b)}분 지연)`] : [`next ${clock(b.t)}`, `다음 ${clockKo(b.t)}`];
+  }
+  function busStatus(b, min) {     // the bus panel: the next bus and the three after it, [en, ko] (HTML)
+    const n = Math.ceil(b.board - min), w = BUS_WHY[b.why] || BUS_WHY.other;
+    const when = n >= 1 ? [`, in ${n} min`, ` (${n}분 뒤)`] : [', boarding now', ' (지금 탑승 중)'];
+    const head = b.full && min <= b.at ? [`The <b>${clock(b.t)}</b> bus is full and won't stop (it passes at ${clock(b.at)}). The one behind it comes at <b>${clock(b.board)}</b>${when[0]}.`, `<b>${clockKo(b.t)}</b> 버스는 만원이라 서지 않고 지나가요(${clockKo(b.at)}). 뒤차가 <b>${clockKo(b.board)}</b>에 와요${when[1]}.`]
+      : b.full ? [`The <b>${clock(b.t)}</b> bus went by full. The one behind it comes at <b>${clock(b.board)}</b>${when[0]}.`, `<b>${clockKo(b.t)}</b> 버스는 만원이라 지나갔어요. 뒤차가 <b>${clockKo(b.board)}</b>에 와요${when[1]}.`]
+        : b.late ? [`The <b>${clock(b.t)}</b> bus is running ${b.late} min late${w[0]}: it comes at <b>${clock(b.board)}</b>${when[0]}.`, `<b>${clockKo(b.t)}</b> 버스가 ${w[1]}${b.late}분 늦어요. <b>${clockKo(b.board)}</b>에 와요${when[1]}.`]
+          : [`Next bus at <b>${clock(b.t)}</b>${when[0]}.`, `다음 버스 <b>${clockKo(b.t)}</b>${when[1]}.`];
+    const after = busDay(G.day).filter(x => x.t > b.t).slice(0, 3);
+    if (!after.length) return head;
+    const tag = (x) => x.full ? [' full', ' 만원'] : x.late ? [` ${x.late} min late`, ` ${x.late}분 지연`] : ['', ''];
+    return [head[0] + `<br>After it: ${after.map(x => clock(x.t) + tag(x)[0]).join(' · ')}.`, head[1] + `<br>그다음: ${after.map(x => clockKo(x.t) + tag(x)[1]).join(' · ')}.`];
+  }
+  function busRideText(b, min, waited) {     // what the ride was like, up to the name of the stop: [en, ko]
+    const w = BUS_WHY[b.why] || BUS_WHY.other;
+    if (b.full && min <= b.at) return [`The ${clock(b.t)} bus was full and drove right past. You got on the one behind it at ${clock(b.board)} and rode`, `${clockKo(b.t)} 버스가 만원이라 그냥 지나갔어요. ${clockKo(b.board)}에 뒤차를 타고`];
+    if (b.full) return [`You got on the ${clock(b.board)} bus, the one behind a full ${clock(b.t)}, and rode`, `만원이던 ${clockKo(b.t)} 버스의 뒤차(${clockKo(b.board)})를 타고`];
+    if (b.late && waited >= 1) return [`The ${clock(b.t)} bus was ${b.late} minutes late${w[0]}. You waited ${waited} minutes and rode`, `${clockKo(b.t)} 버스가 ${w[1]}${b.late}분 늦게 왔어요. ${waited}분을 기다려 버스를 타고`];
+    return [waited >= 2 ? `You waited ${waited} minutes for the ${clock(b.board)} bus and rode` : 'You ride the bus', `${waited >= 2 ? `${waited}분을 기다려 ` : ''}버스를 타고`];
+  }
+  function busOnAir(d, m) {        // the radio's traffic report on the buses of the next hour and a half, or null when they are on time
+    const soon = busDay(d).filter(b => b.t >= m - 10 && b.t < m + 90 && (b.late >= 3 || b.full));
+    if (!soon.length) return null;
+    const most = Math.max(...soon.map(b => b.late)), full = soon.some(b => b.full), w = BUS_WHY[soon[0].why === 'rain' ? 'rain' : 'rush'];
+    return { kind: 'traffic', en: `${TRANSIT} says the Number ${BUS_LINE} is running up to ${Math.max(3, most)} minutes behind${w[0]}${full ? ', and some buses are too full to stop, so leave a little early' : ''}.`,
+      ko: `${BUS_LINE}번 버스가 ${w[1]}최대 ${Math.max(3, most)}분까지 늦게 다니고 있습니다${full ? '. 만원이라 정류장을 그냥 지나치는 버스도 있으니 조금 일찍 나서세요' : ''}.` };
+  }
+  function busAlert() {            // Fairview Transit's alert on a rainy day, once, from bus_alert_time
+    if (!G || G.busAlert === G.day || G.minute < hm(CFG.bus_alert_time, 390)) return;
+    const late = busDay(G.day).filter(b => b.why === 'rain' && b.late);
+    if (!late.length) return;
+    G.busAlert = G.day;
+    const lo = Math.min(...late.map(b => b.late)), hi = Math.max(...late.map(b => b.late)), full = busDay(G.day).some(b => b.full);
+    notify(TRANSIT, `Service alert: rain is slowing the Number ${BUS_LINE} today. Buses are running ${lo === hi ? lo : lo + ' to ' + hi} minutes late${full ? ', and some rush-hour buses may be too full to stop' : ''}. Please allow extra time.`,
+      `운행 알림: 오늘은 비 때문에 ${BUS_LINE}번 버스가 ${lo === hi ? lo : lo + '~' + hi}분 늦게 다닙니다${full ? '. 출퇴근 시간에는 만원이라 정류장을 그냥 지나치는 버스도 있을 수 있습니다' : ''}. 시간 여유를 두고 나오세요.`);
   }
 
   // ---------------------------------------------------------------- rain on you: an umbrella, or getting wet
@@ -3510,9 +3590,9 @@
     if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: shutAllDay(shut) ? tr('Closed today', '오늘 휴무') : tr(`Closed · open ${hoursText(shut)}`, `영업 종료 · ${hoursText(shut)}`), run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${loc(pl)} 영업 종료. 영업시간 ${hoursText(shut)}`, 'bad') });
     else if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
     if (isBusStop(pid) && zoneId === 'city') {
-      const nb = G ? nextBus(G.minute) : 0;
+      const bb = G ? busAt(G.minute) : null, nb = G ? bb && bb.board : 0, bn = bb && busEvery() ? busNext(bb, G.minute) : null;
       if (nb == null) out.push({ key: 'bus:' + pid, label: tr('No more buses tonight', '오늘 버스 끊김'), run: () => toast(`The last bus left at ${clock(hm(CFG.bus_last, 1350))}. You'll have to walk.`, `막차가 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요. 걸어가야 해요.`, 'bad', 4) });
-      else out.push({ key: 'bus:' + pid, label: tr(`Take the bus · ${busEvery() ? 'next ' + clock(nb) + ' · ' : ''}${usd2(busFare())}`, `버스 타기 · ${busEvery() ? '다음 ' + clockKo(nb) + ' · ' : ''}${usd2(busFare())}`), run: () => openPanel('bus', pid) });
+      else out.push({ key: 'bus:' + pid, label: tr(`Take the bus · ${bn ? bn[0] + ' · ' : ''}${usd2(busFare())}`, `버스 타기 · ${bn ? bn[1] + ' · ' : ''}${usd2(busFare())}`), run: () => openPanel('bus', pid) });
     }
     if ((kind === 'work' || pid === hero().desk) && !fired()) out.push({ key: 'work:' + pid, label: tr('Work for an hour', '한 시간 일하기'), run: () => workHour() });
     if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: tr('Check the mailbox', '우편함 보기') + (n ? ` (${n})` : ''), run: () => openPanel('mailbox') }); }
@@ -3812,10 +3892,10 @@
       const here = panelArg;
       const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || portalsOf(Z).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
       const pass = rows('items').find(i => busItem(i) && /pass/.test(i.id));
-      const nb = nextBus(G.minute), every = busEvery(), off = isWeekend(G.day) || dayOff(G.day);
-      const times = every ? `<p class="fine">${tr(`${nb == null ? `No more buses tonight: the last one left at ${clock(hm(CFG.bus_last, 1350))}.` : `Next bus at <b>${clock(nb)}</b>${nb - G.minute >= 1 ? `, in ${Math.ceil(nb - G.minute)} min` : ', boarding now'}.`}
+      const bb = busAt(G.minute), nb = bb && bb.board, bs = bb && busStatus(bb, G.minute), every = busEvery(), off = isWeekend(G.day) || dayOff(G.day);
+      const times = every ? `<p class="fine">${tr(`${nb == null ? `No more buses tonight: the last one left at ${clock(hm(CFG.bus_last, 1350))}.` : bs[0]}
         Every ${every} minutes ${off ? (dayOff(G.day) ? 'today (holiday timetable)' : 'on weekends') : 'on weekdays'}, ${clock(hm(CFG.bus_first, 360))} – ${clock(hm(CFG.bus_last, 1350))}.`,
-        `${nb == null ? `오늘 버스는 끊겼어요. 막차는 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요.` : `다음 버스 <b>${clockKo(nb)}</b>${nb - G.minute >= 1 ? ` (${Math.ceil(nb - G.minute)}분 뒤)` : ' (지금 탑승 중)'}.`}
+        `${nb == null ? `오늘 버스는 끊겼어요. 막차는 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요.` : bs[1]}
         ${off ? (dayOff(G.day) ? '오늘은 공휴일 시간표로' : '주말에는') : '평일에는'} ${every}분마다, ${clockKo(hm(CFG.bus_first, 360))}~${clockKo(hm(CFG.bus_last, 1350))}.`)}</p>` : '';
       body.innerHTML = times + stops.map(pid => `<div class="row"><div class="main"><div class="t">${esc(loc(place(pid)))}</div><div class="s">${tr('about 15 minutes', '약 15분')}</div></div>
         <span class="price">${hasPass() ? tr('Pass', '정기권') : usd2(busFare())}</span><button type="button" data-ride="${esc(pid)}" ${nb == null ? 'disabled' : ''}>${tr('Ride', '타기')}</button></div>`).join('') || `<p class="empty">${tr('No stops on this line.', '이 노선에는 정류장이 없어요.')}</p>`;
@@ -4334,14 +4414,14 @@
   async function ride(pid) {
     const fare = hasPass() ? 0 : busFare();
     if (G.money < fare) { note(tr("You can't afford the fare.", '요금이 부족해요.'), true); return; }
-    const nb = nextBus(G.minute);
+    const bb = busAt(G.minute), nb = bb && bb.board;
     if (nb == null) { note(tr(`No more buses tonight. The last one left at ${clock(hm(CFG.bus_last, 1350))}.`, `오늘 버스는 끊겼어요. 막차는 ${clockKo(hm(CFG.bus_last, 1350))}에 떠났어요.`), true); return; }
-    const waited = Math.max(0, Math.round(nb - G.minute));
+    const waited = Math.max(0, Math.round(nb - G.minute)), said = busRideText(bb, G.minute, waited);
     if (fare) pay(-fare, 'Bus fare', 'spend', { ko: '버스 요금' });
     closePanel();
     advanceMinutes(waited + 15);
     await enterZone('city', pid);
-    toast(`${waited >= 2 ? `You waited ${waited} minutes for the ${clock(nb)} bus and rode` : 'You ride the bus'} to ${place(pid).name}.`, `${waited >= 2 ? `${waited}분을 기다려 ` : ''}버스를 타고 ${place(pid).name_ko || place(pid).name}에 왔어요.`, null, 4);
+    toast(`${said[0]} to ${place(pid).name}.`, `${said[1]} ${place(pid).name_ko || place(pid).name}에 왔어요.`, null, 4);
   }
 
   // ---------------------------------------------------------------- sleep: the end of a day
@@ -4966,6 +5046,7 @@
     callInSick() { return callInSick(); }, requestPto(d) { return requestPto(d); }, cancelPto(d) { return cancelPto(d); }, ptoDays() { return ptoDays(); },
     routines: (d) => routinesOn(d == null ? G.day : d).map(x => ({ id: x.r.id, ep: x.ep.id, time: x.r.time, done: !!(G.rdone && G.rdone[x.key]) })),
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
+    buses: (d) => busDay(d == null ? (G ? G.day : 1) : d).map(b => ({ time: hhmm(b.t), late: b.late, full: b.full, at: hhmm(b.at), board: hhmm(b.board), why: b.why })),
     get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },
     get umbrellas() { return Object.values(npcActors).concat(player ? [player] : []).filter(a => a.brolly && a.brolly.visible).map(a => a.id); },
     // the kitchen: the packages in the bag, the recipes that can be made now, cook(recipeId), eat(itemId), toss(n)
