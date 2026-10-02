@@ -135,6 +135,14 @@ for (const c of rows('calendar')) {
 }
 
 const MSG_KINDS = new Set(['text', 'email', 'voicemail', 'alert']);
+// a message or a letter that comes back: every (days; 30 or more = the same date every month) and last_day are whole
+// numbers, the last day is not before the first, and a row that comes back cannot be answered (replies go by id)
+function recurs(w, m) {
+  if (m.every != null && !(Number.isInteger(m.every) && m.every >= 1)) bad(w, `every ${m.every} is not a whole number of days`);
+  if (m.last_day != null && !(Number.isInteger(m.last_day) && m.last_day >= m.day)) bad(w, `last_day ${m.last_day} is before day ${m.day}`);
+  if (m.last_day != null && !m.every) warn(w, 'last_day without every');
+  if (m.every && (DB.replies || []).some(r => r.msg === m.id)) bad(w, 'a message that comes back cannot have replies');
+}
 for (const m of DB.messages || []) {
   const w = `messages ${m.id}`;
   if (m.hero && m.hero !== 'all' && heroes.size && !heroes.has(m.hero)) bad(w, `hero "${m.hero}" not in heroes`);
@@ -145,6 +153,7 @@ for (const m of DB.messages || []) {
   if (m.hero && m.hero === m.sender) bad(w, 'the hero cannot send a message to themselves');
   if (m.kind === 'email' && !m.subject) warn(w, 'an email without a subject');
   if (!m.body_ko) warn(w, 'no body_ko');
+  recurs(w, m);
 }
 const start = String((DB.config || {}).start_date || '');
 if (start && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(start + 'T00:00:00Z').getUTCDay() !== 1)) bad('config start_date', `"${start}" is not a Monday (YYYY-MM-DD)`);
@@ -190,7 +199,9 @@ for (const m of DB.mail || []) {
   if (!m.sender || !m.body) bad(w, 'sender and body are required');
   if (!m.body_ko) warn(w, 'no body_ko');
   if (t && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
+  recurs(w, m);
 }
+for (const b of DB.bills || []) if (!b.company) warn(`bills ${b.id}`, 'no company: no statement email after the missions');
 
 const RADIO_KINDS = new Set(['news', 'community', 'sports', 'traffic', 'ad']);
 for (const r of DB.radio || []) {

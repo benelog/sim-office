@@ -184,7 +184,8 @@ CREATE TABLE IF NOT EXISTS bills (
   day int NOT NULL,
   every int NOT NULL DEFAULT 30,
   note varchar(255),
-  note_ko varchar(255)
+  note_ko varchar(255),
+  company varchar(60)                              -- who sends the statement email five days before (after the missions)
 );
 
 -- The people you can play. Each has a home of their own (a zone, with a bed, a kitchen, a desk and the door in
@@ -234,7 +235,9 @@ CREATE TABLE IF NOT EXISTS messages (
   subject varchar(120),
   subject_ko varchar(120),
   body text NOT NULL,
-  body_ko text
+  body_ko text,
+  every int,                                       -- comes back every this many days (30 or more: the same date every month)
+  last_day int                                     -- the last game day it comes back (NULL: no end)
 );
 
 -- Holidays and days people talk about, by their real date (game day 1 is config start_date, a Monday).
@@ -290,7 +293,9 @@ CREATE TABLE IF NOT EXISTS mail (
   subject varchar(120),
   subject_ko varchar(120),
   body text NOT NULL,
-  body_ko text
+  body_ko text,
+  every int,                                       -- as messages.every; a letter due on a Sunday or a holiday comes the next mail day
+  last_day int
 );
 
 -- The local radio station (turn it on at the desk at home). The engine says the time, the date and the weather

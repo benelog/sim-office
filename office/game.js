@@ -2192,7 +2192,53 @@
   // sender, kind, body, body_ko, read }]. Menu > Phone (P) lists them, newest first.
   const MSG_KIND = { text: 'Text', email: 'Email', voicemail: 'Voicemail', alert: 'Alert' }, MSG_KIND_KO = { text: '문자', email: '이메일', voicemail: '음성 메시지', alert: '알림' };
   const senderName = (id) => NPCS[id] ? fullName(NPCS[id]) : String(id || '');
-  const myMessages = () => MESSAGES.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && m.sender !== G.hero);
+  // A message or a letter can come back (messages/mail every: days between, 30 or more = the same date every month;
+  // last_day: the last game day it can come): each time is its own message, '<id>@<day>' after the first. After the
+  // missions the engine also sends the weather service's alerts (rain, fog, a freeze) and an email from each company
+  // on autopay five days before the bill (bills.company). Kept per day (recurMemo).
+  function occurrences(r, upTo) {
+    const every = +r.every || 0, last = Math.min(upTo, r.last_day == null ? Infinity : +r.last_day), out = [];
+    if (!every) return r.day <= last ? [r.day] : [];
+    if (every >= 30 && START != null) { const dom = dateOf(r.day).getUTCDate(); for (let d = r.day; d <= last; d++) if (onDateOfMonth(d, dom)) out.push(d); }
+    else for (let d = r.day; d <= last; d += every) out.push(d);
+    return out;
+  }
+  const recurMemo = {};
+  function recurring(list, key, upTo, shift) {          // the rows of a table as they arrive, up to a day (memo per hero and day)
+    const k = key + '@' + G.hero + '@' + upTo;
+    if (recurMemo[k]) return recurMemo[k];
+    const out = [];
+    list.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && m.sender !== G.hero).forEach(m => occurrences(m, upTo).forEach(d => {
+      const day = shift ? shift(d) : d;
+      if (day <= upTo) out.push(d === m.day ? Object.assign({}, m, { day }) : Object.assign({}, m, { id: m.id + '@' + d, day, base: m.id }));
+    }));
+    if (key === 'msg') made(upTo).forEach(m => out.push(m));
+    out.sort((a, b) => (a.day - b.day) || (hm(a.time, 0) - hm(b.time, 0)));
+    Object.keys(recurMemo).filter(x => x.startsWith(key + '@')).forEach(x => delete recurMemo[x]);
+    return (recurMemo[k] = out);
+  }
+  const fmtDate = (d) => { const t = dateOf(d); return t ? [`${MONTHS[t.getUTCMonth()].slice(0, 3)} ${t.getUTCDate()}`, `${t.getUTCMonth() + 1}월 ${t.getUTCDate()}일`] : [`day ${d}`, `${d}일째`]; };
+  function made(upTo) {          // the engine's own: weather alerts and bill statements, after the missions
+    const out = [], WXS = CFG.weather_sender || 'Fairview Weather';
+    for (let d = MISSION_DAYS + 1; d <= upTo; d++) {
+      const w = weatherOf(d);
+      if (MESSAGES.some(m => m.day === d && m.sender === WXS)) continue;
+      const msg = w.kind === 'rain' ? [`Rain today, with a high of ${w.high_f}°F. Allow extra time for your commute and bring an umbrella.`, `오늘 비, 최고 ${toC(w.high_f)}°C. 출근길에 시간 여유를 두고 우산을 챙기세요.`]
+        : w.kind === 'fog' ? ['Dense fog advisory until 10 AM. Slow down and use your low beams.', '오전 10시까지 짙은 안개 주의보. 속도를 줄이고 하향등을 켜세요.']
+          : w.low_f <= 32 ? [`Freeze warning tonight: a low of ${w.low_f}°F. Bring pets and plants inside and cover outdoor pipes.`, `오늘 밤 한파 경보: 최저 ${toC(w.low_f)}°C. 반려동물과 화분은 안으로 들이고 바깥 수도관을 덮으세요.`] : null;
+      if (msg) out.push({ id: 'wx@' + d, day: d, time: '06:45', kind: 'alert', sender: WXS, body: msg[0], body_ko: msg[1] });
+    }
+    rows('bills').filter(b => b.company).forEach(b => {
+      for (let d = MISSION_DAYS + 6; d <= upTo + 5; d++) if (billsDue(d).includes(b) && d - 5 <= upTo) {
+        const [en, ko] = fmtDate(d);
+        out.push({ id: 'bill_' + b.id + '@' + d, day: d - 5, time: '08:10', kind: 'email', sender: b.company, subject: 'Your statement is ready', subject_ko: '이번 달 명세서가 나왔습니다',
+          body: `Your ${String(b.name).toLowerCase()} statement is ready: ${usd2(+b.amount)} due ${en}. AutoPay is on, so it will be paid from checking ···4821 that day. No action needed.`,
+          body_ko: `${b.name_ko || b.name} 명세서가 나왔습니다. ${ko}에 ${usd2(+b.amount)}가 빠져나갑니다. 자동이체가 설정되어 있어 따로 하실 일은 없습니다.` });
+      }
+    });
+    return out;
+  }
+  const myMessages = () => recurring(MESSAGES, 'msg', G.day);
   const unread = () => !G ? 0 : myMessages().filter(m => (G.got || {})[m.id] === 1).length + (G.notes || []).filter(n => !n.read).length;
   const sound = (function () {          // small sounds made with Web Audio (no files): the phone's chime
     let ctx = null, failed = false;
@@ -2261,7 +2307,7 @@
     const got = G.got || {};
     return myMessages().filter(m => got[m.id]).map(m => ({ n: -1, id: m.id, day: m.day, minute: hm(m.time, 0), sender: m.sender, kind: m.kind, subject: m.subject, subject_ko: m.subject_ko, body: personal(m.body), body_ko: m.body_ko, fresh: got[m.id] === 1 }))
       .concat((G.notes || []).map((n, i) => ({ n: i, day: n.day, minute: n.minute, sender: n.sender, kind: n.kind, body: n.body, body_ko: n.body_ko, fresh: !n.read })))
-      .sort((a, b) => (b.day - a.day) || (b.minute - a.minute) || (b.n - a.n));
+      .sort((a, b) => (b.day - a.day) || (b.minute - a.minute) || (b.n - a.n)).slice(0, 80);          // the newest 80
   }
   function readAll() {
     Object.keys(G.got || {}).forEach(id => { G.got[id] = 2; });
@@ -2273,7 +2319,7 @@
   // voicemail is called back and the call is heard at once. G.replied { messageId: replyId } keeps what you said.
   const repliesTo = (id) => REPLIES.filter(r => r.msg === id);
   function replyTo(msgId, replyId) {
-    const m = MESSAGES.find(x => x.id === msgId), r = REPLIES.find(x => x.id === replyId && x.msg === msgId);
+    const m = myMessages().find(x => x.id === msgId), r = REPLIES.find(x => x.id === replyId && x.msg === msgId);
     if (!G || !m || !r || (G.replied || {})[msgId] || !(G.got || {})[msgId]) return false;
     (G.replied = G.replied || {})[msgId] = r.id;
     const call = m.kind === 'voicemail';
@@ -2302,7 +2348,8 @@
   // is what you have taken out of the mailbox. Check it outside your front door (the city map, at your building).
   const mailTime = () => hm(CFG.mail_time, 13 * 60);
   const mailDay = (d) => (d - 1) % 7 !== 6 && !dayOff(d);
-  const myMail = () => MAIL.filter(m => (!m.hero || m.hero === 'all' || m.hero === G.hero) && (m.day < G.day || (m.day === G.day && G.minute >= mailTime())));
+  const nextMailDay = (d) => { while (!mailDay(d)) d++; return d; };          // a letter due on a Sunday or a holiday comes the next mail day
+  const myMail = () => recurring(MAIL, 'mail', G.day, nextMailDay).filter(m => m.day < G.day || (m.day === G.day && G.minute >= mailTime()));
   const newMail = () => !G ? [] : myMail().filter(m => !(G.mailGot || {})[m.id]);
   const MAIL_ICON = { junk: '🗑️', bill: '🧾', letter: '✉️', notice: '📋', card: '💌' }, MAIL_KIND = { junk: 'Junk mail', bill: 'Bill', letter: 'Letter', notice: 'Notice', card: 'Card' };
   const MAIL_KIND_KO = { junk: '광고 우편', bill: '청구서', letter: '편지', notice: '안내문', card: '카드' };
@@ -3757,7 +3804,7 @@
         <div class="b">${esc(tr(x.en, x.ko))}</div></div></div>`).join('');
     } else if (panelKind === 'mailbox') {
       h.textContent = tr('Mailbox', '우편함');
-      const got = G.mailGot = G.mailGot || {}, list = myMail().slice().reverse(), fresh = list.filter(m => !got[m.id]).map(m => m.id);
+      const got = G.mailGot = G.mailGot || {}, list = myMail().slice().reverse().slice(0, 40), fresh = list.filter(m => !got[m.id]).map(m => m.id);
       sub.textContent = fresh.length ? tr(`${fresh.length} new`, `새 우편 ${fresh.length}통`) : tr(`${list.length} kept`, `${list.length}통 보관`);
       body.innerHTML = (list.map(m => `<div class="row msg${fresh.includes(m.id) ? ' new' : ''}"><button type="button" class="play" data-say="${esc((m.subject ? m.subject + '. ' : '') + m.body)}" aria-label="Play">▶</button>
         <div class="main"><div class="s">${MAIL_ICON[m.kind] || ''} ${esc(tr(MAIL_KIND[m.kind] || 'Mail', MAIL_KIND_KO[m.kind] || '우편'))} · ${esc(dShort(m.day))}</div><div class="t">${esc(m.sender)}${m.subject ? ` <span class="subj">${esc(tr(m.subject, m.subject_ko))}</span>` : ''}</div>
