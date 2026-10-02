@@ -266,6 +266,31 @@ for (const t of DB.tasks || []) {
   if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
 }
 
+// the pharmacy and the clinic: a conversation tagged errand is opened by the engine when it applies, so it says which
+// kind it is (pickup | otc | rx at a place of kind pharmacy, clinic + cold | flu at a place of kind clinic), and both
+// illnesses have a clinic visit; medicine sold at a pharmacy is gear (a day's doses per use); the rules in config are
+// numbers (copay_*, ill_chance and flu_share as month:percent, ill_days as cold:days,flu:days)
+const placeKind = Object.fromEntries(rows('places').map(p => [p.id, p.kind]));
+const tagsOf = (e) => String(e.tags || '').split(',').map(x => x.trim()).filter(Boolean);
+const CARE = ['pickup', 'otc', 'rx', 'clinic'];
+for (const e of rows('episodes').filter(e => tagsOf(e).includes('errand'))) {
+  const w = `episodes ${e.id}`, kinds = CARE.filter(k => tagsOf(e).includes(k));
+  if (kinds.length !== 1) { bad(w, `an errand needs one of ${CARE.join(', ')} in its tags (has ${kinds.join(', ') || 'none'})`); continue; }
+  const want = kinds[0] === 'clinic' ? 'clinic' : 'pharmacy';
+  if (placeKind[e.place] !== want) bad(w, `a ${kinds[0]} errand at ${e.place}, which is not a place of kind ${want}`);
+  if (kinds[0] === 'clinic' && tagsOf(e).filter(t => t === 'cold' || t === 'flu').length !== 1) bad(w, 'a clinic visit needs cold or flu in its tags');
+  if (kinds[0] !== 'pickup' && (e.day_from || 1) <= (+(DB.config || {}).mission_days || 15)) warn(w, `opens on day ${e.day_from}, but people only fall ill after the missions`);
+}
+if (rows('episodes').some(e => tagsOf(e).includes('errand'))) for (const k of ['cold', 'flu']) if (!rows('episodes').some(e => tagsOf(e).includes('errand') && tagsOf(e).includes('clinic') && tagsOf(e).includes(k))) bad('episodes', `no clinic visit for the ${k} (tags errand,clinic,${k})`);
+for (const i of rows('items').filter(i => placeKind[i.place] === 'pharmacy')) {
+  if (i.kind !== 'gear') bad(`items ${i.id}`, `sold at the pharmacy but kind "${i.kind}" (medicine is gear: taxed, kept in the bag)`);
+  if (!(i.uses >= 1) || !(i.price > 0)) bad(`items ${i.id}`, 'medicine needs a price and uses (days of doses)');
+}
+const cfg = DB.config || {};
+for (const k of Object.keys(cfg).filter(k => /^copay_/.test(k))) if (!(Number(cfg[k]) >= 0)) bad(`config ${k}`, `"${cfg[k]}" is not an amount of dollars`);
+for (const k of ['ill_chance', 'flu_share']) if (cfg[k] != null && !String(cfg[k]).split(',').every(p => { const m = /^\s*(\d{1,2}):(\d+(\.\d+)?)\s*$/.exec(p); return m && +m[1] >= 1 && +m[1] <= 12 && +m[2] <= 100; })) bad(`config ${k}`, `"${cfg[k]}" is not month:percent,…`);
+if (cfg.ill_days != null && !String(cfg.ill_days).split(',').every(p => /^\s*(cold|flu):\d+\s*$/.test(p))) bad('config ill_days', `"${cfg.ill_days}" is not cold:days,flu:days`);
+
 console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));

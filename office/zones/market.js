@@ -2,7 +2,9 @@
    of the south wall, with boxes standing in for shopping carts next to it and Mike's checkout counter just
    inside (market_checkout). Three double-sided aisles of open shelves stocked with groceries run north-south
    through the middle (market_shelves is in the first aisle); fresh produce is laid out on tables along the east
-   wall, and a row of fridges stands along the north wall. */
+   wall, and a row of fridges stands along the north wall. In the north-west corner is Fairview Pharmacy (pharmacy:
+   Omar behind a counter, shelves of boxes behind him) and along the west wall the walk-in clinic (clinic: Grace at a
+   front desk, two chairs to wait on). */
 (function () {
   var K = SO_ZONE_KIT;
   function f(node, x, z, turn, extra) { return K.prop('furniture', node, x, z, turn, extra); }
@@ -59,6 +61,22 @@
     f('pottedPlant', -4.4, 4.6, 0, { solid: 'fit' })
   ]);
 
+  // ----- Fairview Pharmacy (north-west corner): a counter with a register, shelves behind, a divider to the aisle;
+  // the walk-in clinic along the west wall: a front desk with a screen and two chairs to wait on
+  [-6.38, -5.95, -5.52].forEach(function (x) { add([f('kitchenCabinet', x, -3.7, 0, { solid: 'fit' })]); });
+  [-6.6, -6.18, -5.76, -5.34].forEach(function (x) { add([f('bookcaseClosed', x, -4.84, 0, { solid: 'fit' })]); });
+  add([
+    x_('cash-register', -5.52, -3.72, 0, { lift: 0.45, scale: 0.42 }),
+    food('carton-small', -6.35, -3.7, 20, { lift: 0.45, scale: 0.45 }),
+    food('carton-small', -6.2, -3.75, 0, { lift: 0.45, scale: 0.45 }),
+    { pack: 'box', size: [0.06, 0.45, 1.0], at: [-5.22, -4.45], color: '#cfd8dc', solid: [0.1, 1.0] },
+    f('desk', -6.12, -1.0, 90, { solid: 'fit' }),
+    f('computerScreen', -6.2, -1.0, 270, { lift: 0.384 }),
+    f('chairCushion', -6.65, 0.35, 90, { solid: 'fit' }),
+    f('chairCushion', -6.65, 0.85, 90, { solid: 'fit' }),
+    f('pottedPlant', -6.62, 1.45, 0, { solid: 'fit' })
+  ]);
+
   // ----- outside: the parking lot in front (south) and Main Street beyond it, the neighbours
   add([
     K.prop('cars', 'suv', -2.8, 7.4, 180), K.prop('cars', 'sedan', 1.1, 7.4, 180), K.prop('cars', 'suv', 5.0, 7.4, 0),
@@ -78,7 +96,9 @@
     places: {
       market_shelves: { at: [-2.25, -2.2], face: [-2.6, -3.4] },
       market_checkout: { at: [-2.93, 3.15], face: [-2.93, 2.0] },
-      market_door: { at: [-5.3, 3.4], face: [-4.0, 2.2] }
+      market_door: { at: [-5.3, 3.4], face: [-4.0, 2.2] },
+      pharmacy: { at: [-5.95, -4.35], face: [-5.95, -3.0] },
+      clinic: { at: [-6.62, -1.0], face: [-5.4, -1.0] }
     },
     portals: [
       { at: [-5.5, 4.7], size: [0.9, 0.5], to: 'city', arrive: 'market_door', label: 'Leave the store', label_ko: '가게에서 나가기' }
@@ -87,7 +107,8 @@
     lights: [
       { at: [-2, -2], height: 1.25, color: '#ffffff', intensity: 1.1 },
       { at: [3, -1], height: 1.25, color: '#ffffff', intensity: 1.0 },
-      { at: [-3, 3], height: 1.25, color: '#fff4e0', intensity: 0.9 }
+      { at: [-3, 3], height: 1.25, color: '#fff4e0', intensity: 0.9 },
+      { at: [-5.8, -2.4], height: 1.25, color: '#f4f8ff', intensity: 0.8 }
     ],
     ambient: 0.95,
     background: '#bcd7ec',
@@ -109,6 +130,9 @@
         panels: hang.concat([
           { kind: 'sign', wall: 'n', along: -2.3, y: 1.0, w: 2.4, h: 0.44, text: 'Fairview Market', sub: 'Fresh every day', bg: '#3f8f5a', fg: '#ffffff', logo: '#ffd166', frame: '#2f6b45' },
           { kind: 'poster', wall: 's', along: 0.5, y: 0.85, w: 0.5, h: 0.66, frame: '#ffffff', text: 'Weekly Specials', lines: ['Strawberries', 'Buy one, get one free', 'Milk $2.99'], band: '#d1495b' },
+          { kind: 'sign', wall: 'n', along: -5.95, y: 1.0, w: 1.7, h: 0.4, text: 'Pharmacy', sub: 'Prescriptions · Pick-up', bg: '#2b6cb0', fg: '#ffffff', logo: '#ffffff', frame: '#1d4f86' },
+          { kind: 'sign', wall: 'w', along: -1.0, y: 1.0, w: 1.6, h: 0.36, text: 'Walk-in Clinic', sub: 'No appointment needed', bg: '#ffffff', fg: '#2b6cb0', border: '#2b6cb0', frame: '#1d4f86' },
+          { kind: 'poster', wall: 'w', along: 0.6, y: 0.85, w: 0.42, h: 0.56, frame: '#ffffff', text: 'Flu Shots', lines: ['Free with most', 'insurance plans', 'Walk-ins welcome'], band: '#2b6cb0' },
           { kind: 'poster', at: [-1.47, 2.51], turn: 180, y: 0.49, w: 0.13, h: 0.17, depth: 0.004, frame: false, text: 'TECH', lines: ['AI at work'], band: '#264653', key: 'mag1' },
           { kind: 'poster', at: [-1.3, 2.51], turn: 180, y: 0.49, w: 0.13, h: 0.17, depth: 0.004, frame: false, text: 'COOK', lines: ['30-minute meals'], band: '#e76f51', key: 'mag2' },
           { kind: 'poster', at: [-1.13, 2.51], turn: 180, y: 0.49, w: 0.13, h: 0.17, depth: 0.004, frame: false, text: 'HOME', lines: ['Small spaces'], band: '#2a9d8f', key: 'mag3' }
