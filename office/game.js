@@ -67,7 +67,7 @@
   const CHARACTERS = Array.from(new Set(HEROES.map(h => h.model))), DEFAULT_CHARACTER = heroOf(DEFAULT_HERO).model;
   const forHero = (h, id) => { const s = String(h || DEFAULT_HERO); return s === 'all' || listOf(s).includes(id); };     // a hero id, a list ('jun,derek') or all
   const mine = (r) => forHero(r.hero, G ? G.hero : DEFAULT_HERO);          // a row of the hero you play
-  const episodes = () => rows('episodes').filter(mine), calendar = () => rows('calendar').filter(mine).concat(routineCal());
+  const episodes = () => onCall(rows('episodes').filter(mine)), calendar = () => rows('calendar').filter(mine).concat(routineCal());
   const cast = () => rows('npcs').filter(n => !G || n.id !== G.hero);
   const portalsOf = (spec) => (spec.portals || []).filter(p => !p.hero || (!!G && p.hero === G.hero));     // a home's door is its owner's
   // a person (Quaternius, tools/office-characters.py) is about 0.95 tall with the feet at y=0
@@ -959,6 +959,7 @@
     if (TRAVEL_ZONES.includes(z)) G.tripDay = G.day;
     if (z === 'office' && G.outDay === G.day) G.outDay = null;          // back from lunch or an errand
     if (z === 'office' && G.inDay !== G.day && G.minute < 17 * 60) checkedIn = checkIn();
+    hybridArrived(z);          // hybrid work: came to the office on a remote day, or home again after stepping out
   }
   // going out of the office on a working day before config early_before: fine for lunch, but if you don't come back it
   // is leaving early (closeDay)
@@ -1349,11 +1350,12 @@
   const DAY_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   function scheduledPlace(n) {
     const list = SCHEDULE[n.id];
-    if (!list || !G) return n.place;
+    if (!list || !G) return homeToday(n, n.place) ? null : n.place;
     const days = offWork(G.day) ? 'weekend' : 'weekday', name = DAY_NAMES[(G.day - 1) % 7];
     const onDay = (d) => { const m = /^(\d+)(?:-(\d+))?$/.exec(d); return m ? G.day >= +m[1] && G.day <= +(m[2] || m[1]) : d === 'all' || d === days || listOf(d).includes(name); };      // '11-12': those game days
     const s = list.find(s => onDay(String(s.days)) && G.minute >= hm(s.time_from, 0) && G.minute < hm(s.time_to, 1440));
     if (!s || shutAllDay(s.place) || shutAllDay(zoneOfPlace(s.place))) return null;
+    if (homeToday(n, s.place)) return null;          // hybrid work: a remote day, working from home
     return s.place;
   }
   function npcPlaceNow(n) {
@@ -1797,8 +1799,9 @@
         `최종 서면 경고. ${hero().name_ko || G.name} 님, 근태에 관한 공식 경고입니다. 지각·결근·조퇴가 너무 잦습니다. 한 번 더 지각·조퇴하거나 무단결근하면 ${CFG.company}와의 고용 관계가 종료됩니다. 무슨 사정이 있다면 찾아와 주세요. — 인사팀 ${(NPCS[HR] || {}).name_ko || (NPCS[HR] || { name: 'HR' }).name}`, 'email');
     } else if (w.pts >= +CFG.warn_points && w.warned < 1) {
       w.warned = 1;
-      const me = hero().name_ko || G.name;
-      if (why === 'early') notify(BOSS, `Hey ${G.name}, I came by your desk this afternoon and you had already left. Everything okay? Unless we've talked about it, please stay at least until ${clock(EARLY())}.`,
+      const me = hero().name_ko || G.name, home = hybridStrike(why);          // hybrid work: the words for a remote day
+      if (home) notify(BOSS, home[0], home[1], 'text');
+      else if (why === 'early') notify(BOSS, `Hey ${G.name}, I came by your desk this afternoon and you had already left. Everything okay? Unless we've talked about it, please stay at least until ${clock(EARLY())}.`,
         `${me}, 오후에 자리에 가 봤더니 벌써 퇴근했더라고요. 괜찮아요? 미리 얘기한 게 아니면 적어도 ${clockKo(EARLY())}까지는 있어 주세요.`, 'text');
       else if (why === 'absent') notify(BOSS, `Hey ${G.name}, you didn't come in and I didn't hear from you. Everything okay? If you're sick, just text me before standup.`,
         `${me}, 출근도 안 하고 연락도 없었네요. 괜찮아요? 아프면 스탠드업 전에 문자만 주세요.`, 'text');
@@ -1826,6 +1829,7 @@
   // fired on the spot, at work: the manager and HR walk you out
   function letGo() {
     saveGame();
+    if (zoneId !== 'office' && remoteDay(G.day)) { letGoRemote(); return; }          // hybrid work: at home, on a video call
     const boss = firstName(NPCS[BOSS] || { name: 'Maya' }), hr = firstName(NPCS[HR] || { name: 'Linda' });
     showCard({ kicker: CFG.company, title: tr("You're let go", '해고되었습니다'),
       body: tr(`<p>${esc(boss)} and ${esc(hr)} from HR are waiting for you by the front desk.</p><p class="quote">“${esc(G.name)}, we've talked about this. You've been late or absent too many times, so we're letting you go, effective today. I'm sorry it came to this.”</p><p>Your badge is turned off and you're walked out of the building. Your final paycheck goes to your bank account.</p>`,
@@ -1864,9 +1868,10 @@
   // day you came in costs miss_points and gets a text from the manager (missedRoutines, at the end of the day).
   const ROUTINES = rows('routines').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
   const ROUTINE_OF = {};
-  ROUTINES.forEach(r => listOf(r.episodes).forEach(id => { if (!ROUTINE_OF[id]) ROUTINE_OF[id] = r; }));
+  ROUTINES.forEach(r => listOf(r.episodes).concat(listOf(r.remote_episodes)).forEach(id => { if (!ROUTINE_OF[id]) ROUTINE_OF[id] = r; }));
+  const routineDays = (r, d) => listOf(hybridOn(d) && r.hybrid_days ? r.hybrid_days : r.days);          // hybrid work: some meetings move to office days
   function routineOn(r, d) {
-    if (d <= MISSION_DAYS || myOff(d) || !forHero(r.hero, G.hero) || !listOf(r.days).includes(DAY_NAMES[(d - 1) % 7])) return false;
+    if (d <= MISSION_DAYS || myOff(d) || !forHero(r.hero, G.hero) || !routineDays(r, d).includes(DAY_NAMES[(d - 1) % 7])) return false;
     if (r.every === '2weeks') return Math.floor((d - 1) / 7) % 2 === (+r.parity || 0);
     if (r.every === 'month') { const t = dateOf(d); return !!t && t.getUTCDate() <= 7; }
     return true;
@@ -1874,16 +1879,19 @@
   const routineMemo = {};
   function routinesOn(d) {          // that day's meetings: [{ r, ep, key }]
     if (!G) return [];
-    const k = G.hero + '@' + d;
+    const remote = remoteDay(d), k = G.hero + '@' + d + (remote ? '@' + callPlace(d) : '');
     if (routineMemo[k]) return routineMemo[k];
     const out = [];
     ROUTINES.forEach(r => {
       if (!routineOn(r, d)) return;
-      const pool = listOf(r.episodes).map(id => EPISODES[id]).filter(e => e && mine(e));
+      // a remote day: a video call, from the routine's own pool for those (remote_episodes) when it has one
+      const away = (x) => !!r.remote_episodes && remoteDay(x), own = away(d);
+      const pool = listOf(own ? r.remote_episodes : r.episodes).map(id => EPISODES[id]).filter(e => e && mine(e));
       if (!pool.length) return;
       let n = 0;
-      for (let x = MISSION_DAYS + 1; x < d; x++) if (routineOn(r, x)) n++;
-      out.push({ r, ep: pool[n % pool.length], key: r.id + '@' + d });
+      for (let x = MISSION_DAYS + 1; x < d; x++) if (routineOn(r, x) && away(x) === own) n++;
+      const ep = pool[n % pool.length];
+      out.push({ r, ep: remote ? asCall(ep, d) : ep, key: r.id + '@' + d });
     });
     return (routineMemo[k] = out);
   }
@@ -1891,7 +1899,10 @@
   function routineCal() {          // the meetings on the calendar, from last week to two weeks ahead
     if (!G || !ROUTINES.length) return [];
     const out = [], d0 = Math.floor((G.day - 1) / 7) * 7 + 1;
-    for (let d = Math.max(MISSION_DAYS + 1, d0 - 7); d < d0 + 14; d++) routinesOn(d).forEach(x => out.push({ day: d, time: x.r.time, title: x.r.title, title_ko: x.r.title_ko, place: x.r.place, episode: x.ep.id, rkey: x.key }));
+    for (let d = Math.max(MISSION_DAYS + 1, d0 - 7); d < d0 + 14; d++) routinesOn(d).forEach(x => {
+      if (x.ep.remote) { if (!fired()) out.push({ day: d, time: x.r.time, title: x.r.title + ' (video call)', title_ko: (x.r.title_ko || x.r.title) + ' (화상 회의)', place: x.ep.place, episode: x.ep.id, rkey: x.key }); return; }          // hybrid work
+      out.push({ day: d, time: x.r.time, title: x.r.title, title_ko: x.r.title_ko, place: x.r.place, episode: x.ep.id, rkey: x.key });
+    });
     return out;
   }
   const meetingName = (r) => /^\d/.test(r.title) ? 'your ' + r.title : 'the ' + r.title.charAt(0).toLowerCase() + r.title.slice(1);          // the daily standup, your 1:1 with Maya
@@ -1929,7 +1940,8 @@
     const up = nextUp(), next = up && up[0] < G.minute + 60 ? up : null;
     const mins = next ? Math.ceil(next[0] - G.minute) : 60;
     if (mins < 10) {
-      if (next[0] <= G.minute) toast(`${next[1].title} is on now. Go to ${place(next[1].place).name}.`, `지금 ${loc(next[1], 'title')} 시간이에요. ${loc(place(next[1].place))}에 가세요.`, 'bad', 3);
+      if (next[0] <= G.minute && next[1].remote) toast(`${next[1].title} is on now. Join the video call.`, `지금 ${loc(next[1], 'title')} 시간이에요. 화상 회의에 참여하세요.`, 'bad', 3);          // hybrid work
+      else if (next[0] <= G.minute) toast(`${next[1].title} is on now. Go to ${place(next[1].place).name}.`, `지금 ${loc(next[1], 'title')} 시간이에요. ${loc(place(next[1].place))}에 가세요.`, 'bad', 3);
       else toast(`No time to start anything: ${next[1].title} at ${clock(next[0])}.`, `뭘 시작할 시간이 없어요: ${clockKo(next[0])}에 ${loc(next[1], 'title')}.`, null, 3);
       return;
     }
@@ -1941,7 +1953,7 @@
     play(player, 'sit');
     goalTimer = 0;
     const soon = nextUp();          // no task when something of yours starts soon (it would make you miss it)
-    const t = zoneId === 'office' && !myOff(d) && !(soon && soon[0] < G.minute + 45) && pickTask();
+    const t = (zoneId === 'office' || remoteHere()) && !myOff(d) && !(soon && soon[0] < G.minute + 45) && pickTask();          // things come up at home too (hybrid work)
     if (t) { showTask(t); return; }
     const today = hrs(workedOn(d));
     if (next) toast(`You worked until ${clock(G.minute)} (${today} today). Next: ${next[1].title}.`, `${clockKo(G.minute)}까지 일했어요(오늘 ${today}). 다음: ${loc(next[1], 'title')}.`, null, 3.2);
@@ -2132,6 +2144,177 @@
       ${sick.map(d => `<div class="row"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${tr('Sick day', '병가')}${L.days[d] === 'unpaid' ? tr(' (unpaid)', ' (무급)') : ''}</div></div></div>`).join('')}
       <div class="leave-ask">${opts.length && free >= LEAVE_DAY ? `<select id="pto-day" aria-label="${tr('Day', '날짜')}">${opts.map(d => `<option value="${d}">${esc(dShort(d))}</option>`).join('')}</select> <button type="button" data-leave="pto">${tr('Ask for PTO', '연차 신청')}</button>`
         : `<span class="fine">${free < LEAVE_DAY ? tr(`Not enough PTO for a day yet (${leaveText(Math.max(0, free))} free).`, `아직 하루치 연차가 없어요(쓸 수 있는 연차 ${leaveText(Math.max(0, free))}).`) : tr('No days to ask for yet.', '아직 신청할 수 있는 날이 없어요.')}</span>`} ${sickButton()}</div>`;
+  }
+  // ---------------------------------------------------------------- hybrid work: Mondays and Fridays from home
+  // From config hybrid_from (a date after the missions; Linda's email two weeks ahead) the office days are Tuesday to
+  // Thursday and config remote_days (mon,fri) are worked from home: the people in config remote_people stay away from the
+  // office (Tom at the front desk and Sam from IT still come in), and you log in at your desk at home (the hero's
+  // home_desk) instead of walking into the office. Logging in is checking in (checkIn: on time by late_after, late,
+  // after noon), never logging in is a missed day (closeDay), and logging off or walking out of home before
+  // early_before is stepping out: come back (or log back in) or it is leaving early (leftEarly), like going out of the
+  // office. Coming to the office on a remote day is fine and counts the same. A meeting on a remote day is a video call
+  // (asCall: it opens at the desk where you work today, like a phone call, without the people in the room), with its own
+  // conversations when the routine has remote_episodes (the standup); routines.hybrid_days moves sprint planning and the
+  // retro to office days. "Work for an hour" works at the home desk while you are logged in, and what comes up there
+  // counts like at the office, so do the hours in the week review. work().home { day: 1 }: the days you logged in from
+  // home. G.login = { day, from home | office, at, off }: where you work today, and whether you logged off.
+  const HYBRID_FROM = (() => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(CFG.hybrid_from || '')); return m && START != null ? Math.round((Date.UTC(+m[1], +m[2] - 1, +m[3]) - START) / 864e5) + 1 : null; })();
+  const REMOTE_DAYS = listOf(CFG.remote_days || 'mon,fri'), REMOTE_PEOPLE = listOf(CFG.remote_people);
+  const hybridOn = (d) => HYBRID_FROM != null && d >= Math.max(HYBRID_FROM, MISSION_DAYS + 1);
+  const remoteDay = (d) => hybridOn(d) && !offWork(d) && REMOTE_DAYS.includes(DAY_NAMES[(d - 1) % 7]);
+  const homeToday = (n, pid) => !!G && !!pid && REMOTE_PEOPLE.includes(n.id) && zoneOfPlace(pid) === 'office' && remoteDay(G.day);          // (scheduledPlace)
+  const loginToday = () => G && G.login && G.login.day === G.day ? G.login : null;
+  // where you are with work on a remote day: null (not a remote day for you), out (not logged in yet), in (logged in at
+  // home), office (came in), away (stepped out or logged off before early_before), off (logged off for the day)
+  function loginState() {
+    if (!G || !remoteDay(G.day) || myOff(G.day) || fired()) return null;
+    const L = loginToday();
+    if (G.inDay !== G.day) return 'out';
+    if (G.outDay === G.day) return 'away';
+    if (L && L.off) return 'off';
+    return L && L.from === 'home' ? 'in' : 'office';
+  }
+  const remoteHere = () => loginState() === 'in' && atHome();          // working at the desk at home right now
+  // the video call of a meeting: at your desk at the office if you came in today, otherwise at your desk at home
+  const callPlace = (d) => { const L = loginToday(); return d === G.day && G.inDay === d && L && L.from === 'office' ? hero().desk : hero().home_desk; };
+  const CALLS = {};
+  function asCall(ep, d) {
+    const pid = callPlace(d), k = ep.id + '@' + pid;
+    return CALLS[k] || (CALLS[k] = Object.assign({}, ep, { place: pid, tags: (ep.tags ? ep.tags + ',' : '') + 'phone,video', remote: true }));
+  }
+  function onCall(list) {          // (episodes) today's meetings as video calls on a remote day
+    return !G || !remoteDay(G.day) ? list : list.map(e => ROUTINE_OF[e.id] ? asCall(e, G.day) : e);
+  }
+  function logIn() {
+    const s = loginState(), d = G.day, m = Math.floor(G.minute);
+    if (!s || s === 'in') return null;
+    if (s === 'out' && G.minute >= 17 * 60) { toast(`It's ${clock(m)}. Too late to log in today.`, `${clockKo(m)}예요. 오늘 로그인하기엔 너무 늦었어요.`, 'bad', 3); return null; }
+    G.login = { day: d, from: 'home', at: s === 'out' ? m : (loginToday() || {}).at, off: false };
+    if (G.outDay === d) G.outDay = null;          // back at work: not leaving early after all
+    const w = work();
+    w.home = Object.assign({}, w.home, { [d]: 1 });
+    const kind = s === 'out' ? checkIn() : 'back';          // the first time today: on time, late, or after noon (and maybe the last strike)
+    if (fired()) return kind;
+    if (kind === 'on') toast(`Logged in at ${clock(m)}. You're on time.`, `${clockKo(m)}에 로그인했어요. 제시간이에요.`, 'good', 3);
+    else if (kind === 'back') toast(`Logged back in at ${clock(m)}.`, `${clockKo(m)}에 다시 로그인했어요.`, null, 2.6);
+    player.sit = true; play(player, 'sit');
+    goalTimer = 0; actSig = '';
+    saveGame();
+    return kind;
+  }
+  function logOff() {
+    if (loginState() !== 'in') return false;
+    const d = G.day, m = Math.floor(G.minute);
+    G.login.off = true;
+    if (m < EARLY()) {          // like walking out of the office: log back in, or it is leaving early
+      G.outDay = d; G.outAt = m;
+      toast(`Logged off at ${clock(m)}. Log back in before ${clock(EARLY())}, or it counts as leaving early.`, `${clockKo(m)}에 로그아웃했어요. ${clockKo(EARLY())} 전에 다시 로그인하지 않으면 조퇴예요.`, 'bad', 4.5);
+    } else toast(`Logged off at ${clock(m)}. ${hrs(workedOn(d))} at your desk today.`, `${clockKo(m)}에 로그아웃했어요. 오늘 자리에서 ${hrs(workedOn(d))} 일했어요.`, null, 3.2);
+    player.sit = false;
+    goalTimer = 0; actSig = '';
+    saveGame();
+    return true;
+  }
+  // (travel) walking out of home while logged in: stepping out, like going out of the office
+  function leftHome(z) {
+    if (loginState() !== 'in' || G.minute >= EARLY() || TRAVEL_ZONES.includes(z)) return;
+    G.outDay = G.day; G.outAt = Math.floor(G.minute);
+    toast(`Stepping away from your desk at ${clock(G.minute)}. Be back at it (or at the office) before ${clock(EARLY())}, or it counts as leaving early.`, `${clockKo(G.minute)}에 자리를 비워요. ${clockKo(EARLY())} 전에 돌아오지(또는 사무실에 가지) 않으면 조퇴예요.`, null, 4.5);
+  }
+  // (arrived) the office on a remote day: you work there today; home again after stepping out: back at your desk
+  function hybridArrived(z) {
+    if (!G || !remoteDay(G.day) || fired()) return;
+    const L = loginToday();
+    if (z === 'office' && G.inDay === G.day) G.login = { day: G.day, from: 'office', at: L ? L.at : Math.floor(G.minute), off: false };
+    else if (z === hero().home_zone && L && L.from === 'home' && !L.off && G.outDay === G.day) { G.outDay = null; toast('Back home: still logged in.', '집에 돌아왔어요. 로그인 상태 그대로예요.', null, 2.6); }
+  }
+  // (computeActions) joining a video call while not logged in logs you in first
+  function joinCall(ep) {
+    if (ep.remote && atHome() && /^(out|away|off)$/.test(loginState() || '')) logIn();
+    return !fired();
+  }
+  // (placeActions) the desk at home: log in, work, log off
+  function hybridActions(pid) {
+    const s = pid === hero().home_desk && atHome() ? loginState() : null, out = [];
+    if (!s) return out;
+    if (s === 'in') {
+      out.push({ key: 'work:' + pid, label: tr('Work for an hour', '한 시간 일하기'), run: () => workHour() });
+      out.push({ key: 'logoff:' + pid, label: tr('Log off', '로그아웃'), run: () => logOff() });
+    } else if (s !== 'out' || G.minute < 17 * 60) {
+      const label = s === 'out' ? tr('Log in to work', '업무 로그인') : s === 'office' ? tr('Log in from home', '집에서 로그인') : tr('Log back in', '다시 로그인');
+      out.push({ key: 'login:' + pid + s, label, run: () => logIn() });
+    }
+    return out;
+  }
+  // (updateGoal) a remote day: log in at your desk at home, or log back in after stepping out
+  function hybridGoal() {
+    const s = loginState();
+    if (!s || zoneId === 'office' || TRAVEL_ZONES.includes(zoneId)) return null;
+    const home = hero().home_zone, desk = hero().home_desk, here = zoneId === home;
+    let target = null;
+    if (here) target = Z.places[desk] ? { at: Z.places[desk].at } : null;
+    else { const via = routeTo(zoneId, home); if (via) target = { at: via.at, portal: true }; }
+    const orOffice = here ? '' : tr(' (or go to the office)', ' (사무실에 가도 돼요)');
+    if (s === 'out' && G.minute < 17 * 60) {
+      const late = G.minute > hm(CFG.late_after, 555);
+      return { warn: late, target, en: `${late ? "You're late! " : ''}<b>Remote day.</b> Log in at your desk at home${late ? '' : ` by ${clock(hm(CFG.late_after, 555))}`}${orOffice}.`,
+        ko: `${late ? '지각이에요! ' : ''}<b>재택근무 날.</b> 집 책상에서 로그인하세요${late ? '' : ` (${clockKo(hm(CFG.late_after, 555))}까지)`}${orOffice}.` };
+    }
+    if (s === 'away' && G.minute < EARLY()) return { warn: false, target, en: `Log back in at your desk at home before ${clock(EARLY())}${orOffice}.`, ko: `${clockKo(EARLY())} 전에 집 책상에서 다시 로그인하세요${orOffice}.` };
+    return null;
+  }
+  // (goToSleep) the morning card's work line (usual: the office one): a remote day, and the first day of hybrid work
+  function hybridMorning(d, usual) {
+    if (!hybridOn(d) || fired()) return usual;
+    const first = d === Math.max(HYBRID_FROM, MISSION_DAYS + 1);
+    const intro = first ? tr(`🏢 <b>Hybrid work</b> from today: ${esc(CFG.company)} is in the office ${officeNames()[0]} and works from home on ${remoteNames()[0]}. `, `🏢 오늘부터 <b>하이브리드 근무</b>: ${josa(officeNames()[1], '은', '는')} 사무실, ${josa(remoteNames()[1], '은', '는')} 집에서 일해요. `) : '';
+    if (!remoteDay(d) || myOff(d)) return intro + usual;
+    return intro + tr(`🏠 <b>Remote day.</b> Log in at your desk at home by <b>${clock(hm(CFG.late_after, 555))}</b> and stay online until at least ${clock(EARLY())}. Meetings are video calls.`,
+      `🏠 <b>재택근무 날.</b> <b>${clockKo(hm(CFG.late_after, 555))}</b>까지 집 책상에서 로그인하고 적어도 ${clockKo(EARLY())}까지는 접속해 있으세요. 회의는 화상으로 해요.`);
+  }
+  // the days by name: [English, Korean] (remote: Mondays and Fridays; office: Tuesday to Thursday)
+  const dayNames = (list, plural) => { const ix = list.map(x => DAY_NAMES.indexOf(x)).filter(i => i >= 0 && i < 5).sort(), en = ix.map(i => WEEKDAYS[i] + (plural ? 's' : '')), ko = ix.map(i => WEEKDAYS_KO[i]);
+    if (ix.length > 2 && ix[ix.length - 1] - ix[0] === ix.length - 1) return [`${en[0]} to ${en[en.length - 1]}`, `${ko[0]}부터 ${ko[ko.length - 1]}까지`];
+    return [en.length > 1 ? en.slice(0, -1).join(', ') + ' and ' + en[en.length - 1] : en.join(''), ko.length === 2 ? josa(ko[0], '과', '와') + ' ' + ko[1] : ko.join('·')]; };
+  const remoteNames = () => dayNames(REMOTE_DAYS, true), officeNames = () => dayNames(DAY_NAMES.slice(0, 5).filter(x => !REMOTE_DAYS.includes(x)), false);
+  // (calendar) a remote day ahead, or a day you worked from home
+  function hybridCal(d) {
+    if (!remoteDay(d) || myOff(d)) return null;
+    const w = work();
+    if (w.home && w.home[d]) return tr('Worked from home', '재택근무함');
+    if (w.record[d]) return null;
+    return tr(`Remote day: log in from home by ${clock(hm(CFG.late_after, 555))}`, `재택근무: ${clockKo(hm(CFG.late_after, 555))}까지 집에서 로그인`);
+  }
+  // (strike) the manager's first word on a remote day
+  function hybridStrike(why) {
+    if (!remoteDay(G.day) || (G.inDay === G.day && (loginToday() || {}).from === 'office')) return null;          // came to the office: the usual words
+    const me = hero().name_ko || G.name;
+    if (why === 'early') return [`Hey ${G.name}, I pinged you this afternoon and you'd already logged off. Everything okay? Unless we've talked about it, please stay online at least until ${clock(EARLY())} on remote days.`,
+      `${me}, 오후에 메시지를 보냈는데 벌써 로그아웃했더라고요. 괜찮아요? 미리 얘기한 게 아니면 재택하는 날에도 적어도 ${clockKo(EARLY())}까지는 접속해 있어 주세요.`];
+    if (why === 'absent') return [`Hey ${G.name}, you never logged in today and I didn't hear from you. Everything okay? Remote days are still work days. If you're sick, just text me before standup.`,
+      `${me}, 오늘 로그인도 안 하고 연락도 없었네요. 괜찮아요? 재택하는 날도 근무일이에요. 아프면 스탠드업 전에 문자만 주세요.`];
+    return [`Hey ${G.name}, you logged in late today. Everything okay? On remote days, please be online by ${clock(hm(CFG.work_start, 540))}, the same as at the office.`,
+      `${me}, 오늘 로그인이 늦었네요. 괜찮아요? 재택하는 날에도 사무실처럼 ${clockKo(hm(CFG.work_start, 540))}까지는 접속해 주세요.`];
+  }
+  // (letGo) let go on a remote day, at home: a video call with your manager and HR
+  function letGoRemote() {
+    const boss = firstName(NPCS[BOSS] || { name: 'Maya' }), hr = firstName(NPCS[HR] || { name: 'Linda' });
+    showCard({ kicker: CFG.company, title: tr("You're let go", '해고되었습니다'),
+      body: tr(`<p>A video call pops up on your laptop: ${esc(boss)} and ${esc(hr)} from HR.</p><p class="quote">“${esc(G.name)}, we've talked about this. You've been late or absent too many times, so we're letting you go, effective today. I'm sorry it came to this.”</p><p>When the call ends, your accounts stop working. Please bring the laptop and your badge to the front desk. Your final paycheck goes to your bank account.</p>`,
+        `<p>노트북에 화상 통화가 뜹니다. ${esc(josa(boss, '과', '와'))} 인사팀 ${esc(hr)}예요.</p><p class="quote">“${esc(myName())}, 이 얘기는 전에도 했죠. 지각과 결근이 너무 많아서 오늘부로 함께할 수 없게 됐어요. 이렇게 돼서 유감이에요.”</p><p>통화가 끝나자 계정이 모두 막힙니다. 노트북과 출입증은 프런트에 반납해 주세요. 마지막 급여는 은행 계좌로 들어옵니다.</p>`),
+      ok: tr('Close the laptop', '노트북 닫기'), state: 'card' });
+    speak(`${G.name}, we've talked about this. You've been late or absent too many times, so we're letting you go, effective today.`, voiceOf(NPCS[BOSS]));
+  }
+  // (Work record) the rules, today, and the days from home this week
+  function hybridPanel() {
+    if (HYBRID_FROM == null || G.day < HYBRID_FROM - 14 || fired()) return '';
+    const s = loginState(), L = loginToday(), w = work(), from = Math.floor((G.day - 1) / 7) * 7 + 1;
+    const homeDays = Object.keys(w.home || {}).map(Number).filter(d => d >= from && d < from + 7).length;
+    const NOW = { out: ['Not logged in yet.', '아직 로그인하지 않았어요.'], in: [`Logged in from home${L && L.at != null ? ' at ' + clock(L.at) : ''}.`, `${L && L.at != null ? clockKo(L.at) + '에 ' : ''}집에서 로그인했어요.`],
+      office: ['At the office today.', '오늘은 사무실에 나왔어요.'], away: [`Stepped away at ${clock(G.outAt || 0)}: log back in before ${clock(EARLY())}.`, `${clockKo(G.outAt || 0)}에 자리를 비웠어요. ${clockKo(EARLY())} 전에 다시 로그인하세요.`], off: ['Logged off for the day.', '오늘은 로그아웃했어요.'] };
+    return `<h3>${tr('Hybrid work', '하이브리드 근무')}</h3><p class="fine">${tr(`${hybridOn(G.day) ? 'Since' : 'From'} ${esc(dateLong(HYBRID_FROM))}: ${officeNames()[0]} at the office, ${remoteNames()[0]} from home. On a remote day, log in at your desk at home by ${clock(hm(CFG.late_after, 555))} and stay online until at least ${clock(EARLY())}: logging in late is late, never logging in is a missed day. The standup is a video call, sprint planning and the retro are on office days, and you can always come to the office instead.`,
+      `${dateKo(HYBRID_FROM)}${hybridOn(G.day) ? '부터' : '부터 시작'}: ${josa(officeNames()[1], '은', '는')} 사무실, ${josa(remoteNames()[1], '은', '는')} 집에서 일해요. 재택하는 날에는 ${clockKo(hm(CFG.late_after, 555))}까지 집 책상에서 로그인하고 적어도 ${clockKo(EARLY())}까지 접속해 있으세요. 늦게 로그인하면 지각, 로그인하지 않으면 결근이에요. 스탠드업은 화상으로, 스프린트 계획과 회고는 사무실 나오는 날에 하고, 언제든 사무실에 나와도 돼요.`)}</p>
+      ${s ? `<p class="fine">${tr('Today', '오늘')}: ${esc(tr(NOW[s][0], NOW[s][1]))}</p>` : ''}${hybridOn(G.day) ? `<p class="fine">${tr(`This week: ${homeDays} day${homeDays === 1 ? '' : 's'} from home.`, `이번 주 재택: ${homeDays}일.`)}</p>` : ''}`;
   }
   // ---------------------------------------------------------------- the review: 90 days for Jun, the year-end review for the others
   // A conversation tagged review (one for each hero, Maya's office, early January) is the meeting; when it is over the
@@ -3358,7 +3541,11 @@
       const ep = open.find(e => isPhone(e) ? placeIn(e.place, zoneId) : e.npc && npcActors[e.npc]) || open[0];
       const n = npcRow(ep.npc), pid = isPhone(ep) ? ep.place : npcPlaceNow(n) || ep.place, pz = placeIn(pid, zoneId) ? zoneId : zoneOfPlace(pid);
       const pl = place(pid);
-      if (pz === zoneId && isPhone(ep)) {
+      if (pz === zoneId && ep.remote) {          // hybrid work: a meeting on video
+        en = `Join the video call at ${esc(pl.name)}: <b>${esc(ep.title)}</b>`;
+        ko = `${esc(loc(pl))}에서 화상 회의에 참여하세요: <b>${esc(loc(ep, 'title'))}</b>`;
+        goalTarget = Z.places[pid] ? { at: Z.places[pid].at } : null;
+      } else if (pz === zoneId && isPhone(ep)) {
         en = `Take the call at ${esc(pl.name)}: <b>${esc(ep.title)}</b>`;
         ko = `${esc(loc(pl))}에서 전화하세요: <b>${esc(loc(ep, 'title'))}</b>`;
         goalTarget = Z.places[pid] ? { at: Z.places[pid].at } : null;
@@ -3375,8 +3562,11 @@
       }
     } else {
       const later = episodes().filter(laterToday).sort(epOrder)[0];
-      const atWork = zoneId === 'office' && !myOff(G.day) && !fired() && G.inDay === G.day && G.minute < 17 * 60, desk = hero().desk;
-      if (later && atWork) {
+      const atWork = (zoneId === 'office' || remoteHere()) && !myOff(G.day) && !fired() && G.inDay === G.day && G.minute < 17 * 60, desk = remoteHere() ? hero().home_desk : hero().desk;
+      const hg = hybridGoal();          // hybrid work: a remote day asks you to log in at your desk at home
+      if (hg) {
+        en = hg.en; ko = hg.ko; warn = hg.warn; goalTarget = hg.target;
+      } else if (later && atWork) {
         en = `Work at your desk until ${clock(hm(later.time_from, 0))}. Next: ${esc(later.title)}`;
         ko = `${clockKo(hm(later.time_from, 0))}까지 자리에서 일하세요. 다음: ${esc(loc(later, 'title'))}`;
         if (Z.places[desk]) goalTarget = { at: Z.places[desk].at };
@@ -3461,6 +3651,7 @@
       if (wd === 4) topics.push('day:friday');
       if (wd >= 5) topics.push('day:weekend');
       if (dayOff(G.day)) topics.push('holiday');
+      if (zoneId === 'office' && hybridOn(G.day) && !offWork(G.day)) topics.push(remoteDay(G.day) ? 'hybrid:remote' : 'hybrid:office');          // hybrid work: a quiet floor, or everybody in
       if (m < 9 * 60 && Z.indoor) topics.push('time:morning');
       if (m >= 11.5 * 60 && m < 13.5 * 60) topics.push('time:lunch');
       if (m >= 17.5 * 60) topics.push('time:evening');
@@ -3822,6 +4013,7 @@
     if (!z) return;
     if (z === 'office' && zoneId !== 'office' && fired()) { stoppedAtDoor(); return; }          // let go: the badge no longer opens the door
     if (zoneId === 'office' && z !== 'office' && state === 'play') leftOffice(z);
+    if (G && zoneId === hero().home_zone && z !== zoneId && state === 'play') leftHome(z);          // hybrid work: out of home while logged in
     if (minutes) advanceMinutes(minutes);
     if (state !== 'play') return;
     // through a door: the camera leans in on you as the screen darkens, and pulls back out in the new place
@@ -4045,6 +4237,7 @@
       else out.push({ key: 'bus:' + pid, label: tr(`Take the bus · ${bn ? bn[0] + ' · ' : ''}${usd2(busFare())}`, `버스 타기 · ${bn ? bn[1] + ' · ' : ''}${usd2(busFare())}`), run: () => openPanel('bus', pid) });
     }
     if ((kind === 'work' || pid === hero().desk) && !fired()) out.push({ key: 'work:' + pid, label: tr('Work for an hour', '한 시간 일하기'), run: () => workHour() });
+    if (G) hybridActions(pid).forEach(a => out.push(a));          // hybrid work: the desk at home on a remote day (log in, work, log off)
     if (MAIL.length && G && zoneId === 'city' && pid === hero().home_door) { const n = newMail().length; out.push({ key: 'mail:' + pid + n, label: tr('Check the mailbox', '우편함 보기') + (n ? ` (${n})` : ''), run: () => openPanel('mailbox') }); }
     if (TV.length && G && kind === 'tv' && atHome()) out.push({ key: 'tv:' + pid, label: tr('Watch TV', 'TV 보기'), run: () => sitForTv(pid) });
     if (RADIO.length && G && kind === 'desk' && atHome()) out.push({ key: 'radio:' + pid, label: tr(`Turn on the radio (${STATION})`, `라디오 켜기 (${STATION})`), run: () => openPanel('radio') });
@@ -4079,7 +4272,8 @@
       if (!pl || !pl.at) return;
       const d = Math.hypot(pl.at[0] - player.pos.x, pl.at[1] - player.pos.z);
       if (d > PLACE_R) return;
-      open.filter(e => isPhone(e) && e.place === pid).forEach(ep => list.push({ d: d - 1, key: 'ep:' + ep.id, label: tr(`Phone ${npcRow(ep.npc).name.split(' ')[0]}: ${ep.title}`, `${firstName(npcRow(ep.npc))}에게 전화: ${loc(ep, 'title')}`), run: () => beginEpisode(ep, null) }));
+      open.filter(e => isPhone(e) && e.place === pid).forEach(ep => list.push({ d: d - 1, key: 'ep:' + ep.id, run: () => { if (joinCall(ep)) beginEpisode(ep, null); },
+        label: ep.remote ? tr(`Join the video call: ${ep.title}`, `화상 회의 참여: ${loc(ep, 'title')}`) : tr(`Phone ${npcRow(ep.npc).name.split(' ')[0]}: ${ep.title}`, `${firstName(npcRow(ep.npc))}에게 전화: ${loc(ep, 'title')}`) }));
       placeActions(pid).forEach((a, i) => list.push(Object.assign({ d: d + 0.1 + i * 0.01 }, a)));
     });
     list.sort((a, b) => a.d - b.d);
@@ -4166,7 +4360,7 @@
   function relangTurn() {
     const t = talk.turns[talk.idx];
     if (!t) return;
-    dlg.querySelector('.ep').textContent = loc(talk.ep, 'title');
+    dlg.querySelector('.ep').textContent = (talk.ep.remote ? '📹 ' : '') + loc(talk.ep, 'title');          // a video call (hybrid work)
     dlg.querySelector('.step').textContent = `${talk.idx + 1} / ${talk.turns.length}`;
     dlg.querySelector('.situation').textContent = turnText(t, 'situation');
     const reply = talk.showing === 'reply', rs = t.reply_speaker || t.speaker;
@@ -4404,6 +4598,8 @@
         const rec = G.work && G.work.record[d];
         if (rec) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND[rec][0], ATTEND[rec][1])}`);
         if (rec && G.work.left && G.work.left[d] != null) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND.early[0], ATTEND.early[1])} · ${clk(G.work.left[d])}`);
+        const hx = hybridCal(d);          // hybrid work: a remote day
+        if (hx) extra.push(hx);
         if (!evs.length && !extra.length && d !== G.day) continue;
         html += `<h3>${tr(`${dateLong(d)} · Day ${d}${d === G.day ? ' · today' : ''}`, `${dateKo(d)} · ${d}일째${d === G.day ? ' · 오늘' : ''}`)}</h3>`;
         html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
@@ -4501,9 +4697,9 @@
             : tr(`Today: <b>${hrs(workedOn(G.day))}</b>. Use “Work for an hour” at your desk.${freePlay() ? '' : ` After the missions your manager expects about ${WORK_HOURS_DAY} h a day.`}`, `오늘: <b>${hrs(workedOn(G.day))}</b>. 자리에서 “한 시간 일하기”를 하세요.${freePlay() ? '' : ` 미션이 끝나면 매니저는 하루 약 ${WORK_HOURS_DAY}시간을 기대해요.`}`);
           return `<h3>${tr('At your desk', '업무')}</h3><p class="fine">${head}</p>${log.map(x => { const t = T[x.id]; if (!t) return ''; const c = (t.choices || [])[x.pick] || {};
             return `<div class="row"><span class="when">${esc(dShort(x.day))}</span><div class="main"><div class="t">${esc((TASK_KIND[t.kind] || ['📌'])[0] + ' ' + shown(t.title, t.title_ko))}</div><div class="s">${esc(shown(c.t, c.t_ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n ? (x.n > 0 ? '+' : '−') + Math.abs(x.n) : ''}</span></div>`; }).join('')}`; })()}
-        ${fired() ? '' : leavePanel()}${benefitsLink()}
+        ${hybridPanel()}${fired() ? '' : leavePanel()}${benefitsLink()}
         ${friendsPanel()}
-        <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}${w.left && w.left[d] != null ? `<div class="s">${esc(tr(ATTEND.early[0], ATTEND.early[1]))} · ${clk(w.left[d])} · −${Math.abs(ATTEND.early[2])}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
+        <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}${w.home && w.home[d] ? `<div class="s">${tr('From home', '재택')}</div>` : ''}${w.left && w.left[d] != null ? `<div class="s">${esc(tr(ATTEND.early[0], ATTEND.early[1]))} · ${clk(w.left[d])} · −${Math.abs(ATTEND.early[2])}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
         <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
     } else if (panelKind === 'map') {
       renderMapPanel(h, sub, body);
@@ -4898,7 +5094,7 @@
     const missed = episodes().filter(e => !G.done[e.id] && e.day_to != null && e.day_to === day && G.day >= (e.day_from || 1) && !firedOut(e.place, e));
     const away = TRAVEL_ZONES.includes(zoneId);
     logEvent('sleep', late ? 'Fell asleep' : 'Slept', 0);
-    const inAt = G.inDay === day ? G.inAt : null, wasLate = G.lateDay === day;
+    const inAt = G.inDay === day ? G.inAt : null, wasLate = G.lateDay === day, fromHome = !!(work().home || {})[day], wasRemote = remoteDay(day);          // (hybrid work)
     hush = true;
     const wasFired = fired();
     const att = closeDay(day, away);           // a working day you never came in: a strike (and maybe the end of the job)
@@ -4914,6 +5110,7 @@
     const morning = [];
     if (firedNow) morning.push(tr(`📧 <b>You've been let go.</b> ${esc(CFG.company)} ended your job for missing too much work. Your badge no longer works, and your final paycheck has been deposited.`, `📧 <b>해고되었습니다.</b> 결근이 너무 잦아 ${esc(CFG.company)}에서 고용을 끝냈어요. 출입증은 이제 안 열리고, 마지막 급여는 계좌에 들어왔어요.`));
     else if (att === 'early') morning.push(tr(`⚠️ You left work early yesterday (${clock(G.work.left[day])}). ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 일찍 퇴근했어요(${clockKo(G.work.left[day])}). 조퇴예요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
+    else if (att === 'absent' && wasRemote) morning.push(tr(`⚠️ You never logged in yesterday. ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 로그인하지 않았어요. 결근이에요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     else if (att === 'absent') morning.push(tr(`⚠️ You didn't show up for work yesterday. ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 출근하지 않았어요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     if (skipped.length) morning.push(tr(`📅 You missed ${skipped.map(x => esc(meetingName(x.r))).join(' and ')} yesterday. Your manager noticed.`, `📅 어제 ${skipped.map(x => esc(x.r.title_ko || x.r.title)).join('·')}에 빠졌어요. 매니저가 알아챘어요.`));
     if (week) morning.push(week.grade === 'good' ? tr(`📈 Your manager liked your week: <b>${hrs(week.mins)}</b> at your desk (the team expects about ${hrs(week.want)}). +${week.n} points.`, `📈 매니저가 이번 주 일에 만족했어요: 자리에서 <b>${hrs(week.mins)}</b> 일함(팀 기대치 약 ${hrs(week.want)}). +${week.n}점.`)
@@ -4953,12 +5150,12 @@
     morning.unshift(tr(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}${sun ? ` ${sunText(G.day)}.` : ''}`,
       `${WX_ICON[wx.kind] || ''} <b>${WX_NAME_KO[wx.kind] || wx.kind}</b>, 최고 ${toC(wx.high_f)}°C, 최저 ${toC(wx.low_f)}°C. ${esc(wx.forecast_ko || '')}${sun ? ` 해돋이 ${clockKo(sun.rise)}, 해넘이 ${clockKo(sun.set)}.` : ''}`));
     const cal = calendar().filter(c => c.day === G.day && !firedOut(c.place)).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
-    const workAt = !myOff(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '';
+    const workAt = hybridMorning(G.day, !myOff(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '');          // (hybrid work: a remote day logs in from home)
     const body = `<div class="sum"><div><b>${eps.length}</b>${tr('conversations', '대화')}</div><div><b>${gained >= 0 ? '+' : '−'}${Math.abs(gained)}</b>${tr('points', '점수')}</div><div><b>${usd2(spent)}</b>${tr('spent', '지출')}</div><div><b>${usd2(earned)}</b>${tr('earned', '수입')}</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(logText(l))}</li>`).join('') + '</ul>' : ''}
       ${missed.length ? `<p>${tr('Missed', '놓친 일')}: ${missed.map(e => esc(loc(e, 'title'))).join(', ')}</p>` : ''}
       ${deskMins ? `<p>${tr(`You worked <b>${hrs(deskMins)}</b> at your desk${deskTasks.length ? ` and handled ${deskTasks.length === 1 ? 'one thing' : deskTasks.length + ' things'} that came up` : ''}.`, `자리에서 <b>${hrs(deskMins)}</b> 일했어요${deskTasks.length ? `. 중간에 생긴 일 ${deskTasks.length}건을 처리했어요` : ''}.`)}</p>` : ''}
-      ${inAt != null ? `<p>${tr(`You got to work at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.`, `<b>${clockKo(inAt)}</b>에 출근했어요${wasLate ? ' (지각)' : inAt <= hm(CFG.work_start, 540) ? ' (정시)' : ''}.`)}</p>` : ''}
+      ${inAt != null ? `<p>${tr(`You ${fromHome ? 'logged in from home' : 'got to work'} at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.`, `<b>${clockKo(inAt)}</b>에 ${fromHome ? '집에서 로그인' : '출근'}했어요${wasLate ? ' (지각)' : inAt <= hm(CFG.work_start, 540) ? ' (정시)' : ''}.`)}</p>` : ''}
       <p>${tr('Score', '점수')} <b>★ ${score()}</b> · ${tr(standing()[0], standing()[1])}${day <= MISSION_DAYS ? ` · ${tr('Missions', '미션')} <b>${missionCount().join(' / ')}</b>` : ''}</p>
       <h3>${tr(`${dateLong(G.day)} · Day ${G.day}`, `${dateKo(G.day)} · ${G.day}일째`)}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
       ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(loc(c, 'title'))}${c.place ? ' · ' + esc(loc(place(c.place))) : ''}</li>`).join('') + '</ul>' : `<p>${isWeekend(G.day) ? tr('Weekend. No work today.', '주말이에요. 오늘은 출근하지 않아요.') : companyOff(G.day) ? tr('Company holiday. No work today.', '회사 휴일이에요. 오늘은 출근하지 않아요.') : tr('Nothing on the calendar.', '달력에 일정이 없어요.')}</p>`}
@@ -5424,7 +5621,7 @@
     },
     setDay(d) { if (G) { G.day = +d; goalTimer = 0; refreshNpcs(true); } return G && G.day; },
     async startEpisode(id) {
-      const ep = EPISODES[id];
+      const ep = (G && episodes().find(e => e.id === id)) || EPISODES[id];          // today's version (a video call on a remote day)
       if (!ep) throw new Error('no episode ' + id);
       if (!G) await this.start();
       if (!$('card').hidden) closeCard(true);
@@ -5507,6 +5704,10 @@
     enroll(choice) { return enroll(choice); }, draft(id) { if (!G || !PLAN[id] || !enrollOpen(G.day)) return false; draftOf()[PLAN[id].kind] = id; return true; }, set401k(p) { return set401k(p); },
     payStub(d) { return G ? payStub(d == null ? G.day : +d) : null; }, planOf(d) { return planOf(d); }, copayFor(kind, d) { return copayFor(kind, d); },
     callInSick() { return callInSick(); }, requestPto(d) { return requestPto(d); }, cancelPto(d) { return cancelPto(d); }, ptoDays() { return ptoDays(); },
+    // hybrid work: is a day remote, where you are with logging in today (null | out | in | office | away | off), log in or off at the desk at home
+    remote: (d) => remoteDay(d == null ? G.day : d), get hybrid() { return { from: HYBRID_FROM, days: REMOTE_DAYS.slice(), people: REMOTE_PEOPLE.slice() }; },
+    get login() { return G ? { remote: remoteDay(G.day), state: loginState(), login: loginToday() ? Object.assign({}, loginToday()) : null, inAt: G.inDay === G.day ? G.inAt : null, home: !!(work().home || {})[G.day] } : null; },
+    logIn() { return logIn(); }, logOff() { return logOff(); },
     routines: (d) => routinesOn(d == null ? G.day : d).map(x => ({ id: x.r.id, ep: x.ep.id, time: x.r.time, done: !!(G.rdone && G.rdone[x.key]) })),
     // coworkers: closeness ({ id: { pts, level, last } }), friend(id, pts) reads or sets one, invite(id) texts an
     // invitation to lunch now, chatWith(id) is Chat with someone here, lunch(pid) has lunch where they are, friendTick()

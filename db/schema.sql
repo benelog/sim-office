@@ -166,7 +166,8 @@ CREATE TABLE IF NOT EXISTS weather (
 );
 
 -- What people say in passing about the weather, the day or the time. topic: weather:<kind> | day:monday |
--- day:friday | day:weekend | time:morning | time:lunch | time:evening.
+-- day:friday | day:weekend | time:morning | time:lunch | time:evening | hybrid:office (an office day of hybrid work, at
+-- the office) | hybrid:remote (a remote day, at the quiet office).
 CREATE TABLE IF NOT EXISTS smalltalk (
   topic varchar(24) NOT NULL,
   seq int NOT NULL,
@@ -330,6 +331,9 @@ CREATE TABLE IF NOT EXISTS tv (
 -- such day of the month). time: when it starts (shown on the calendar; the episodes' own time_from–time_to is when the
 -- conversation is open). episodes: the conversations, taken in turn (only the hero's own). miss_points: points lost
 -- when you were at work and did not go. people: who comes to the meeting (besides those with a line), if at work.
+-- Hybrid work (config hybrid_from, remote_days): hybrid_days = the days from then on (NULL: the same days; sprint planning
+-- and the retro move to office days), remote_episodes = the conversations of the meeting on a remote day, a video call
+-- from your desk (tagged video, at the hero's home_desk; NULL: the usual ones, as a call).
 CREATE TABLE IF NOT EXISTS routines (
   id varchar(32) PRIMARY KEY,
   hero varchar(32) NOT NULL DEFAULT 'all',
@@ -343,7 +347,9 @@ CREATE TABLE IF NOT EXISTS routines (
   episodes varchar(1000) NOT NULL,
   people varchar(255),
   miss_points int NOT NULL DEFAULT 5,
-  sort int NOT NULL DEFAULT 0
+  sort int NOT NULL DEFAULT 0,
+  hybrid_days varchar(40),
+  remote_episodes varchar(1000)
 );
 
 -- Things that come up while you work at your desk ("Work for an hour" at the office on a working day; at most two a

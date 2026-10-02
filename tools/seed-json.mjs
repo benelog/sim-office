@@ -1,7 +1,7 @@
 // Try seed files before they are pushed: office/data/db.js plus the rows of the given seed files, as a db.js.
 //   node tools/seed-json.mjs db/seed/51-derek.sql [more.sql] --out /tmp/db-try.js [--json /tmp/db-try.json]
 // Then: node tools/db-lint.mjs /tmp/db-try.js, or SO_DB_JSON=/tmp/db-try.json tools/office-check.sh <outdir>.
-// Reads `REPLACE INTO <table> (<columns>) VALUES (…), (…)` and `DELETE FROM <table> WHERE <col> IN (…) [AND <col> = …]` statements (split like tools/dolt.mjs: a semicolon
+// Reads `REPLACE INTO <table> (<columns>) VALUES (…), (…)`, `UPDATE <table> SET <col> = <value>[, …] WHERE <col> = <value> [AND …]` and `DELETE FROM <table> WHERE <col> IN (…) [AND <col> = …]` statements (split like tools/dolt.mjs: a semicolon
 // at the end of a line). Also says which statements are too long for the DoltHub write API.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -72,6 +72,18 @@ for (const file of files) {
       const before = DB[t].length;
       DB[t] = DB[t].filter(r => !conds.every(c => c(r)));
       console.log(`${where}: ${t} ${before - DB[t].length} row(s) deleted`);
+      return;
+    }
+    const up = /^UPDATE\s+`?(\w+)`?\s+SET\s+([\s\S]+?)\s+WHERE\s+([\s\S]+)$/i.exec(sql);
+    if (up && !/\bCASE\b/i.test(up[2])) {          // UPDATE t SET col = v[, col = v] WHERE col = v [AND col = v] (values like in VALUES)
+      const t = up[1], sets = [], re = /\s*`?(\w+)`?\s*=\s*('(?:[^'\\]|\\.|'')*'|NULL|-?\d+(?:\.\d+)?)\s*(?:,|$)/giy;
+      let mm, ok = true;
+      while ((mm = re.exec(up[2].trim()))) sets.push([mm[1], values(`(${mm[2]})`, where)[0][0]]);
+      const conds = up[3].split(/\s+AND\s+/i).map(c => { const x = /^`?(\w+)`?\s*=\s*([\s\S]+)$/.exec(c.trim()); return x ? [x[1], String(values(`(${x[2]})`, where)[0][0])] : (ok = false); });
+      if (!DB[t] || !sets.length || !ok) { console.log(`${where}: cannot read this UPDATE (left out): ${sql.slice(0, 60)}`); bad++; return; }
+      const hit = DB[t].filter(r => conds.every(([c, v]) => String(r[c] ?? (DEFAULTS[t] || {})[c]) === v));
+      hit.forEach(r => sets.forEach(([c, v]) => { r[c] = (JSON_COLS[t] || []).includes(c) && typeof v === 'string' ? JSON.parse(v) : v; }));
+      console.log(`${where}: ${t} ${hit.length} row(s) updated`);
       return;
     }
     const m = /^REPLACE\s+INTO\s+`?(\w+)`?\s*\(([^)]*)\)\s*VALUES\s*([\s\S]*)$/i.exec(sql);
