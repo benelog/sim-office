@@ -171,6 +171,17 @@ if (start && (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(start + 'T00:00:00Z
   if (C.bus_alert_time != null && !HHMM.test(C.bus_alert_time)) bad('config bus_alert_time', `bad time ${C.bus_alert_time}`);
   if (C.bus_every && C.bus_delay_max != null && +C.bus_delay_max >= +C.bus_every) warn('config bus_delay_max', `a late bus (${C.bus_delay_max} min) can come after the next one (every ${C.bus_every})`);
 }
+// the season in the scenery (office/season.js): 'MM-DD' dates in a season from August to July, in order
+const SEASON_KEYS = { season_fall: 2, season_bare: 2, season_litter: 4, season_spring: 1, season_lights: 2 };
+for (const [k, n] of Object.entries(SEASON_KEYS)) {
+  const v = (DB.config || {})[k];
+  if (v == null) continue;
+  const list = String(v).split(',').map(s => s.trim());
+  const sday = (md) => { const m = /^(\d{2})-(\d{2})$/.exec(md); if (!m) return null; const mm = +m[1], t = Date.UTC(mm >= 8 ? 2001 : 2002, mm - 1, +m[2]); return new Date(t).getUTCDate() === +m[2] ? (t - Date.UTC(2001, 7, 1)) / 864e5 : null; };
+  const days = list.map(sday);
+  if (list.length !== n || days.some(d => d == null)) bad(`config ${k}`, `"${v}" is not ${n} date(s) MM-DD`);
+  else if (days.some((d, i) => i && d < days[i - 1])) bad(`config ${k}`, `"${v}": the dates are not in order (a season runs from August to July)`);
+}
 for (const h of DB.holidays || []) {
   const w = `holidays ${h.date}`;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(h.date || '') || isNaN(Date.parse(h.date))) bad(w, 'date is not YYYY-MM-DD');
