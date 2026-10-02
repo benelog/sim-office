@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS calendar (
 CREATE TABLE IF NOT EXISTS schedule (
   npc varchar(32) NOT NULL,
   seq int NOT NULL,
-  days varchar(8) NOT NULL DEFAULT 'all',
+  days varchar(40) NOT NULL DEFAULT 'all',          -- all | weekday | weekend | mon,tue,… | game days 11-12
   time_from varchar(5) NOT NULL,
   time_to varchar(5) NOT NULL,
   place varchar(32) NOT NULL,
@@ -155,7 +155,7 @@ CREATE TABLE IF NOT EXISTS schedule (
 );
 
 -- The weather of each game day. kind: clear | partly | cloudy | rain | fog (fog lifts by late morning).
--- Temperatures are in Fahrenheit. Days past the last row repeat the table.
+-- Temperatures are in Fahrenheit. Days past the last row are made by the engine from the season.
 CREATE TABLE IF NOT EXISTS weather (
   day int PRIMARY KEY,
   kind varchar(12) NOT NULL,

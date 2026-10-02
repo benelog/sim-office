@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Sim Office — 미국 IT 회사의 직원으로 출퇴근하며 미국의 일상과 직장 생활을 겪어 보는 오픈 월드 3D 게임(2026-10-02에 영어 학습에서 생활 체험으로 바꿈: 화면은 영어·한국어 중 하나, 대화는 객관식만, 점수와 지각·결근·해고). 정적 웹, 빌드 없음, `file://`에서 동작. 게임은 `office/`에 있고 설계서는 `office/PLAN.md`입니다.
+Sim Office — 미국 IT 회사의 직원으로 출퇴근하며 미국의 일상과 직장 생활을 겪어 보는 오픈 월드 3D 게임(2026-10-02에 영어 학습에서 생활 체험으로 바꿈: 화면은 영어·한국어 중 하나, 대화는 객관식만, 점수와 지각·결근·해고). 정적 웹, 빌드 없음, `file://`에서 동작. 게임은 `office/`에 있고 설계서는 `office/PLAN.md`, 현실성 작업의 진행표(끝낸 차수와 남은 후보)는 `office/progress.md`입니다.
 
 - **데이터**(대화·인물·물품·달력)의 원본은 DoltHub `benelog/sim-office`(토큰은 `.envrc`). SQL은 `db/schema.sql`, `db/seed/*.sql`에 두고 `source .envrc && node tools/dolt.mjs push db/seed/<파일>.sql`로 올린 뒤 `node tools/dolt.mjs pull`로 `office/data/db.js`를 다시 만듭니다. `db.js`는 생성물이라 직접 고치지 않습니다. 쓰기 API는 문장 하나당 커밋 하나이므로 여러 행을 한 `REPLACE INTO`에 넣습니다.
 - **모델**: 소품·건물·음식은 Kenney CC0 팩(원본 `kenney/<kit>/`), 자동차·식물(`nature`)·집 가구(`homeware`)·건물 일부(`buildings`)·마을 밖 숲(`wild`)은 Quaternius CC0 팩(원본 `quaternius/<kit>/`, 출처는 `office/models/README.md`)을 `blender -b --python tools/office-models.py -- <pack>`으로, 인물은 Quaternius CC0(원본 `quaternius/`, Ultimate Modular Men·Women — 같은 골격, 옷마다 머리·몸·다리·발 부품)를 `blender -b --python tools/office-characters.py`로 `office/models/*.js`(base64 .glb)로 만듭니다. 인물 파일에는 애니메이션이 없고 `rig-umc.js`·`rig-women.js`의 클립을 공유합니다. 생성물이라 직접 고치지 않습니다.

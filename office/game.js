@@ -38,12 +38,13 @@
   // ---------------------------------------------------------------- the rules (config table, with defaults)
   const CFG = Object.assign({
     player_name: 'Jun', company: 'Seaside Labs', city: 'Fairview', start_money: 1200, salary_net: 2600, salary_gross: 3654,
-    payday_days: '5,15', rent: 1450, rent_day: 21, bus_fare: 2.5, day_start: '07:00', day_end: '23:00', work_start: '09:00', work_end: '18:00',
+    payday_days: '5,19', payday_every: 14, rent: 1450, rent_day: 21, rent_day_of_month: 1, bus_fare: 2.5, day_start: '07:00', day_end: '23:00', work_start: '09:00', work_end: '18:00',
     minutes_per_second: 1, energy_max: 100, energy_per_hour: -6,
     sales_tax: 0.0825, tip_options: '0,15,18,20', tip_default: 18,
     start_date: '', bus_every: 0, bus_every_weekend: 0, bus_first: '06:00', bus_last: '22:30', overdraft_fee: 0, low_balance: 0,
     punch_card_place: '', punch_card_every: 0, late_after: '09:15', rain_energy_per_hour: -10, bank_name: 'Fairview Credit Union',
-    late_points: 2, noon_points: 3, absent_points: 4, warn_points: 2, final_points: 4, fire_points: 6,
+    late_points: 2, noon_points: 3, absent_points: 4, warn_points: 2, final_points: 4, fire_points: 6, early_before: '16:00', early_points: 2,
+    company_holidays: '',
     mission_days: 15, mission_bonus: 1000, mission_points: 200
   }, DB.config || {});
   const DAY_START = hm(CFG.day_start, 420), DAY_END = hm(CFG.day_end, 1380);
@@ -134,6 +135,31 @@
   rows('holidays').forEach(h => { HOLIDAYS[h.date] = h; });
   const holidayOf = (d) => { const t = dateOf(d); return (t && HOLIDAYS[t.toISOString().slice(0, 10)]) || null; };
   const dayOff = (d) => { const h = holidayOf(d); return !!h && h.kind === 'federal'; };
+  const isoOf = (d) => { const t = dateOf(d); return t ? t.toISOString().slice(0, 10) : null; };
+  // The company's own days off (config company_holidays: dates), like Thanksgiving and the day after: nobody is
+  // expected at the office. offWork: a weekend or one of those. The bank is closed on weekends and federal holidays.
+  const COMPANY_OFF = new Set(listOf(CFG.company_holidays));
+  const companyOff = (d) => COMPANY_OFF.has(isoOf(d));
+  const offWork = (d) => isWeekend(d) || companyOff(d);
+  const bankClosed = (d) => isWeekend(d) || dayOff(d);
+  // Payday every other Friday: config payday_days, and then every payday_every days. When the bank is closed on a
+  // payday (a federal holiday), the money comes the business day before.
+  const PAY_EVERY = +CFG.payday_every || 0, PAY_LAST = Math.max(0, ...PAYDAYS);
+  const payDue = (d) => PAYDAYS.includes(d) || (PAY_EVERY > 0 && PAY_LAST > 0 && d > PAY_LAST && (d - PAY_LAST) % PAY_EVERY === 0);
+  function isPayday(d) {
+    if (bankClosed(d)) return false;
+    for (let n = d; n < d + 7; n++) { if (payDue(n)) return true; if (!bankClosed(n + 1)) return false; }
+    return false;
+  }
+  // Rent (or the mortgage) is due on the 1st of every month (config rent_day_of_month); a monthly bill (every 28 days
+  // or more) comes on the same date every month as on its first day. Without a start date: every 30 days.
+  const RENT_DOM = +CFG.rent_day_of_month || 1;
+  function onDateOfMonth(d, dom) {
+    const t = dateOf(d);
+    if (!t) return false;
+    const last = new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth() + 1, 0)).getUTCDate();
+    return t.getUTCDate() === Math.min(dom, last);
+  }
   const MESSAGES = rows('messages').slice().sort((a, b) => (a.day - b.day) || (hm(a.time, 0) - hm(b.time, 0)));
   const REPLIES = rows('replies').slice().sort((a, b) => (a.sort || 0) - (b.sort || 0));
   const MAIL = rows('mail').slice().sort((a, b) => a.day - b.day);
@@ -928,9 +954,18 @@
   // a day away on business
   let checkedIn = null;
   function arrived(z) {
-    if (isWeekend(G.day)) return;
+    if (offWork(G.day)) return;
     if (TRAVEL_ZONES.includes(z)) G.tripDay = G.day;
+    if (z === 'office' && G.outDay === G.day) G.outDay = null;          // back from lunch or an errand
     if (z === 'office' && G.inDay !== G.day && G.minute < 17 * 60) checkedIn = checkIn();
+  }
+  // going out of the office on a working day before config early_before: fine for lunch, but if you don't come back it
+  // is leaving early (closeDay)
+  const EARLY = () => hm(CFG.early_before, 960);
+  function leftOffice(z) {
+    if (!G || offWork(G.day) || fired() || G.inDay !== G.day || TRAVEL_ZONES.includes(z) || G.minute >= EARLY()) return;
+    G.outDay = G.day; G.outAt = Math.floor(G.minute);
+    toast(`Heading out at ${clock(G.minute)}. Be back before ${clock(EARLY())}, or it counts as leaving early.`, `${clockKo(G.minute)}에 나가요. ${clockKo(EARLY())} 전에 돌아오지 않으면 조퇴예요.`, null, 4.5);
   }
   const portalMat = new T.MeshBasicMaterial({ color: 0x3fb5ad, transparent: true, opacity: 0.35, depthWrite: false, toneMapped: false });
 
@@ -946,7 +981,48 @@
   const WX_NAME_KO = { clear: '맑음', partly: '구름 조금', cloudy: '흐림', rain: '비', fog: '안개' };
   const WX_ICON = { clear: '☀️', partly: '⛅', cloudy: '☁️', rain: '🌧️', fog: '🌫️' };
   const toC = (f) => Math.round((f - 32) * 5 / 9);
-  const weatherOf = (day) => WEATHER.length ? WEATHER[(Math.max(1, day) - 1) % WEATHER.length] : { day, kind: 'clear', high_f: 72, low_f: 55, forecast: '' };
+  // After the last row of the weather table the weather is made from the season at Fairview: the normal high and low
+  // for the date, rain more often in winter (and more often the day after rain), fog in summer. A day always gets the
+  // same weather. Without a start date the table repeats.
+  const WX_ROWS = {};
+  WEATHER.forEach(w => { WX_ROWS[w.day] = w; });
+  const WX_LAST = WEATHER.length ? WEATHER[WEATHER.length - 1].day : 0;
+  const WX_NORMAL = [[58, 42], [61, 44], [64, 46], [67, 48], [71, 51], [75, 54], [77, 56], [78, 57], [78, 56], [72, 53], [64, 47], [58, 42]];   // the middle of each month: high, low °F
+  const WX_RAIN = [0.35, 0.33, 0.28, 0.15, 0.06, 0.02, 0.01, 0.01, 0.03, 0.1, 0.25, 0.33];
+  const WX_FOG = [0.1, 0.08, 0.06, 0.08, 0.15, 0.25, 0.3, 0.3, 0.2, 0.12, 0.1, 0.12];
+  const WX_SAY = {
+    clear: [['Sunny and dry.', '맑고 건조합니다.'], ['Clear skies all day.', '하루 종일 맑은 하늘이에요.'], ['Plenty of sunshine.', '햇볕이 가득합니다.']],
+    partly: [['A mix of sun and clouds.', '해와 구름이 번갈아 나옵니다.'], ['Partly cloudy and calm.', '구름이 조금 끼고 바람이 잔잔합니다.'], ['Clouds in the morning, sun in the afternoon.', '아침엔 구름, 오후엔 해가 납니다.']],
+    cloudy: [['Gray skies, but dry.', '하늘은 흐리지만 비는 오지 않아요.'], ['Overcast all day.', '하루 종일 흐립니다.'], ['Cloudy and cool.', '흐리고 선선합니다.']],
+    rain: [['Rain on and off. Bring an umbrella.', '비가 오락가락합니다. 우산을 챙기세요.'], ['A wet day with steady rain.', '비가 꾸준히 내리는 날이에요.'], ['Showers through the afternoon.', '오후까지 소나기가 옵니다.']],
+    fog: [['Morning fog, then some sun.', '아침 안개 뒤에 해가 조금 납니다.'], ['Thick fog early, clearing by noon.', '이른 아침 짙은 안개, 정오쯤 걷힙니다.']]
+  };
+  const WX_ADJ = { rain: [-6, 2], cloudy: [-3, 1], fog: [-3, -1], partly: [0, 0], clear: [2, -1] };
+  const wxHash = (d, k) => { const x = Math.sin(d * 12.9898 + k * 78.233) * 43758.5453; return x - Math.floor(x); };
+  function wxNormal(d) {
+    const t = dateOf(d), m = t.getUTCMonth(), f = (t.getUTCDate() - 15) / 30, n = (m + (f < 0 ? 11 : 1)) % 12, a = WX_NORMAL[m], b = WX_NORMAL[n], w = Math.abs(f);
+    return [a[0] + (b[0] - a[0]) * w, a[1] + (b[1] - a[1]) * w];
+  }
+  function wxDay(d, prev) {
+    const m = dateOf(d).getUTCMonth(), [hi, lo] = wxNormal(d);
+    const pRain = Math.min(0.7, WX_RAIN[m] * (prev && prev.kind === 'rain' ? 2 : 0.8)), s = wxHash(d, 2);
+    const kind = wxHash(d, 1) < pRain ? 'rain' : s < WX_FOG[m] ? 'fog' : s < WX_FOG[m] + 0.2 + WX_RAIN[m] ? 'cloudy' : s < 0.56 + WX_RAIN[m] ? 'partly' : 'clear';
+    const noise = (wxHash(d, 3) - 0.5) * 8, high = Math.round(hi + noise + WX_ADJ[kind][0]), low = Math.min(high - 6, Math.round(lo + noise * 0.5 + WX_ADJ[kind][1]));
+    const say = WX_SAY[kind][Math.floor(wxHash(d, 4) * WX_SAY[kind].length)];
+    const extra = high < 60 ? [' Chilly, so grab a jacket.', ' 쌀쌀하니 재킷을 챙기세요.'] : high >= 82 ? [' Hot in the afternoon.', ' 오후에는 덥습니다.'] : ['', ''];
+    return { day: d, kind, high_f: high, low_f: low, forecast: say[0] + extra[0], forecast_ko: say[1] + extra[1] };
+  }
+  const wxMade = {};
+  let wxUpTo = WX_LAST;
+  function weatherOf(day) {
+    day = Math.max(1, day);
+    if (WX_ROWS[day]) return WX_ROWS[day];
+    if (START != null && WX_LAST && day > WX_LAST) {
+      for (; wxUpTo < day; wxUpTo++) wxMade[wxUpTo + 1] = wxDay(wxUpTo + 1, wxMade[wxUpTo] || WX_ROWS[wxUpTo]);
+      return wxMade[day];
+    }
+    return WEATHER.length ? WEATHER[(day - 1) % WEATHER.length] : { day, kind: 'clear', high_f: 72, low_f: 55, forecast: '' };
+  }
   function weatherNow() {
     const day = G ? G.day : 1, h = hourNow(), w = weatherOf(day), k = !G && state === 'tour' && tour.wx ? tour.wx : w.kind;
     const rain = k === 'rain' ? clamp((0.5 + 0.62 * Math.sin(h * 1.3 + day * 2.1)) * 1.6, 0, 1) : 0;
@@ -1267,13 +1343,17 @@
   }
   // where an npc is now: at the place of its first open episode; otherwise where the schedule table puts them at this
   // time of this day, or nowhere (null: off work, at home) when no row fits; without rows, always at their own place
+  // days: 'all', 'weekday', 'weekend' (a company holiday counts as a weekend), names of days ('mon,tue,wed'), or
+  // game days ('11-12'). Shift workers are not at a place that is closed all day (holiday hours).
+  const DAY_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   function scheduledPlace(n) {
     const list = SCHEDULE[n.id];
     if (!list || !G) return n.place;
-    const days = isWeekend(G.day) ? 'weekend' : 'weekday';
-    const onDay = (d) => { const m = /^(\d+)(?:-(\d+))?$/.exec(d); return m ? G.day >= +m[1] && G.day <= +(m[2] || m[1]) : d === 'all' || d === days; };      // '11-12': those game days
+    const days = offWork(G.day) ? 'weekend' : 'weekday', name = DAY_NAMES[(G.day - 1) % 7];
+    const onDay = (d) => { const m = /^(\d+)(?:-(\d+))?$/.exec(d); return m ? G.day >= +m[1] && G.day <= +(m[2] || m[1]) : d === 'all' || d === days || listOf(d).includes(name); };      // '11-12': those game days
     const s = list.find(s => onDay(String(s.days)) && G.minute >= hm(s.time_from, 0) && G.minute < hm(s.time_to, 1440));
-    return s ? s.place : null;
+    if (!s || shutAllDay(s.place) || shutAllDay(zoneOfPlace(s.place))) return null;
+    return s.place;
   }
   function npcPlaceNow(n) {
     if (!G) return scheduledPlace(n);
@@ -1282,20 +1362,35 @@
     // also round the phone of a call), if it is in the building they work in (not the client on the screen)
     const ep = open.find(e => e.npc === n.id && !isPhone(e))
       || open.find(e => e.npc !== n.id && (SPEAKERS[e.id] || []).includes(n.id) && n.place && zoneOfPlace(n.place) === zoneOfPlace(e.place) && scheduledPlace(n) && zoneOfPlace(scheduledPlace(n)) === zoneOfPlace(e.place));
-    return ep ? ep.place : scheduledPlace(n);
+    if (ep) return ep.place;
+    // somebody on the next shift at the same counter steps away while a coworker there has a conversation waiting
+    const at = scheduledPlace(n);
+    if (at && open.some(e => e.place === at && e.npc && e.npc !== n.id && !isPhone(e) && npcRow(e.npc).place === n.place)) return null;
+    return at;
   }
   // opening hours (config hours_<zone or place>, hours_<…>_weekend: 'HH:MM-HH:MM'); never closed while a conversation waits there
-  function hoursOf(id) {
-    const v = G && ((isWeekend(G.day) && CFG['hours_' + id + '_weekend']) || CFG['hours_' + id]);
+  // holiday hours: hours_<id>_<YYYY-MM-DD> ('07:00-16:00', or 'closed': [0, 0])
+  function hoursOf(id, d) {
+    if (!G || !id) return null;
+    d = d == null ? G.day : d;
+    const v = CFG['hours_' + id + '_' + isoOf(d)] || (isWeekend(d) && CFG['hours_' + id + '_weekend']) || CFG['hours_' + id];
+    if (/^closed$/i.test(String(v || ''))) return [0, 0];
     const m = /^(\d{1,2}:\d{2})-(\d{1,2}:\d{2})$/.exec(String(v || ''));
     return m ? [hm(m[1], 0), hm(m[2], 1440)] : null;
   }
+  const shutAllDay = (id) => { const h = hoursOf(id); return !!h && h[0] === h[1]; };
+  // places with their own hours today (holiday hours): [{ id, h }]
+  function holidayHours(d) {
+    const iso = isoOf(d), end = '_' + iso;
+    return !iso ? [] : Object.keys(CFG).filter(k => k.startsWith('hours_') && k.endsWith(end)).map(k => ({ id: k.slice(6, -end.length), h: hoursOf(k.slice(6, -end.length), d) })).filter(x => x.h);
+  }
+  const hoursName = (id) => (zoneSpecs[id] || (window.SO_ZONES || {})[id]) ? zoneName(id) : [place(id).name, loc(place(id))];
   function closedNow(id) {
     const h = hoursOf(id);
     if (!h || (G.minute >= h[0] && G.minute < h[1])) return false;
     return !openEpisodes().some(e => e.place === id || zoneOfPlace(e.place) === id);
   }
-  const hoursText = (id) => { const h = hoursOf(id); return h ? `${clock(h[0])} – ${clock(h[1])}` : ''; };
+  const hoursText = (id) => { const h = hoursOf(id); return !h ? '' : h[0] === h[1] ? tr('closed today', '오늘 휴무') : `${clock(h[0])} – ${clock(h[1])}`; };
   function npcsIn(z) {
     const spec = zoneSpec(z);
     const out = [];
@@ -1636,13 +1731,13 @@
   const standing = () => !G ? STANDING[0] : fired() ? STANDING[3] : STANDING[(G.work && G.work.warned) || 0];
   const ATTEND = {
     on: ['On time', '정시 출근', 5], late: ['Late', '지각', -10], noon: ['In after noon', '오후 출근', -20], absent: ['Did not come in', '결근', -30],
-    trip: ['Business trip', '출장', 0], sick: ['Called in sick', '병가', 0]
+    trip: ['Business trip', '출장', 0], sick: ['Called in sick', '병가', 0], early: ['Left early', '조퇴', -10]
   };
   // the first time at work on a working day: on time, late, or in after lunch (from travel)
   function checkIn() {
     const w = work(), d = G.day, m = Math.floor(G.minute), start = hm(CFG.work_start, 540);
     G.inDay = d; G.inAt = m;
-    if (w.fired || isWeekend(d)) return null;
+    if (w.fired || offWork(d)) return null;
     const kind = m <= hm(CFG.late_after, 555) ? 'on' : m < 12 * 60 ? 'late' : 'noon';
     w.record[d] = kind;
     addScore(ATTEND[kind][2], ATTEND[kind][0], ATTEND[kind][1]);
@@ -1651,7 +1746,7 @@
     w.streak = 0;
     toast(kind === 'late' ? `You're late: it's ${clock(m)}, and work starts at ${clock(start)}.` : `It's ${clock(m)}. You've missed the whole morning.`,
       kind === 'late' ? `지각이에요. 지금은 ${clockKo(m)}이고 업무는 ${clockKo(start)}에 시작해요.` : `지금은 ${clockKo(m)}. 오전을 통째로 빠졌어요.`, 'bad', 4.5);
-    strike(kind === 'late' ? +CFG.late_points : +CFG.noon_points, true);
+    strike(kind === 'late' ? +CFG.late_points : +CFG.noon_points, true, 'late');
     return kind;
   }
   function onTime() {
@@ -1663,7 +1758,8 @@
   // at the end of a working day (from goToSleep): you never came in, or you were on a trip or called in sick
   function closeDay(d, away) {
     const w = work();
-    if (w.fired || isWeekend(d) || w.record[d]) return null;
+    if (w.fired || offWork(d)) return null;
+    if (w.record[d]) return leftEarly(d, away);
     const sick = G.sickFor === d;          // you called in sick the evening before (a conversation tagged sick)
     const kind = sick ? 'sick' : (away || G.tripDay === d) ? 'trip' : G.inDay === d ? null : 'absent';
     if (!kind) return null;
@@ -1671,22 +1767,37 @@
     if (kind !== 'absent') return kind;
     w.streak = 0;
     addScore(ATTEND.absent[2], ATTEND.absent[0], ATTEND.absent[1]);
-    strike(+CFG.absent_points, false);
+    strike(+CFG.absent_points, false, 'absent');
     return kind;
   }
+  // you came in, went out before early_before and never came back (not for a trip): left early (w.left { day: minute })
+  function leftEarly(d, away) {
+    const w = work();
+    if (G.outDay !== d || G.outAt == null || away || G.tripDay === d || !/^(on|late|noon)$/.test(w.record[d])) return null;
+    w.left = Object.assign({}, w.left, { [d]: G.outAt });
+    w.streak = 0;
+    addScore(ATTEND.early[2], ATTEND.early[0], ATTEND.early[1]);
+    strike(+CFG.early_points, false, 'early');
+    return 'early';
+  }
   // strikes add up: a word from the manager, a final warning from HR, and then you are let go
-  function strike(n, now) {
+  function strike(n, now, why) {
     const w = work();
     w.pts += n;
     if (w.pts >= +CFG.fire_points) { fire(now); return; }
     if (w.pts >= +CFG.final_points && w.warned < 2) {
       w.warned = 2;
-      notify(HR, `FINAL WRITTEN WARNING. ${G.name}, this is a formal warning about your attendance: you have been late or absent too often. One more late arrival or unexcused absence will lead to the end of your employment with ${CFG.company}. Please come see me if something is going on. — ${(NPCS[HR] || { name: 'HR' }).name}, HR`,
-        `최종 서면 경고. ${hero().name_ko || G.name} 님, 근태에 관한 공식 경고입니다. 지각이나 결근이 너무 잦습니다. 한 번 더 지각하거나 무단결근하면 ${CFG.company}와의 고용 관계가 종료됩니다. 무슨 사정이 있다면 찾아와 주세요. — 인사팀 ${(NPCS[HR] || {}).name_ko || (NPCS[HR] || { name: 'HR' }).name}`, 'email');
+      notify(HR, `FINAL WRITTEN WARNING. ${G.name}, this is a formal warning about your attendance: you have been late, absent or gone early too often. One more late arrival, early departure or unexcused absence will lead to the end of your employment with ${CFG.company}. Please come see me if something is going on. — ${(NPCS[HR] || { name: 'HR' }).name}, HR`,
+        `최종 서면 경고. ${hero().name_ko || G.name} 님, 근태에 관한 공식 경고입니다. 지각·결근·조퇴가 너무 잦습니다. 한 번 더 지각·조퇴하거나 무단결근하면 ${CFG.company}와의 고용 관계가 종료됩니다. 무슨 사정이 있다면 찾아와 주세요. — 인사팀 ${(NPCS[HR] || {}).name_ko || (NPCS[HR] || { name: 'HR' }).name}`, 'email');
     } else if (w.pts >= +CFG.warn_points && w.warned < 1) {
       w.warned = 1;
-      notify(BOSS, `Hey ${G.name}, I noticed you weren't here on time. Everything okay? We need you at standup. Please be in by ${clock(hm(CFG.work_start, 540))} from now on.`,
-        `${hero().name_ko || G.name}, 오늘 제시간에 안 왔던데 괜찮아요? 스탠드업에 꼭 있어야 해요. 앞으로는 ${clockKo(hm(CFG.work_start, 540))}까지 와 주세요.`, 'text');
+      const me = hero().name_ko || G.name;
+      if (why === 'early') notify(BOSS, `Hey ${G.name}, I came by your desk this afternoon and you had already left. Everything okay? Unless we've talked about it, please stay at least until ${clock(EARLY())}.`,
+        `${me}, 오후에 자리에 가 봤더니 벌써 퇴근했더라고요. 괜찮아요? 미리 얘기한 게 아니면 적어도 ${clockKo(EARLY())}까지는 있어 주세요.`, 'text');
+      else if (why === 'absent') notify(BOSS, `Hey ${G.name}, you didn't come in and I didn't hear from you. Everything okay? If you're sick, call in the evening before.`,
+        `${me}, 출근도 안 하고 연락도 없었네요. 괜찮아요? 아프면 전날 저녁에 연락해 주세요.`, 'text');
+      else notify(BOSS, `Hey ${G.name}, I noticed you weren't here on time. Everything okay? We need you at standup. Please be in by ${clock(hm(CFG.work_start, 540))} from now on.`,
+        `${me}, 오늘 제시간에 안 왔던데 괜찮아요? 스탠드업에 꼭 있어야 해요. 앞으로는 ${clockKo(hm(CFG.work_start, 540))}까지 와 주세요.`, 'text');
     }
     if (now) saveGame();
   }
@@ -1694,7 +1805,8 @@
     const w = work();
     if (w.fired) return;
     w.fired = G.day;
-    const lastPay = Math.max(0, ...PAYDAYS.filter(d => d <= G.day));
+    let lastPay = G.day;
+    while (lastPay > 0 && !isPayday(lastPay)) lastPay--;
     const worked = Object.keys(w.record).filter(d => +d > lastPay && /^(on|late|noon|trip|sick)$/.test(w.record[d])).length;
     const final = cents(+hero().salary_net * worked / 10);
     addScore(-50, 'Let go', '해고');
@@ -1796,7 +1908,7 @@
   }
   const receipt = (b) => (b.free ? tr('free with your punch card', '스탬프 카드로 무료') : usd2(b.price)) + (b.tax ? tr(` + tax ${usd2(b.tax)}`, ` + 세금 ${usd2(b.tax)}`) : '') + (b.tip ? tr(` + tip ${usd2(b.tip)}`, ` + 팁 ${usd2(b.tip)}`) : '') + (b.tax || b.tip ? ` = ${usd2(b.total)}` : '');
   // Bills on autopay (bills table): due on their day, then every `every` days
-  const billsDue = (d) => rows('bills').filter(b => d >= b.day && (d - b.day) % (+b.every || 30) === 0);
+  const billsDue = (d) => rows('bills').filter(b => d >= b.day && ((+b.every || 30) >= 28 && START != null ? onDateOfMonth(d, dateOf(b.day).getUTCDate()) : (d - b.day) % (+b.every || 30) === 0));
 
   // ---------------------------------------------------------------- the phone: texts, emails, voicemails and alerts
   // Messages (messages table) arrive when the clock passes their day and time, the bank's alerts (notify) when
@@ -1944,7 +2056,7 @@
     const light = sun ? (m < sun.set ? ` Sunset this evening is at ${clock(sun.set)}.` : sunNext ? ` Sunrise tomorrow is at ${clock(sunNext.rise)}.` : '') : '';
     out.push({ kind: 'weather', en: `${now} ${day}${light}${brolly ? " Don't forget your umbrella." : ''}`,
       ko: `지금 기온 ${toC(wx.temp)}°C(${wx.temp}°F). ${m < 15 * 60 ? `${w.forecast_ko || ''} 최고 ${toC(w.high_f)}°C, 밤 최저 ${toC(w.low_f)}°C.` : `밤 최저 ${toC(w.low_f)}°C. 내일: ${next.forecast_ko || ''} 최고 ${toC(next.high_f)}°C.`}${sun ? (m < sun.set ? ` 오늘 해넘이 ${hhmm(sun.set)}.` : sunNext ? ` 내일 해돋이 ${hhmm(sunNext.rise)}.` : '') : ''}` });
-    const rush = !isWeekend(d) && !dayOff(d) && ((m >= 6 * 60 && m < 10 * 60) || (m >= 15.5 * 60 && m < 19 * 60));
+    const rush = !offWork(d) && !dayOff(d) && ((m >= 6 * 60 && m < 10 * 60) || (m >= 15.5 * 60 && m < 19 * 60));
     const pool = (k) => RADIO.filter(r => r.kind === k && r.day == null);
     if (rush) rotate(RADIO.filter(r => r.kind === 'traffic' && r.day === d).concat(pool('traffic')), 1, d * 2 + (m >= 12 * 60 ? 1 : 0)).forEach(r => out.push({ kind: 'traffic', en: r.text, ko: r.text_ko }));
     const hol = holidayOf(d);
@@ -2326,13 +2438,22 @@
       } else if (G.sickFor === G.day && G.inDay !== G.day) {
         en = 'You called in sick today. Stay home and rest.';
         ko = '오늘은 병가를 냈어요. 집에서 쉬세요.';
-      } else if (!isWeekend(G.day) && G.inDay !== G.day && G.minute < 17 * 60 && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
+      } else if (!offWork(G.day) && G.inDay !== G.day && G.minute < 17 * 60 && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
         const late = G.minute > hm(CFG.late_after, 555);
         en = `${late ? "You're late! " : ''}Go to work at <b>${esc(CFG.company)}</b>${late ? '' : `: be in by ${clock(hm(CFG.late_after, 555))}`}.`;
         ko = `${late ? '지각이에요! ' : ''}<b>${esc(ZONE_NAMES.office[1] || CFG.company)}</b>에 출근하세요${late ? '' : ` (${clockKo(hm(CFG.late_after, 555))}까지)`}.`;
         warn = late;
         const via = routeTo(zoneId, 'office');
         if (via) goalTarget = { at: via.at, portal: true };
+      } else if (!offWork(G.day) && G.outDay === G.day && G.minute < EARLY() && zoneId !== 'office' && !TRAVEL_ZONES.includes(zoneId)) {
+        en = `Head back to work at <b>${esc(CFG.company)}</b> before ${clock(EARLY())}.`;
+        ko = `${clockKo(EARLY())} 전에 <b>${esc(ZONE_NAMES.office[1] || CFG.company)}</b>로 돌아가세요.`;
+        const via = routeTo(zoneId, 'office');
+        if (via) goalTarget = { at: via.at, portal: true };
+      } else if (companyOff(G.day) && !isWeekend(G.day)) {
+        const hol = holidayOf(G.day);
+        en = `<b>Day off${hol ? ': ' + esc(hol.name) : ''}.</b> ${esc(CFG.company)} is closed today.`;
+        ko = `<b>쉬는 날${hol ? ': ' + esc(loc(hol)) : ''}.</b> 오늘은 ${esc(ZONE_NAMES.office[1] || CFG.company)}가 쉬어요.`;
       } else if (freePlay()) {
         en = `<b>Free play.</b> Live your life in ${esc(CFG.city)}: work, shop, cook, explore.`;
         ko = `<b>자유 플레이.</b> ${esc(zoneName('city')[1] || CFG.city)}에서 살아 보세요: 일하고, 장 보고, 요리하고, 구경하세요.`;
@@ -2715,6 +2836,7 @@
     portalArmed = false;
     if (inside.when && !inside.when(api)) return;
     if (TRAVEL_ZONES.includes(inside.to) && !TRAVEL_ZONES.includes(zoneId) && !tripToday()) { toast('No trip scheduled.', '예정된 출장이 없어요.'); return; }
+    if (closedNow(inside.to) && shutAllDay(inside.to)) { const zn = zoneName(inside.to), hol = holidayOf(G.day); toast(`${zn[0]} is closed today${hol ? ` for ${hol.name}` : ''}.`, `${zn[1] || zn[0]}은(는) 오늘 ${hol ? josa(loc(hol), '이라', '라') + ' ' : ''}문을 열지 않아요.`, 'bad', 4); return; }
     if (closedNow(inside.to)) { const zn = zoneName(inside.to); toast(`${zn[0]} is closed. Hours: ${hoursText(inside.to)}`, `${zn[1] || zn[0]}은(는) 문을 닫았어요. 영업시간 ${hoursText(inside.to)}`, 'bad', 4); return; }
     const pid = portalPlace(inside), fares = pid ? faresAt(pid) : [];
     const fare = fares.reduce((t, i) => t + +i.price, 0);
@@ -2735,6 +2857,7 @@
   async function travel(z, arrive, at, minutes) {
     if (!z) return;
     if (z === 'office' && zoneId !== 'office' && fired()) { stoppedAtDoor(); return; }          // let go: the badge no longer opens the door
+    if (zoneId === 'office' && z !== 'office' && state === 'play') leftOffice(z);
     if (minutes) advanceMinutes(minutes);
     if (state !== 'play') return;
     // through a door: the camera leans in on you as the screen darkens, and pulls back out in the new place
@@ -2753,6 +2876,7 @@
     }
     if (z === 'office' && !npcsIn(z).length) {
       if (isWeekend(G.day)) toast("It's the weekend. Nobody is in the office.", '주말이라 사무실에 아무도 없어요.', null, 4);
+      else if (companyOff(G.day)) toast("It's a company holiday. Nobody is in the office.", '회사 휴일이라 사무실에 아무도 없어요.', null, 4);
       else toast('The office is empty. Everyone has gone home.', '사무실이 비었어요. 모두 퇴근했어요.', null, 4);
       return;
     }
@@ -2949,7 +3073,7 @@
     if (kind === 'eat' && atHome() && RECIPES.length) out.push({ key: 'cook:' + pid, label: tr('Cook a meal', '요리하기'), run: () => openPanel('cook') });
     if (kind === 'eat') out.push({ key: 'eat:' + pid, label: tr('Eat something', '뭔가 먹기'), run: () => openPanel('inventory') });
     const shut = G && (closedNow(pid) ? pid : closedNow(zoneOfPlace(pid)) ? zoneOfPlace(pid) : null);
-    if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: tr(`Closed · open ${hoursText(shut)}`, `영업 종료 · ${hoursText(shut)}`), run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${loc(pl)} 영업 종료. 영업시간 ${hoursText(shut)}`, 'bad') });
+    if (itemsAt(pid).length && shut) out.push({ key: 'shut:' + pid, label: shutAllDay(shut) ? tr('Closed today', '오늘 휴무') : tr(`Closed · open ${hoursText(shut)}`, `영업 종료 · ${hoursText(shut)}`), run: () => toast(`${pl.name} is closed. Hours: ${hoursText(shut)}`, `${loc(pl)} 영업 종료. 영업시간 ${hoursText(shut)}`, 'bad') });
     else if (itemsAt(pid).length) out.push({ key: 'shop:' + pid, label: shopLabel(pid, pl), run: () => openPanel('shop', pid) });
     if (isBusStop(pid) && zoneId === 'city') {
       const nb = G ? nextBus(G.minute) : 0;
@@ -3189,7 +3313,7 @@
     talk = null;
     G.done[ep.id] = true;
     (G.epScore = G.epScore || {})[ep.id] = [got, best];
-    if (/(^|,)\s*sick\s*(,|$)/.test(ep.tags || '')) { let d = G.day + 1; while (isWeekend(d)) d++; G.sickFor = d; }          // a sick day: the next working day
+    if (/(^|,)\s*sick\s*(,|$)/.test(ep.tags || '')) { let d = G.day + 1; while (offWork(d)) d++; G.sickFor = d; }          // a sick day: the next working day
     if (+ep.reward) pay(+ep.reward, ep.title, +ep.reward > 0 ? 'income' : 'spend', { ko: ep.title_ko });
     if (ep.energy) G.energy = clamp(G.energy + +ep.energy, 0, E_MAX);
     rows('phrases').filter(p => p.episode === ep.id && !G.phrases.includes(p.id)).forEach(p => G.phrases.push(p.id));
@@ -3306,13 +3430,15 @@
       for (let d = d0; d < d0 + 7; d++) {
         const evs = calendar().filter(c => c.day === d && !(fired() && d >= G.work.fired && firedOut(c.place))).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
         const extra = [];
-        if (PAYDAYS.includes(d) && !fired()) extra.push(tr(`Payday: ${usd(+hero().salary_net)} direct deposit`, `월급날: ${usd(+hero().salary_net)} 계좌 입금`));
+        if (isPayday(d) && !fired()) extra.push(tr(`Payday: ${usd(+hero().salary_net)} direct deposit`, `월급날: ${usd(+hero().salary_net)} 계좌 입금`));
         if (isRentDay(d)) extra.push(tr(`${hero().housing_name || 'Rent'} due: ${usd(+hero().housing)}`, `${hero().housing_name_ko || '월세'} 납부: ${usd(+hero().housing)}`));
         billsDue(d).forEach(b => extra.push(tr(`Autopay: ${b.name} ${usd2(+b.amount)}`, `자동이체: ${loc(b)} ${usd2(+b.amount)}`)));
         const hol = holidayOf(d);
         if (hol) extra.unshift(tr(`${hol.name}${hol.kind === 'federal' ? ' (federal holiday: banks and post offices closed)' : ''}`, `${loc(hol)}${hol.kind === 'federal' ? ' (연방 공휴일: 은행·우체국 휴무)' : ''}`));
+        if (companyOff(d) && !isWeekend(d)) extra.push(tr(`${CFG.company} closed (paid holiday)`, `${ZONE_NAMES.office[1] || CFG.company} 휴무 (유급 휴일)`));
         const rec = G.work && G.work.record[d];
         if (rec) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND[rec][0], ATTEND[rec][1])}`);
+        if (rec && G.work.left && G.work.left[d] != null) extra.push(`${tr('Work', '근무')}: ${tr(ATTEND.early[0], ATTEND.early[1])} · ${clk(G.work.left[d])}`);
         if (!evs.length && !extra.length && d !== G.day) continue;
         html += `<h3>${tr(`${dateLong(d)} · Day ${d}${d === G.day ? ' · today' : ''}`, `${dateKo(d)} · ${d}일째${d === G.day ? ' · 오늘' : ''}`)}</h3>`;
         html += extra.map(x => `<div class="row"><span class="when"></span><div class="main"><div class="t">${esc(x)}</div></div></div>`).join('');
@@ -3375,7 +3501,7 @@
       const soon = [];
       for (let d = G.day + 1; d <= G.day + 14; d++) {
         const when = dShort(d);
-        if (PAYDAYS.includes(d) && !fired()) soon.push([when, tr('Paycheck (direct deposit)', '급여 (계좌 입금)'), +hero().salary_net]);
+        if (isPayday(d) && !fired()) soon.push([when, tr('Paycheck (direct deposit)', '급여 (계좌 입금)'), +hero().salary_net]);
         if (isRentDay(d)) soon.push([when, tr(hero().housing_name || 'Rent', hero().housing_name_ko || '월세'), -hero().housing]);
         billsDue(d).forEach(b => soon.push([when, tr(b.name + ' (autopay)', loc(b) + ' (자동이체)'), -b.amount]));
       }
@@ -3395,16 +3521,16 @@
       const left = Math.max(0, +CFG.fire_points - w.pts);
       const say = fired() ? tr(`You were let go on ${dateLong(w.fired)}. Your badge no longer opens the office.`, `${dateKo(w.fired)}에 해고되었어요. 출입증으로 더는 사무실에 들어갈 수 없어요.`)
         : w.warned === 2 ? tr('Final warning from HR: one more late morning or missed day and you are out.', '인사팀의 최종 경고: 한 번만 더 지각하거나 결근하면 해고예요.')
-          : w.warned === 1 ? tr('Your manager has talked to you about being on time. Be in by ' + clock(hm(CFG.work_start, 540)) + '.', `매니저가 제시간에 오라고 했어요. ${clockKo(hm(CFG.work_start, 540))}까지 출근하세요.`)
-            : tr(`Be at the office by ${clock(hm(CFG.late_after, 555))} on working days. Late mornings and missed days add up, and too many of them get you fired.`, `평일에는 ${clockKo(hm(CFG.late_after, 555))}까지 사무실에 오세요. 지각과 결근이 쌓이면 해고될 수 있어요.`);
+          : w.warned === 1 ? tr(`Your manager has talked to you about your hours. Be in by ${clock(hm(CFG.work_start, 540))} and stay until at least ${clock(EARLY())}.`, `매니저가 근무 시간 얘기를 했어요. ${clockKo(hm(CFG.work_start, 540))}까지 출근해서 적어도 ${clockKo(EARLY())}까지 있으세요.`)
+            : tr(`Be at the office by ${clock(hm(CFG.late_after, 555))} on working days and stay until at least ${clock(EARLY())}. Late mornings, early afternoons and missed days add up, and too many of them get you fired.`, `평일에는 ${clockKo(hm(CFG.late_after, 555))}까지 사무실에 와서 적어도 ${clockKo(EARLY())}까지 있으세요. 지각·조퇴·결근이 쌓이면 해고될 수 있어요.`);
       const pts = (G.points || []).slice().reverse().slice(0, 40);
       body.innerHTML = `<div class="sum"><div><b>★ ${score()}</b>${tr('score', '점수')}</div><div class="standing ${st[2]}"><b>${tr(st[0], st[1])}</b>${tr('standing', '평가')}</div><div><b>${fired() ? '—' : w.pts + ' / ' + CFG.fire_points}</b>${tr('strikes', '벌점')}</div></div>
-        <p class="fine">${esc(say)}${!fired() && w.pts ? tr(` ${left} more strike${left === 1 ? '' : 's'} and you are let go (late ${CFG.late_points}, in after noon ${CFG.noon_points}, a missed day ${CFG.absent_points}; five on-time days in a row take one off).`, ` 벌점 ${left}점이 더 쌓이면 해고예요 (지각 ${CFG.late_points}, 오후 출근 ${CFG.noon_points}, 결근 ${CFG.absent_points}; 5일 연속 정시 출근하면 1점 감소).`) : ''}</p>
+        <p class="fine">${esc(say)}${!fired() && w.pts ? tr(` ${left} more strike${left === 1 ? '' : 's'} and you are let go (late ${CFG.late_points}, in after noon ${CFG.noon_points}, leaving before ${clock(EARLY())} ${CFG.early_points}, a missed day ${CFG.absent_points}; five on-time days in a row take one off).`, ` 벌점 ${left}점이 더 쌓이면 해고예요 (지각 ${CFG.late_points}, 오후 출근 ${CFG.noon_points}, ${clockKo(EARLY())} 전 퇴근 ${CFG.early_points}, 결근 ${CFG.absent_points}; 5일 연속 정시 출근하면 1점 감소).`) : ''}</p>
         ${(() => { const [got, all] = missionCount(); const m = G.mission;
           return `<h3>${tr('Missions', '미션')}</h3><p class="fine">${m && m.all ? tr(`🎉 All ${all} done${m.bonus ? `: bonus ${usd(m.bonus)}` : ''}. ${freePlay() ? 'Free play now.' : `Free play from ${dateLong(MISSION_DAYS + 1)}.`}`, `🎉 ${all}개 모두 완료${m.bonus ? `: 보너스 ${usd(m.bonus)}` : ''}. ${freePlay() ? '지금은 자유 플레이.' : `${dateKo(MISSION_DAYS + 1)}부터 자유 플레이.`}`)
             : freePlay() ? tr(`${got} of ${all} done. The missions are over: free play now.`, `${all}개 중 ${got}개 완료. 미션 기간이 끝나 지금은 자유 플레이.`)
               : tr(`<b>${got} of ${all}</b> done, until ${dateLong(MISSION_DAYS)}. Finish all of them for a ${usd(+CFG.mission_bonus || 0)} bonus and ${+CFG.mission_points || 0} points.`, `${dateKo(MISSION_DAYS)}까지 <b>${all}개 중 ${got}개</b> 완료. 모두 해내면 보너스 ${usd(+CFG.mission_bonus || 0)}와 ${+CFG.mission_points || 0}점.`)}</p>`; })()}
-        <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
+        <h3>${tr('Attendance', '출근 기록')}</h3>${days.map(d => `<div class="row att ${w.record[d]}"><span class="when">${esc(dShort(d))}</span><div class="main"><div class="t">${esc(tr(ATTEND[w.record[d]][0], ATTEND[w.record[d]][1]))}</div>${d === G.inDay && G.inAt != null ? `<div class="s">${clk(G.inAt)}</div>` : ''}${w.left && w.left[d] != null ? `<div class="s">${esc(tr(ATTEND.early[0], ATTEND.early[1]))} · ${clk(w.left[d])} · −${Math.abs(ATTEND.early[2])}</div>` : ''}</div><span class="price ${ATTEND[w.record[d]][2] < 0 ? 'out' : 'in'}">${ATTEND[w.record[d]][2] ? (ATTEND[w.record[d]][2] > 0 ? '+' : '−') + Math.abs(ATTEND[w.record[d]][2]) : ''}</span></div>`).join('') || `<p class="empty">${tr('No working days yet.', '아직 근무일이 없어요.')}</p>`}
         <h3>${tr('Points', '점수 내역')}</h3>${pts.map(x => `<div class="row"><span class="when">${esc(dMonth(x.day))} · ${clk(x.minute)}</span><div class="main"><div class="t">${esc(tr(x.en, x.ko))}</div></div><span class="price ${x.n < 0 ? 'out' : 'in'}">${x.n > 0 ? '+' : '−'}${Math.abs(x.n)}</span></div>`).join('') || `<p class="empty">${tr('Points come from what you say in conversations and from showing up on time.', '점수는 대화에서 고른 말과 제시간 출근으로 쌓여요.')}</p>`}`;
     } else if (panelKind === 'map') {
       renderMapPanel(h, sub, body);
@@ -3775,7 +3901,7 @@
   }
 
   // ---------------------------------------------------------------- sleep: the end of a day
-  const isRentDay = (d) => d >= RENT_DAY && (d - RENT_DAY) % 30 === 0;
+  const isRentDay = (d) => START != null ? onDateOfMonth(d, RENT_DOM) : d >= RENT_DAY && (d - RENT_DAY) % 30 === 0;
   function trySleep(pid) {
     if (G.minute < 20 * 60 && G.energy > 25) { toast("It's too early to sleep. Come back after 8 PM.", '아직 잘 시간이 아니에요. 오후 8시 이후에 오세요.'); return; }
     goToSleep(false, pid);
@@ -3805,13 +3931,18 @@
     G.wet = 0;
     const morning = [];
     if (firedNow) morning.push(tr(`📧 <b>You've been let go.</b> ${esc(CFG.company)} ended your job for missing too much work. Your badge no longer works, and your final paycheck has been deposited.`, `📧 <b>해고되었습니다.</b> 결근이 너무 잦아 ${esc(CFG.company)}에서 고용을 끝냈어요. 출입증은 이제 안 열리고, 마지막 급여는 계좌에 들어왔어요.`));
+    else if (att === 'early') morning.push(tr(`⚠️ You left work early yesterday (${clock(G.work.left[day])}). ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 일찍 퇴근했어요(${clockKo(G.work.left[day])}). 조퇴예요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     else if (att === 'absent') morning.push(tr(`⚠️ You didn't show up for work yesterday. ${G.work.warned === 2 ? 'HR has sent you a <b>final written warning</b>.' : G.work.warned === 1 ? 'Your manager has noticed.' : ''}`, `⚠️ 어제 출근하지 않았어요. ${G.work.warned === 2 ? '인사팀이 <b>최종 서면 경고</b>를 보냈어요.' : G.work.warned === 1 ? '매니저가 알아챘어요.' : ''}`));
     if (missionNote) morning.push(missionNote);
     if (late) morning.push(tr('You stayed up too late and did not sleep well. You start the day a little tired.', '너무 늦게까지 깨어 있어서 잠을 설쳤어요. 조금 피곤한 채로 하루를 시작합니다.'));
     const hol = holidayOf(G.day);
     if (hol) morning.push(tr(`🗓️ <b>${esc(hol.name)}</b>${hol.kind === 'federal' ? ' (federal holiday)' : ''}. ${esc(hol.note || '')}`, `🗓️ <b>${esc(loc(hol))}</b>${hol.kind === 'federal' ? ' (연방 공휴일)' : ''}. ${esc(hol.note_ko || '')}`));
+    if (companyOff(G.day) && !isWeekend(G.day) && !fired()) morning.push(tr(`🏖️ ${esc(CFG.company)} is closed today: a paid day off.`, `🏖️ 오늘은 ${esc(ZONE_NAMES.office[1] || CFG.company)} 휴일이에요. 유급 휴일입니다.`));
+    const special = holidayHours(G.day);
+    if (special.length) morning.push(tr(`🕘 Holiday hours: ${special.map(x => `${esc(hoursName(x.id)[0])} ${x.h[0] === x.h[1] ? 'closed' : clock(x.h[0]) + ' – ' + clock(x.h[1])}`).join(' · ')}.`,
+      `🕘 휴일 영업시간: ${special.map(x => `${esc(hoursName(x.id)[1] || hoursName(x.id)[0])} ${x.h[0] === x.h[1] ? '휴무' : clockKo(x.h[0]) + ' – ' + clockKo(x.h[1])}`).join(' · ')}.`));
     const me = hero(), housing = me.housing_name || 'Rent', housingKo = me.housing_name_ko || (/mortgage/i.test(housing) ? '주택 담보 대출' : '월세');
-    if (PAYDAYS.includes(G.day) && !fired()) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income', { ko: '급여 (계좌 입금)' }); notify(CFG.bank_name, `A direct deposit of ${usd2(+me.salary_net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(+me.salary_net)}가 계좌 ···4821에 입금되었습니다.`); morning.push(tr(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)}).`, `월급날: <b>${usd2(+me.salary_net)}</b>가 계좌에 들어왔어요 (세전 ${usd(+me.salary_gross)}).`)); }
+    if (isPayday(G.day) && !fired()) { pay(+me.salary_net, 'Paycheck (direct deposit)', 'income', { ko: '급여 (계좌 입금)' }); notify(CFG.bank_name, `A direct deposit of ${usd2(+me.salary_net)} from ${CFG.company} has posted to checking ···4821.`, `${CFG.company}의 급여 ${usd2(+me.salary_net)}가 계좌 ···4821에 입금되었습니다.`); morning.push(tr(`Payday: <b>${usd2(+me.salary_net)}</b> was deposited to your account (gross ${usd(+me.salary_gross)})${payDue(G.day) ? '' : ', early because the bank is closed on payday'}.`, `월급날: <b>${usd2(+me.salary_net)}</b>가 계좌에 들어왔어요 (세전 ${usd(+me.salary_gross)})${payDue(G.day) ? '' : '. 급여일에 은행이 쉬어서 미리 들어왔어요'}.`)); }
     if (isRentDay(G.day)) { pay(-me.housing, housing, 'bill', { ko: housingKo }); notify(CFG.bank_name, `${housing} payment of ${usd2(+me.housing)} was sent from checking ···4821.`, `${housingKo} ${usd2(+me.housing)}가 계좌에서 나갔습니다.`); morning.push(tr(`${housing}: <b>${usd2(+me.housing)}</b> was paid ${/mortgage/i.test(housing) ? 'to the bank' : 'to your landlord'}.`, `${housingKo}: <b>${usd2(+me.housing)}</b>를 ${/mortgage/i.test(housing) ? '은행에' : '집주인에게'} 냈어요.`)); }
     billsDue(G.day).forEach(b => { pay(-b.amount, b.name, 'bill', { ko: b.name_ko }); notify(CFG.bank_name, `Autopay: ${usd2(+b.amount)} was paid to ${b.name} from checking ···4821.`, `자동이체: ${b.name_ko || b.name} ${usd2(+b.amount)}가 빠져나갔습니다.`); morning.push(tr(`Autopay: <b>${usd2(+b.amount)}</b> for ${esc(String(b.name).toLowerCase())}.`, `자동이체: ${esc(b.name_ko || b.name)} <b>${usd2(+b.amount)}</b>.`)); });
     if (G.feeDay === G.day) morning.push(tr(`The bank charged a <b>${usd2(+CFG.overdraft_fee)}</b> overdraft fee.`, `은행이 초과 인출 수수료 <b>${usd2(+CFG.overdraft_fee)}</b>를 물렸어요.`));
@@ -3824,14 +3955,14 @@
     morning.unshift(tr(`${WX_ICON[wx.kind] || ''} <b>${WX_NAME[wx.kind] || pretty(wx.kind)}</b>, high ${wx.high_f}°F, low ${wx.low_f}°F. ${esc(wx.forecast || '')}${sun ? ` ${sunText(G.day)}.` : ''}`,
       `${WX_ICON[wx.kind] || ''} <b>${WX_NAME_KO[wx.kind] || wx.kind}</b>, 최고 ${toC(wx.high_f)}°C, 최저 ${toC(wx.low_f)}°C. ${esc(wx.forecast_ko || '')}${sun ? ` 해돋이 ${clockKo(sun.rise)}, 해넘이 ${clockKo(sun.set)}.` : ''}`));
     const cal = calendar().filter(c => c.day === G.day && !firedOut(c.place)).sort((a, b) => hm(a.time, 0) - hm(b.time, 0));
-    const workAt = !isWeekend(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '';
+    const workAt = !offWork(G.day) && !fired() ? tr(`Work starts at <b>${clock(hm(CFG.work_start, 540))}</b>: be in by ${clock(hm(CFG.late_after, 555))}.`, `업무는 <b>${clockKo(hm(CFG.work_start, 540))}</b>에 시작해요. ${clockKo(hm(CFG.late_after, 555))}까지 출근하세요.`) : '';
     const body = `<div class="sum"><div><b>${eps.length}</b>${tr('conversations', '대화')}</div><div><b>${gained >= 0 ? '+' : '−'}${Math.abs(gained)}</b>${tr('points', '점수')}</div><div><b>${usd2(spent)}</b>${tr('spent', '지출')}</div><div><b>${usd2(earned)}</b>${tr('earned', '수입')}</div></div>
       ${eps.length ? '<ul>' + eps.map(l => `<li>${esc(logText(l))}</li>`).join('') + '</ul>' : ''}
       ${missed.length ? `<p>${tr('Missed', '놓친 일')}: ${missed.map(e => esc(loc(e, 'title'))).join(', ')}</p>` : ''}
       ${inAt != null ? `<p>${tr(`You got to work at <b>${clock(inAt)}</b>${wasLate ? ', late' : inAt <= hm(CFG.work_start, 540) ? ', on time' : ''}.`, `<b>${clockKo(inAt)}</b>에 출근했어요${wasLate ? ' (지각)' : inAt <= hm(CFG.work_start, 540) ? ' (정시)' : ''}.`)}</p>` : ''}
       <p>${tr('Score', '점수')} <b>★ ${score()}</b> · ${tr(standing()[0], standing()[1])}${day <= MISSION_DAYS ? ` · ${tr('Missions', '미션')} <b>${missionCount().join(' / ')}</b>` : ''}</p>
       <h3>${tr(`${dateLong(G.day)} · Day ${G.day}`, `${dateKo(G.day)} · ${G.day}일째`)}</h3>${morning.map(m => `<p>${m}</p>`).join('')}
-      ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(loc(c, 'title'))}${c.place ? ' · ' + esc(loc(place(c.place))) : ''}</li>`).join('') + '</ul>' : `<p>${isWeekend(G.day) ? tr('Weekend. No work today.', '주말이에요. 오늘은 출근하지 않아요.') : tr('Nothing on the calendar.', '달력에 일정이 없어요.')}</p>`}
+      ${cal.length ? '<ul>' + cal.map(c => `<li><b>${esc(c.time)}</b> ${esc(loc(c, 'title'))}${c.place ? ' · ' + esc(loc(place(c.place))) : ''}</li>`).join('') + '</ul>' : `<p>${isWeekend(G.day) ? tr('Weekend. No work today.', '주말이에요. 오늘은 출근하지 않아요.') : companyOff(G.day) ? tr('Company holiday. No work today.', '회사 휴일이에요. 오늘은 출근하지 않아요.') : tr('Nothing on the calendar.', '달력에 일정이 없어요.')}</p>`}
       ${workAt ? `<p>${workAt}</p>` : ''}
       <p>${tr('Balance', '잔액')}: <b>${usd2(G.money)}</b></p>`;
     saveGame();
@@ -4069,7 +4200,7 @@
     get propList() { return zoneAll; }, get solids() { return solids; }, get movers() { return movers; },
     get elapsed() { return elapsed; }, get gfx() { return gfxHigh() ? 'high' : 'low'; }, get night() { return env.night; },
     get dark() { return darkAt(hourNow() * 60); }, get solarMinute() { return solarHour(hourNow(), sunDay()) * 60; },
-    get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get lang() { return settings.lang; }, get weekend() { return !!G && isWeekend(G.day); },
+    get weather() { return weatherNow(); }, get hero() { return G ? G.hero : null; }, get lang() { return settings.lang; }, get weekend() { return !!G && (offWork(G.day) || dayOff(G.day)); },
     get models() { return Object.keys(window.SO_MODELS || {}); }, characters: CHARACTERS,
     shelter, get raining() { return raining(); },          // an umbrella over a person (life.js: the passers-by)
     actor: (model, opts) => makeActor((opts && opts.id) || 'extra', model, opts), animate, locomotion, gesturing, rest, glowTexture: () => glowTex,
@@ -4357,6 +4488,9 @@
     get street() { return G ? Object.assign({}, G.street) : {}; }, get walkSign() { return life && life.walkSign ? life.walkSign() : null; },
     get mail() { return G ? myMail().map(m => ({ id: m.id, day: m.day, kind: m.kind, fresh: !(G.mailGot || {})[m.id] })) : []; }, get newMail() { return newMail().length; },
     get date() { return G ? dateLong(G.day) : null; }, get holiday() { const h = G && holidayOf(G.day); return h ? h.name : null; },
+    // the calendar rules for any day: payday, rent, bills, the company's days off, holiday hours, the weather
+    rules: (d) => ({ date: isoOf(d), payday: isPayday(d), rent: isRentDay(d), bills: billsDue(d).map(b => b.id), off: offWork(d), company: companyOff(d), hours: holidayHours(d).map(x => [x.id, x.h]), weather: weatherOf(d) }),
+    npcAt: (id) => { const n = npcRow(id); return n ? npcPlaceNow(n) : null; }, setDay: (d) => { if (G) G.day = d; },
     nextBus(min) { const t = G ? nextBus(min == null ? G.minute : min) : null; return t == null ? null : hhmm(t); }, ride(pid) { return ride(pid); },
     get wet() { return G ? +(G.wet || 0).toFixed(2) : 0; }, set wet(v) { if (G) G.wet = +v; }, get raining() { return raining(); }, get rainSound() { return rainSound.level; },
     get umbrellas() { return Object.values(npcActors).concat(player ? [player] : []).filter(a => a.brolly && a.brolly.visible).map(a => a.id); },
