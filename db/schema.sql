@@ -366,3 +366,24 @@ CREATE TABLE IF NOT EXISTS tasks (
   time_to varchar(5),
   sort int NOT NULL DEFAULT 0
 );
+
+-- Benefits you pick in the HR portal at open enrollment (config benefits_open – benefits_close; they start on
+-- benefits_start): one plan of each kind (medical | dental | vision; a "No … coverage" row with premium 0 is the way to
+-- go without). premium: dollars out of every paycheck before tax (employee only). deductible, oop_max: dollars a year.
+-- copays: JSON of what you pay for a visit or a purchase, by kind of care (medical: doctor, specialist, urgent, er, rx;
+-- dental: cleaning, filling; vision: eye_exam, glasses; a high-deductible plan: the full price until the deductible).
+-- hsa: what the company puts into your health savings account every paycheck.
+CREATE TABLE IF NOT EXISTS plans (
+  id varchar(16) PRIMARY KEY,
+  kind varchar(8) NOT NULL,
+  name varchar(60) NOT NULL,
+  name_ko varchar(60),
+  premium decimal(8,2) NOT NULL DEFAULT 0,
+  deductible int NOT NULL DEFAULT 0,
+  oop_max int NOT NULL DEFAULT 0,
+  copays json NOT NULL,
+  hsa decimal(8,2) NOT NULL DEFAULT 0,
+  note varchar(255),
+  note_ko varchar(255),
+  sort int NOT NULL DEFAULT 0
+);

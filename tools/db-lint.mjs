@@ -280,7 +280,38 @@ for (const t of DB.tasks || []) {
   if (cs.length && !(Math.max(...cs.map(c => c.points || 0)) > 0 && Math.min(...cs.map(c => c.points || 0)) < 0)) bad(w, 'want a choice with points and one that loses some');
 }
 
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks'].map(count).join(', '));
+// plans (benefits in the HR portal): a known kind, both languages, premiums and prices that are numbers, the copays
+// of the kind; config benefits_now / benefits_default name plans of each kind for every hero, and the dates follow
+// open < close < start
+const PLAN_KINDS = { medical: ['doctor', 'specialist', 'urgent', 'er', 'rx'], dental: ['cleaning', 'filling'], vision: ['eye_exam', 'glasses'] };
+const planById = Object.fromEntries((DB.plans || []).map(p => [p.id, p]));
+for (const p of DB.plans || []) {
+  const w = `plans ${p.id}`;
+  if (!PLAN_KINDS[p.kind]) { bad(w, `kind "${p.kind}" is not one of ${Object.keys(PLAN_KINDS).join(', ')}`); continue; }
+  if (!p.name_ko || !p.note || !p.note_ko) bad(w, 'name_ko, note and note_ko are required');
+  for (const k of ['premium', 'deductible', 'oop_max', 'hsa']) if (p[k] != null && !(Number.isFinite(+p[k]) && +p[k] >= 0)) bad(w, `${k} must be a number of 0 or more`);
+  const c = p.copays && typeof p.copays === 'object' ? p.copays : null;
+  if (!c) bad(w, 'copays is not a JSON object');
+  else for (const k of PLAN_KINDS[p.kind]) if (!Number.isFinite(c[k]) || c[k] < 0) bad(w, `copays.${k} missing or not a number of 0 or more`);
+}
+if ((DB.plans || []).length) {
+  const cfg = DB.config || {}, kindsOf = (s, w) => {
+    const ids = String(s || '').split('@')[0].split('+').filter(x => !/^\d+(\.\d+)?$/.test(x));
+    ids.forEach(id => { if (!planById[id]) bad(w, `plan "${id}" not in plans`); });
+    for (const k of Object.keys(PLAN_KINDS)) if (ids.filter(id => planById[id] && planById[id].kind === k).length !== 1) bad(w, `want one ${k} plan in "${s}"`);
+    const ep = String(s || '').split('@')[1];
+    if (ep && !episodes.has(ep)) bad(w, `episode "${ep}" does not exist`);
+  };
+  for (const k of Object.keys(PLAN_KINDS)) if (!(DB.plans || []).some(p => p.kind === k)) bad('plans', `no ${k} plan`);
+  kindsOf(cfg.benefits_default, 'config benefits_default');
+  const now = Object.fromEntries(String(cfg.benefits_now || '').split(',').filter(Boolean).map(x => x.split(':')));
+  for (const h of heroes) { if (!now[h]) bad('config benefits_now', `no plans for ${h}`); else kindsOf(now[h], `config benefits_now ${h}`); }
+  const ds = ['benefits_open', 'benefits_close', 'benefits_start'].map(k => String(cfg[k] || ''));
+  if (ds.some(d => !/^\d{4}-\d{2}-\d{2}$/.test(d)) || !(ds[0] <= ds[1] && ds[1] < ds[2])) bad('config benefits_open/close/start', `want dates with open <= close < start, not ${ds.join(', ')}`);
+  for (const k of ['k401_auto', 'k401_match', 'k401_match_up_to', 'k401_max', 'tax_state', 'tax_ss', 'tax_medicare']) if (!Number.isFinite(+cfg[k]) || +cfg[k] < 0) bad(`config ${k}`, 'want a number of 0 or more');
+}
+
+console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'plans'].map(count).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);

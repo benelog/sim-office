@@ -391,3 +391,16 @@ body.jogging .walk-sign, body.touring .walk-sign { display: none !important; }
 .tv-ch button { padding: 3px 8px; font-size: 12px; }
 .tv-ch button[aria-pressed="true"] { background: var(--accent-deep); color: #fff; }
 #panel.wide { width: min(860px, calc(100% - 24px)); }
+
+/* the HR portal: the plans to pick, the 401(k), the pay stub (also in the Bank) */
+.row.plan .price small { font-weight: 400; font-size: 12px; color: var(--ink-faint); }
+.row.plan.on .main .t { color: var(--accent-deep); }
+.row.plan button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-deep); border-color: var(--accent); font-weight: 600; }
+.leave-ask.k401 b { font-size: 20px; min-width: 2.4em; text-align: center; font-variant-numeric: tabular-nums; }
+.leave-ask.k401 button { min-width: 2.4em; padding: 4px 10px; }
+.leave-ask.k401 .fine { margin: 0; }
+table.stub { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; font-size: 14px; margin: 6px 0 0; }
+table.stub td { padding: 4px 0; border-bottom: 1px solid #eceff4; }
+table.stub td:last-child { text-align: right; white-space: nowrap; padding-left: 10px; }
+table.stub tr.top td, table.stub tr.net td { font-weight: 600; }
+table.stub tr.net td { border-top: 2px solid var(--ink); border-bottom: 0; font-size: 15px; }
