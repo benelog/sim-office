@@ -9,6 +9,7 @@ function openPanel(kind, arg) {
   if (!G) return;
   if (state === 'talk' || state === 'sleep' || state === 'title') return;
   if (panelKind === 'tv' && kind !== 'tv' && !panel.hidden) tvOff();          // the phone or the map over the TV turns it off
+  if (kind === 'map' && (panelKind !== 'map' || panel.hidden)) MAP.district = null;          // the town map opens on the town you are in
   panelKind = kind; panelArg = arg;
   if (state !== 'shop' && state !== 'card') panelBack = state;
   state = kind === 'shop' || kind === 'bus' ? 'shop' : 'card';
@@ -55,7 +56,7 @@ function renderPanel() {
   } else if (panelKind === 'bus') {
     h.textContent = tr('Bus', '버스');
     const here = panelArg;
-    const stops = Object.keys(Z.places).filter(pid => pid !== here && (DOORS['city:' + pid] || portalsOf(Z).some(p => Math.hypot(p.at[0] - Z.places[pid].at[0], p.at[1] - Z.places[pid].at[1]) < 3)));
+    const stops = Object.keys(Z.places).filter(pid => pid !== here && isBusStop(pid));          // the line's other stops (the other town)
     const pass = rows('items').find(i => busItem(i) && /pass/.test(i.id));
     const bb = busAt(G.minute), nb = bb && bb.board, bs = bb && busStatus(bb, G.minute), every = busEvery(), off = isWeekend(G.day) || dayOff(G.day);
     const times = every ? `<p class="fine">${tr(`${nb == null ? `No more buses tonight: the last one left at ${clock(hm(CFG.bus_last, 1350))}.` : bs[0]}

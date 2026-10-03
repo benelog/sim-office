@@ -222,14 +222,22 @@ function setupLights() {
     }
   }
 }
-// fit the one shadow map to the zone: the props' box (with the floor, capped near the zone's size) seen from the light
+// fit the one shadow map to the zone: the props' box (with the floor, capped near the zone's size) seen from the light.
+// Outdoors in a zone longer than its size (the town: two towns and the road between them) the size is the part of it
+// round you, on a grid of 6 so that the shadows keep still while you walk
 const shadowView = new T.Matrix4(), boxC = new T.Vector3(), corner = new T.Vector3(), fitBox = new T.Box3();
+function shadowCentre() {
+  const wk = Z.walk, [w, d] = Z.size;
+  if (Z.indoor || !wk || (wk[2] - wk[0] <= w + 12 && wk[3] - wk[1] <= d + 12)) return [0, 0];
+  const c = state === 'tour' ? { x: tour.x, z: tour.z } : player && state !== 'title' ? player.pos : { x: 0, z: 0 };
+  return [Math.round(c.x / 6) * 6, Math.round(c.z / 6) * 6];
+}
 function fitShadow(dir) {
   if (!Z) return;
-  const [w, d] = Z.size, m = Z.indoor ? 0.6 : 6;
+  const [w, d] = Z.size, m = Z.indoor ? 0.6 : 6, [cx, cz] = shadowCentre();
   fitBox.copy(zoneBox);
-  fitBox.expandByPoint(corner.set(-w / 2, 0, -d / 2)).expandByPoint(corner.set(w / 2, 0, d / 2));
-  fitBox.intersect(new T.Box3(new T.Vector3(-w / 2 - m, -1, -d / 2 - m), new T.Vector3(w / 2 + m, 60, d / 2 + m)));
+  fitBox.expandByPoint(corner.set(cx - w / 2, 0, cz - d / 2)).expandByPoint(corner.set(cx + w / 2, 0, cz + d / 2));
+  fitBox.intersect(new T.Box3(new T.Vector3(cx - w / 2 - m, -1, cz - d / 2 - m), new T.Vector3(cx + w / 2 + m, 60, cz + d / 2 + m)));
   fitBox.getCenter(boxC);
   const r = fitBox.getSize(corner).length() + 4;
   sun.target.position.copy(boxC);

@@ -290,8 +290,9 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
   //   opts.floor: pattern name or { pattern, a, b } for the whole room; opts.floors: [{ pattern, rect: [x0, z0, x1, z1] }]
   //   opts.walls: { color, back, trim, base, scale }   (back: the other side; scale: height of the pieces, 1 = 1.29)
   //   opts.ground: { pattern, y, strips: [{ pattern, rect, dir: 'x' | 'z' }] }   (the land around the room)
-  //   opts.mountains: { side: 'n' | 's' | 'w' | 'e', from, depth, width, height, seed }   (a range beyond the town)
-  //   opts.sea: { side, from, beach, width, depth }   (the sea beyond the town, a strip of sand before it)
+  //   opts.mountains: { side: 'n' | 's' | 'w' | 'e', from, depth, width, height, seed, cx, cz }   (a range beyond the town;
+  //     cx, cz move its middle off the centre)
+  //   opts.sea: { side, from, beach, width, depth, cx, cz }   (the sea beyond the town, a strip of sand before it)
   //   opts.wild: { seed, rects: [[x0, z0, x1, z1], ...], avoid: [[x0, z0, x1, z1], ...], density }   (woods on the plains beyond town)
   //   opts.tower: { top, bottom, color }   (the building under a room that is not on the ground floor)
   //   opts.skyline: { kind: 'city' | 'suburb' | 'airport' | 'harbor', seed, r, y, h }
@@ -352,6 +353,11 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     mesh.position.set(-Math.sin(t) * from, mesh.position.y, -Math.cos(t) * from);
     return mesh;
   }
+  function shiftBy(mesh, o) {                    // o.cx, o.cz: the middle of the piece moved off the centre (a long town)
+    mesh.position.x += o.cx || 0;
+    mesh.position.z += o.cz || 0;
+    return mesh;
+  }
   // A range of mountains: a strip of triangles `width` long along the side and `depth` deep, foothills at the near
   // edge rising to a ridge of peaks (sums of bumps along the strip), coloured by height (forest, rock, snow) and flat
   // shaded. Lit like the props and dimmed after dark with the rest of the outside.
@@ -395,7 +401,7 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     mesh.position.y = -0.02;
     mesh.receiveShadow = true;
     mesh.name = 'mountains';
-    return sidePlace(mesh, o.side, o.from || 36);
+    return shiftBy(sidePlace(mesh, o.side, o.from || 36), o);
   }
   // The country beyond town: trees, bushes and rocks of the 'wild' pack (Quaternius Ultimate Nature) scattered over
   // rectangles nobody can walk to, as InstancedMesh per piece (a few draw calls for hundreds of trees). density is
@@ -462,7 +468,7 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
       var foam = flat(api, [-W / 2, -beach - 0.5, W / 2, -beach + 0.1], 0.007, flatMat(api, 'foam', null, { color: new T.Color('#dbeaf2'), transparent: true, opacity: 0.55 }), [1, 1]);
       grp.add(foam);
     }
-    return sidePlace(grp, o.side, o.from || 31);
+    return shiftBy(sidePlace(grp, o.side, o.from || 31), o);
   }
 
   // ---------- patterns: [tile size in game units along u, along v, canvas w, h, draw]

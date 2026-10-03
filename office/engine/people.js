@@ -166,6 +166,7 @@ function arrive(a) {
 }
 function walkTo(a, at) {
   if (a.walk && a.walk.req) a.walk.req.cancelled = true;
+  if (Math.hypot(at[0] - a.pos.x, at[1] - a.pos.z) > 40) { a.walk = null; arrive(a); return; }          // the other end of town: by bus, not on foot
   a.wantCup = false;
   holdCup(a, false);
   a.sit = false;

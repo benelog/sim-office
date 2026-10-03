@@ -74,7 +74,7 @@ const INK = 0x1d2433;
 // Where things are when the zone files or the places table do not say (PLAN.md §3).
 const BUILTIN_PLACES = {
   home: ['home_bed', 'home_desk', 'home_kitchen', 'home_door'],
-  city: ['apartment_door', 'bus_stop', 'coffee_cart', 'park_bench', 'office_door', 'diner_door', 'market_door', 'parking', 'airport_shuttle'],
+  city: ['apartment_door', 'bus_stop', 'bus_stop_downtown', 'coffee_cart', 'park_bench', 'office_door', 'diner_door', 'market_door', 'parking', 'airport_shuttle'],
   office: ['office_lobby', 'office_desk', 'office_desk_team', 'office_kitchen', 'office_meeting', 'office_manager', 'office_hr', 'office_it', 'office_door'],
   diner: ['diner_counter', 'diner_table', 'diner_door'],
   market: ['market_shelves', 'market_checkout', 'market_door'],
@@ -82,7 +82,7 @@ const BUILTIN_PLACES = {
   hotel: ['hotel_desk', 'hotel_room', 'hotel_restaurant', 'hotel_door', 'hotel_shuttle'],
   client: ['client_lobby', 'client_meeting', 'client_door']
 };
-const BUILTIN_KIND = { home_bed: 'sleep', hotel_room: 'sleep', home_kitchen: 'eat', bus_stop: 'transit', office_desk: 'work' };
+const BUILTIN_KIND = { home_bed: 'sleep', hotel_room: 'sleep', home_kitchen: 'eat', bus_stop: 'transit', bus_stop_downtown: 'transit', office_desk: 'work' };
 const DOORS = {        // zone:place → [zone, arrive] (only for generated zones; zone files have their own portals)
   'home:home_door': ['city', 'apartment_door'], 'city:apartment_door': ['home', 'home_door'],
   'city:office_door': ['office', 'office_door'], 'office:office_door': ['city', 'office_door'],
@@ -93,7 +93,7 @@ const DOORS = {        // zone:place → [zone, arrive] (only for generated zone
   'hotel:hotel_door': ['client', 'client_door'], 'client:client_door': ['hotel', 'hotel_door']
 };
 const ZONE_NAMES = {
-  home: ['Your apartment', '내 아파트'], city: ['Downtown Fairview', '페어뷰 시내'], office: ['Seaside Labs', '시사이드 랩스'],
+  home: ['Your apartment', '내 아파트'], city: ['Fairview', '페어뷰'], office: ['Seaside Labs', '시사이드 랩스'],
   diner: ['Maple Street Diner', '메이플 스트리트 다이너'], market: ['Fairview Market', '페어뷰 마켓'], airport: ['Fairview Airport', '페어뷰 공항'],
   hotel: ['Harbor View Hotel', '하버 뷰 호텔'], client: ['Summit Retail HQ', '서밋 리테일 본사']
 };

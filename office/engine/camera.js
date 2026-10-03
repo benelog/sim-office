@@ -71,8 +71,9 @@ function tourTick(dt) {
   tour.yaw += turn * 1.3 * dt;
   // forward is away from the camera, over the ground
   const fx = -Math.sin(tour.yaw), fz = -Math.cos(tour.yaw);
-  tour.x = clamp(tour.x + (fx * fwd - fz * side) * move, -34, 34);
-  tour.z = clamp(tour.z + (fz * fwd + fx * side) * move, -34, 34);
+  const wk = Z.walk || [-34, -34, 34, 34];
+  tour.x = clamp(tour.x + (fx * fwd - fz * side) * move, Math.min(-34, wk[0] - 12), Math.max(34, wk[2] + 12));
+  tour.z = clamp(tour.z + (fz * fwd + fx * side) * move, Math.min(-34, wk[1] - 12), Math.max(34, wk[3] + 12));
   tour.dist = clamp(tour.dist * (1 + zoom * 1.1 * dt), 5, 70);
   tour.pitch = clamp(tour.pitch + tilt * 0.7 * dt, 0.06, 1.35);
   const h = Math.cos(tour.pitch) * tour.dist;

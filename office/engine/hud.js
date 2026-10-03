@@ -120,6 +120,12 @@ function updateGoal() {
       ko = '자유 시간. 둘러보거나 장을 보거나 뭔가 먹어요.';
     }
   }
+  const bus = en && busHint();          // a goal in the other town: the way there is the bus stop of this one
+  if (bus) {
+    en += `<br><small>That's across town: take the Number ${BUS_LINE} bus at the ${esc(place(bus.pid).name)} (on foot, about ${bus.walk} min).</small>`;
+    ko += `<br><small>다른 동네예요: ${esc(loc(place(bus.pid)))}에서 ${BUS_LINE}번 버스를 타세요(걸으면 약 ${bus.walk}분).</small>`;
+    goalTarget = { at: bus.at };
+  }
   if (G.energy < 30) { warn = true; en += `<br><small>Low energy (${Math.round(G.energy)}). Eat something or rest.</small>`; ko += `<br><small>에너지가 낮아요(${Math.round(G.energy)}). 뭔가 먹거나 쉬세요.</small>`; }
   const sick = illNote(); if (sick) { en += `<br><small>${sick[0]}</small>`; ko += `<br><small>${sick[1]}</small>`; }
   setBox($('goal'), en, ko, warn);
@@ -136,6 +142,24 @@ function updateGoal() {
     const c = remark(a);
     say(a, personal(c.line), c.line_ko && personalKo(c.line_ko), 3.5);
   });
+}
+// The town is two towns with a long road between them: when the goal is in the other one (more than BUS_FAR away along
+// the road), the goal box says to take the bus and the marker points at the nearest bus stop
+const BUS_FAR = 45;
+function busHint() {
+  if (zoneId !== 'city' || !goalTarget || !player) return null;
+  const to = goalTarget.actor ? [goalTarget.actor.pos.x, goalTarget.actor.pos.z] : goalTarget.at;
+  if (!to || Math.abs(to[0] - player.pos.x) < BUS_FAR) return null;
+  let best = null, bd = Infinity;
+  Object.keys(Z.places).forEach(pid => {
+    const pl = Z.places[pid];
+    if (!pl || !pl.at || !isBusStop(pid)) return;
+    const d = Math.hypot(pl.at[0] - player.pos.x, pl.at[1] - player.pos.z);
+    if (d < bd) { bd = d; best = { pid, at: pl.at }; }
+  });
+  if (!best || Math.abs(best.at[0] - to[0]) < BUS_FAR) return null;
+  best.walk = Math.round(Math.hypot(to[0] - player.pos.x, to[1] - player.pos.z) / WALK * (+CFG.minutes_per_second || 1) / 5) * 5;          // game minutes on foot
+  return best;
 }
 // what somebody says in passing: their own lines in turn, and every third time (the first time too) a remark
 // about the weather, the day of the week or the time of day (smalltalk table)

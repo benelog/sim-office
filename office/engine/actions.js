@@ -8,7 +8,7 @@ function itemsAt(pid) {
   return rows('items').filter(i => i.place === pid && /^(grocery|meal|drink|gear)$/.test(i.kind));
 }
 const faresAt = (pid) => rows('items').filter(i => i.place === pid && i.kind === 'fare' && !busItem(i));
-function isBusStop(pid) { return pid === 'bus_stop' || rows('items').some(i => i.place === pid && busItem(i)); }
+function isBusStop(pid) { return /^bus_stop/.test(pid) || rows('items').some(i => i.place === pid && busItem(i)); }          // the Number 12: Westside and downtown
 function placeActions(pid) {
   const out = [], kind = placeKind(pid), pl = place(pid);
   if (kind === 'sleep') out.push({ key: 'sleep:' + pid, label: tr('Sleep', '잠자기'), run: () => trySleep(pid) });

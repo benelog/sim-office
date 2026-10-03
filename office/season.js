@@ -60,11 +60,13 @@
   // on top; wreaths: [x, y, z, facing° (0 = +z, 90 = +x)]; lampWreaths: a wreath on every street lamp; tree: a decorated
   // tree standing at [x, z] with its height; gifts under it.
   const DECOR = {
-    city: {
+    city: {          // Westside round the origin, downtown round x 105 (office/zones/city.js)
       strings: [
-        [3.62, 1.0, 3.02, 5.98, 1.0, 3.02, 4, 0.05],               // the diner's awning
+        [3.82, 1.0, 3.02, 6.18, 1.0, 3.02, 4, 0.05],               // the laundromat's awning
+        [108.62, 1.0, 3.02, 110.98, 1.0, 3.02, 4, 0.05],           // the diner's awning (downtown)
         [9.82, 1.0, 3.31, 12.18, 1.0, 3.31, 4, 0.05],              // the market's awning
-        [-7.08, 1.17, -2.24, -4.12, 1.17, -2.24, 4, 0.05],         // the bus shelter
+        [-7.08, 1.17, -2.24, -4.12, 1.17, -2.24, 4, 0.05],         // the bus shelters
+        [97.92, 1.17, -2.24, 100.88, 1.17, -2.24, 4, 0.05],
         [-13.38, 0.6, 4.62, -8.42, 0.6, 4.62, 6, 0.06],            // the park fence, both sides of the gate
         [-6.58, 0.6, 4.62, -1.62, 0.6, 4.62, 6, 0.06],
         [-8.38, 1.42, 4.6, -6.62, 1.42, 4.6, 2, 0.12],             // over the park gate
@@ -74,10 +76,10 @@
         [-11.25, 1.55, -13.36, -8.75, 1.55, -13.36, 4, 0.06],      // Derek's house, along the eaves of the porch
         [10.4, 1.3, 9.4, 10.4, 1.3, 13.0, 5, 0.07]                 // Cedar Street Lofts (Priya)
       ],
-      wrap: [[5.4, -4.6], [12.6, -4.4]],
+      wrap: [[110.4, -4.6], [117.6, -4.4]],          // the little trees on the Seaside Labs plaza
       star: [[-2.8, 10.4]],
-      wreaths: [[4.8, 0.92, 3.46, 180], [11.0, 0.92, 3.76, 180], [-9.88, 0.95, -6.16, 0], [-10.0, 1.0, -13.36, 180], [10.39, 1.0, 11.2, 270],
-        [7.25, 1.1, -5.93, 0], [9.15, 1.1, -5.93, 0]],
+      wreaths: [[5.0, 0.92, 3.48, 180], [109.8, 0.92, 3.46, 180], [11.0, 0.92, 3.76, 180], [-9.88, 0.95, -6.16, 0], [-10.0, 1.0, -13.36, 180], [10.39, 1.0, 11.2, 270],
+        [112.25, 1.1, -5.93, 0], [114.15, 1.1, -5.93, 0]],
       lampWreaths: true
     },
     office: {

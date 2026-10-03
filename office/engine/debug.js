@@ -160,6 +160,8 @@ const debug = {
   arrive(z, place) { return travel(z, place); },
   panel(kind, arg) { if (kind) openPanel(kind, arg); else if (!panel.hidden) closePanel(); return state; },
   mapTab(t) { MAP.tab = t === 'room' ? 'room' : 'town'; if (panelKind === 'map') renderPanel(); return MAP.tab; },
+  mapDistrict(d) { MAP.district = d == null ? null : d === 'all' ? 'all' : +d; if (panelKind === 'map') renderPanel(); return MAP.district; },          // the town map: 0 Westside, 1 downtown, 'all'
+  warp(x, z, heading) { if (!player || !Z) return null; player.pos.set(x, 0, z); if (heading != null) player.heading = heading; collide(player.pos, true); return [+player.pos.x.toFixed(2), +player.pos.z.toFixed(2)]; },          // stand somewhere in this zone
   closeCard() { if (!$('card').hidden) closeCard(true); if (!panel.hidden) closePanel(); return state; },
   reset() { resetGame(); store.del(SET_KEY); return true; },
   // what stands between the player and the camera (for tuning zone files)

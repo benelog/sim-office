@@ -185,12 +185,13 @@ async function enterZone(z, arrive, at, heading) {
   tags.forEach(t => t.el.remove());
   tags = [];
   Object.keys(bubbles).forEach(k => { bubbles[k].remove(); delete bubbles[k]; });
-  // floor: the walkable rectangle indoors, a wide ground outdoors
-  const [w, d] = spec.size;
-  const fw = spec.indoor ? w : w + 160, fd = spec.indoor ? d : d + 160;
+  // floor: the walkable rectangle indoors, a wide ground outdoors (round where you can walk: the town is long)
+  const [w, d] = spec.size, wk = spec.walk;
+  const fw = spec.indoor ? w : Math.max(w, wk[2] - wk[0]) + 160, fd = spec.indoor ? d : Math.max(d, wk[3] - wk[1]) + 160;
   const fg = new T.PlaneGeometry(fw, fd).rotateX(-Math.PI / 2);
   disposables.push(fg);
   const floor = new T.Mesh(fg, toon(spec.floor || '#c8c8c8'));
+  if (!spec.indoor) floor.position.set((wk[0] + wk[2]) / 2, 0, (wk[1] + wk[3]) / 2);
   floor.position.y = -0.01;
   floor.receiveShadow = true;
   zoneGroup.add(floor);

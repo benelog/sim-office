@@ -301,18 +301,24 @@
       carsEM.add(veh);
       const car = { type, g, veh, follow, wheels, lights, lamps, cell, din, dout: 0, path: null, next: null, s: s0, v: 0, half, ghost: 0, stuck: 0, steer: 0,
         m1: { x: 0, z: 0, r: 0.5 }, m2: { x: 0, z: 0, r: 0.5 }, x: 0, z: 0, dx: 0, dz: 1 };
+      putCar(car, cell, din, s0);
+      api.movers.push(car.m1, car.m2);
+      return car;
+    }
+    function putCar(car, cell, din, s0) {    // the car on the lane of a cell, coming in from din, s0 along it
+      car.cell = cell; car.din = din;
       car.dout = chooseExit(cell, din);
       car.path = cellPath(cell, din, car.dout);
       car.s = Math.min(s0, car.path.len * 0.9);
       car.next = nextState(cell, car.dout);
+      car.ghost = 0; car.stuck = 0; car.waitMe = 0;
       sample(car.path, car.s, tmp);
-      veh.position.set(tmp.x, 0, tmp.z);
-      veh.lookAt(new Y.Vector3(tmp.x + tmp.dx, 0, tmp.z + tmp.dz));
+      car.veh.position.set(tmp.x, 0, tmp.z);
+      car.veh.velocity.set(0, 0, 0);
+      car.veh.lookAt(new Y.Vector3(tmp.x + tmp.dx, 0, tmp.z + tmp.dz));
       car.dx = tmp.dx; car.dz = tmp.dz;
       lane(car);
-      api.movers.push(car.m1, car.m2);
       pose(car);
-      return car;
     }
     function pose(car) {                     // the car's place, heading and movers (two circles along it) from its vehicle
       const p = car.veh.position, vel = car.veh.velocity, sp = car.veh.getSpeed();
@@ -384,18 +390,24 @@
       car.lights.forEach(l => { l.visible = on; });
       car.lamps.forEach(m => { m.emissiveIntensity = on ? 1.2 : 0; });
     }
+    // where a car can start: a plain cell of road (no junction, no crosswalk) and a way in
+    const starts = [];
+    cells.forEach(c => {
+      if (c.junction || c.crossing || c.signal) return;
+      c.open.forEach(d => { if (!laneBlocked(c, d) && enterable(c, d) && hasWayOn(c, d)) starts.push([c, d]); });
+    });
+    // A long zone (the town: two towns and the road between them) keeps its life round you: cars start near you, and a
+    // car or a passer-by that gets more than FAR away comes back somewhere near you that you are not looking at
+    const FAR = 48;
+    const focus = () => { const pl = api.player; return pl && api.state !== 'title' ? [pl.pos.x, pl.pos.z] : [0, 0]; };
+    const nearStarts = () => { const f = focus(), near = starts.filter(([c]) => Math.hypot(c.x - f[0], c.z - f[1]) < FAR * 0.6); return near.length >= 4 ? near : starts; };
     function startCars() {
       if (dead || !cells.size || !Y) return;
       const n = some(high ? 4 : 2, busy.cars);
-      const starts = [];
-      cells.forEach(c => {
-        if (c.junction || c.crossing || c.signal) return;
-        c.open.forEach(d => { if (!laneBlocked(c, d) && enterable(c, d) && hasWayOn(c, d)) starts.push([c, d]); });
-      });
       const used = [];
-      const pl = api.player;
-      for (let tries = 0; tries < 80 && L.cars.length < n && starts.length; tries++) {
-        const [c, d] = pick(starts);
+      const pl = api.player, from = nearStarts();
+      for (let tries = 0; tries < 80 && L.cars.length < n && from.length; tries++) {
+        const [c, d] = pick(from);
         if (used.some(u => Math.hypot(u.x - c.x, u.z - c.z) < (n > 4 ? 5 : 6.5))) continue;
         if (pl && Math.hypot(pl.pos.x - c.x, pl.pos.z - c.z) < 3) continue;
         const [type, tint] = CARS[L.cars.length % CARS.length];
@@ -460,8 +472,10 @@
     // stand-in entity that follows the player); life.js still stops them when somebody is right in their way.
     const peopleEM = Y ? new Y.EntityManager() : null, playerObs = Y ? new Y.GameEntity() : null;
     if (playerObs) { playerObs.boundingRadius = 0.32; playerObs.position.set(1e6, 0, 1e6); }
+    let ringList = null;
     function startWalkers(models) {
-      const rs = rings();
+      const f = focus(), mid = (ring) => [(ring.corners[0][0] + ring.corners[2][0]) / 2, (ring.corners[0][1] + ring.corners[2][1]) / 2];
+      const rs = ringList = rings().sort((a, b) => Math.hypot(mid(a)[0] - f[0], mid(a)[1] - f[1]) - Math.hypot(mid(b)[0] - f[0], mid(b)[1] - f[1]));
       if (!rs.length || !Y) return;
       const n = Math.min(some(high ? 4 : 2, busy.feet), models.length);
       for (let j = 0; j < n; j++) {
@@ -680,6 +694,29 @@
       }
       L.sitters.forEach(s => sitterTick(s, dt, pl));
       footTick(dt, pl && api.state !== 'title' ? pl : null);
+      if ((recallAt -= dt) <= 0) { recallAt = 1.5; recall(); }
+    }
+    let recallAt = 1.5;
+    function recall() {             // bring back a car or a passer-by that went far from you (one a time)
+      if (!Y || dead) return;
+      const f = focus(), far = (x, z) => Math.hypot(x - f[0], z - f[1]) > FAR, hidden = (x, z) => Math.hypot(x - f[0], z - f[1]) > 16;
+      const car = L.cars.find(c => far(c.x, c.z));
+      if (car) {
+        const from = nearStarts().filter(([c]) => hidden(c.x, c.z) && !L.cars.some(o => o !== car && Math.hypot(o.x - c.x, o.z - c.z) < 6));
+        if (from.length) { const [c, d] = pick(from); putCar(car, c, d, rnd(0.2, 1.6)); }
+        return;
+      }
+      const w = L.walkers.find(x => far(x.a.pos.x, x.a.pos.z));
+      if (!w || !ringList) return;
+      const near = ringList.slice().sort((a, b) => Math.hypot(a.corners[0][0] - f[0], a.corners[0][1] - f[1]) - Math.hypot(b.corners[0][0] - f[0], b.corners[0][1] - f[1]));
+      const ring = near.find(rg => L.walkers.filter(o => o.ring === rg).length < 2) || near[0];
+      const leg = Math.floor(rnd(0, 4)), A = ring.corners[leg], B = ring.corners[(leg + w.dir + 4) % 4], u = rnd(0.1, 0.9);
+      const x = A[0] + (B[0] - A[0]) * u, z = A[1] + (B[1] - A[1]) * u;
+      if (!hidden(x, z)) return;
+      if (w.req) w.req.cancelled = true;
+      w.ring = ring; w.leg = (leg + w.dir + 4) % 4;
+      w.a.pos.set(x, 0, z); w.veh.position.set(x, 0, z); w.veh.velocity.set(0, 0, 0);
+      route(w, true);
     }
     function dispose() {
       dead = true;

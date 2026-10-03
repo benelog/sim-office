@@ -5,7 +5,7 @@
 // Drawn on a canvas from the zone's data: road tiles (the kit's 3 x 3 cells with sidewalks), props by their
 // footprints (SO_ZONE_KIT.BOX), places as pins, doors, the streets and areas the zone names in `map`, the people
 // (where they are now, or the door of the building they are in), the goal, and you. Redrawn while open.
-const MAP = { tab: 'town', canvas: null, zone: null };
+const MAP = { tab: 'town', canvas: null, zone: null, district: null };
 let mapTimer = 0;
 const MAPC = {
   grass: '#c5dcae', pave: '#e2ddd2', road: '#faf8f3', roadEdge: '#c9c2b4', line: '#d8cfba', stripe: '#ffffff',
@@ -33,8 +33,29 @@ function footprint(p) {
   return { x0: mx - W / 2, x1: mx + W / 2, z0: mz - D / 2, z1: mz + D / 2 };
 }
 function mapBounds(spec) {
-  const b = spec.walk || [-spec.size[0] / 2, -spec.size[1] / 2, spec.size[0] / 2, spec.size[1] / 2], m = spec.indoor ? 0.7 : spec.bounds ? 1.5 : 3.5;
+  const ds = mapDistricts(spec), d = ds[mapDistrict(spec)];
+  const all = ds.length && ds.reduce((u, x) => [Math.min(u[0], x.rect[0]), Math.min(u[1], x.rect[1]), Math.max(u[2], x.rect[2]), Math.max(u[3], x.rect[3])], [Infinity, Infinity, -Infinity, -Infinity]);
+  const b = d ? d.rect : all || spec.walk || [-spec.size[0] / 2, -spec.size[1] / 2, spec.size[0] / 2, spec.size[1] / 2], m = spec.indoor ? 0.7 : spec.bounds ? 1.5 : 3.5;
   return { x0: b[0] - m, x1: b[2] + m, z0: b[1] - m, z1: b[3] + m };
+}
+// The town is two towns with a long road between them (the zone's map.districts): the map shows one of them, the one
+// you are in (or the door you would come out of) unless you pick the other or all of Fairview (MAP.district: an index,
+// 'all', or null for where you are)
+const mapDistricts = (spec) => (!spec.indoor && spec.map && spec.map.districts) || [];
+function districtAt(spec, at) {
+  const ds = mapDistricts(spec);
+  if (!ds.length || !at) return -1;
+  const i = ds.findIndex(d => at[0] >= d.rect[0] && at[0] <= d.rect[2] && at[1] >= d.rect[1] && at[1] <= d.rect[3]);
+  if (i >= 0) return i;
+  const dist = (d) => Math.hypot(at[0] - (d.rect[0] + d.rect[2]) / 2, at[1] - (d.rect[1] + d.rect[3]) / 2);
+  return ds.reduce((best, d, j) => dist(d) < dist(ds[best]) ? j : best, 0);
+}
+function mapDistrict(spec) {
+  const ds = mapDistricts(spec);
+  if (!ds.length || MAP.district === 'all') return -1;
+  if (MAP.district != null && ds[MAP.district]) return MAP.district;
+  const you = youOnMap(spec.id, spec);
+  return you ? districtAt(spec, you.at) : 0;
 }
 // where someone (an npc row) is on the map of zone `mz`: their spot, or the door of the building they are in
 function personOnMap(n, mz, spec) {
@@ -69,12 +90,15 @@ function renderMapPanel(h, sub, body) {
   const spec = zoneSpec(mapZone());
   h.textContent = MAP.tab === 'room' && spec.id !== 'city' ? loc(spec) : tr(`${CFG.city} · town map`, `${zoneName('city')[1] || CFG.city} 지도`);
   sub.textContent = tr(`${weekday(G.day)}, ${clock(G.minute)}`, `${WEEKDAYS_KO[(G.day - 1) % 7]}, ${clockKo(G.minute)}`);
-  const tabs = zoneId && zoneId !== 'city' ? `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="town" aria-selected="${MAP.tab !== 'room'}">${tr('Town', '시내')}</button><button type="button" role="tab" data-tab="room" aria-selected="${MAP.tab === 'room'}">${esc(tr(zoneName(zoneId)[0], zoneName(zoneId)[1]))}</button></div>` : '';
+  let tabs = zoneId && zoneId !== 'city' ? `<div class="tabs" role="tablist"><button type="button" role="tab" data-tab="town" aria-selected="${MAP.tab !== 'room'}">${tr('Town', '시내')}</button><button type="button" role="tab" data-tab="room" aria-selected="${MAP.tab === 'room'}">${esc(tr(zoneName(zoneId)[0], zoneName(zoneId)[1]))}</button></div>` : '';
+  const ds = mapDistricts(spec), di = mapDistrict(spec);
+  if (ds.length) tabs += `<div class="tabs districts" role="tablist">${ds.map((d, i) => `<button type="button" role="tab" data-district="${i}" aria-selected="${di === i}">${esc(loc(d))}</button>`).join('')}<button type="button" role="tab" data-district="all" aria-selected="${di < 0}">${tr(`All of ${CFG.city}`, `${zoneName('city')[1] || CFG.city} 전체`)}</button></div>`;
   body.innerHTML = `${tabs}<canvas class="map" aria-label="Map"></canvas>
     <div class="legend"><span><i class="you"></i>${tr('You', '나')}</span><span><i class="person"></i>${tr('People', '사람')}</span><span><i class="bang">!</i>${tr('Someone to talk to', '이야기할 사람')}</span><span><i class="goal"></i>${tr('Where to go', '갈 곳')}</span><span><i class="door"></i>${tr('Door', '문')}</span></div>
     <div class="map-list"></div>`;
   MAP.canvas = body.querySelector('canvas.map');
-  body.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => { MAP.tab = b.dataset.tab; renderPanel(); }));
+  body.querySelectorAll('.tabs button[data-tab]').forEach(b => b.addEventListener('click', () => { MAP.tab = b.dataset.tab; renderPanel(); }));
+  body.querySelectorAll('.tabs button[data-district]').forEach(b => b.addEventListener('click', () => { MAP.district = b.dataset.district === 'all' ? 'all' : +b.dataset.district; renderPanel(); }));
   drawMap();
 }
 function drawMap() {
@@ -90,6 +114,7 @@ function drawMap() {
   const g = cv.getContext('2d');
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
   const X = (x) => (x - B.x0) * s, Y = (z) => (z - B.z0) * s;
+  const inView = (at) => !!at && at[0] >= B.x0 && at[0] <= B.x1 && at[1] >= B.z0 && at[1] <= B.z1;
   const rect = (r, fill, stroke, lw) => { g.beginPath(); g.rect(X(r.x0), Y(r.z0), (r.x1 - r.x0) * s, (r.z1 - r.z0) * s); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); } };
   const disc = (x, z, r, fill, stroke, lw) => { g.beginPath(); g.arc(X(x), Y(z), r, 0, Math.PI * 2); if (fill) { g.fillStyle = fill; g.fill(); } if (stroke) { g.strokeStyle = stroke; g.lineWidth = lw || 1; g.stroke(); } };
   const halo = (text, x, y, font, color, align) => { g.font = font; g.textAlign = align || 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round'; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.strokeText(text, x, y); g.fillStyle = color; g.fillText(text, x, y); };
@@ -182,9 +207,12 @@ function drawMap() {
   const M = spec.map || {};
   g.textBaseline = 'middle';
   (M.streets || []).forEach(st => {
+    const lo = st.along === 'x' ? B.x0 : B.z0, hi = st.along === 'x' ? B.x1 : B.z1, sp = st.span || [-Infinity, Infinity];   // a street of one of the towns: only along its span
+    if (sp[1] < lo || sp[0] > hi) return;
+    const from = Math.max(lo, sp[0]) + 1.2;
     g.save();
-    if (st.along === 'x') { g.translate(X(B.x0 + 1.2), Y(st.at)); g.textAlign = 'left'; }
-    else { g.translate(X(st.at), Y(B.z0 + 1.2)); g.rotate(Math.PI / 2); g.textAlign = 'left'; }
+    if (st.along === 'x') { g.translate(X(from), Y(st.at)); g.textAlign = 'left'; }
+    else { g.translate(X(st.at), Y(from)); g.rotate(Math.PI / 2); g.textAlign = 'left'; }
     g.font = '600 10px ' + getComputedStyle(document.body).fontFamily;
     g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.85)'; g.strokeText(st.name, 0, 0);
     g.fillStyle = MAPC.street; g.fillText(st.name, 0, 0);
@@ -203,7 +231,7 @@ function drawMap() {
   const labels = [];
   Object.keys(spec.places).forEach(pid => {
     const pl = spec.places[pid];
-    if (!pl || !pl.at || pl.guessed || HEROES.some(h => h.home_door === pid && h.id !== G.hero)) return;
+    if (!pl || !pl.at || pl.guessed || !inView(pl.at) || HEROES.some(h => h.home_door === pid && h.id !== G.hero)) return;
     const info = place(pid), isDoor = placeKind(pid) === 'door' || /_door$/.test(pid);
     const x = X(pl.at[0]), y = Y(pl.at[1]);
     if (isDoor) { g.fillStyle = MAPC.pin; g.beginPath(); g.moveTo(x, y - 5); g.lineTo(x + 5, y); g.lineTo(x, y + 5); g.lineTo(x - 5, y); g.closePath(); g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.2; g.stroke(); }
@@ -211,13 +239,25 @@ function drawMap() {
     labels.push({ x, y: y - 9, text: loc(info), sub: null, w: 0 });
   });
   // ----- the goal, the people, you
+  // something in the other town: an arrow at the edge of the map pointing at it, with the name of that town
+  const ds = mapDistricts(spec);
+  const edge = (at, color, text, you) => {
+    const x = clamp(X(at[0]), 12, W - 12), y = clamp(Y(at[1]), 12, H - 12), a = Math.atan2(Y(at[1]) - y, X(at[0]) - x);
+    g.save(); g.translate(x, y); g.rotate(a);
+    g.beginPath(); g.moveTo(9, 0); g.lineTo(-5, -7); g.lineTo(-2, 0); g.lineTo(-5, 7); g.closePath();
+    g.fillStyle = color; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 1.4; g.stroke();
+    g.restore();
+    const d = ds[districtAt(spec, at)];
+    labels.push({ x: x + 7, y, text: text + (d ? ` · ${loc(d)}` : ''), you, person: !you, left: true });
+  };
   const goal = goalOnMap(mz, spec);
-  if (goal) { g.setLineDash([3, 3]); disc(goal[0], goal[1], 12, null, MAPC.goal, 2.5); g.setLineDash([]); }
+  if (goal && inView(goal)) { g.setLineDash([3, 3]); disc(goal[0], goal[1], 12, null, MAPC.goal, 2.5); g.setLineDash([]); }
+  else if (goal) edge(goal, MAPC.goal, tr('Where to go', '갈 곳'));
   const open = openEpisodes();
   const seen = {};
   cast().forEach(n => {
     const at = personOnMap(n, mz, spec);
-    if (!at) return;
+    if (!at || !inView(at.at)) return;
     const k = at.at[0].toFixed(1) + ',' + at.at[1].toFixed(1), j = (seen[k] = (seen[k] || 0) + 1) - 1;
     const x = X(at.at[0]) + (at.inside ? (j % 3) * 9 - 9 : 0), y = Y(at.at[1]) + (at.inside ? 10 + Math.floor(j / 3) * 9 : 0);
     g.beginPath(); g.arc(x, y, 4.5, 0, Math.PI * 2); g.fillStyle = MAPC.person; g.fill(); g.strokeStyle = MAPC.personEdge; g.lineWidth = 1.2; g.stroke();
@@ -230,7 +270,8 @@ function drawMap() {
     }
   });
   const you = youOnMap(mz, spec);
-  if (you) {
+  if (you && !inView(you.at)) edge(you.at, MAPC.you, tr('You', '나'), true);
+  else if (you) {
     const x = X(you.at[0]), y = Y(you.at[1]) - (you.inside ? 12 : 0);
     g.save(); g.translate(x, y);
     if (you.heading != null) { g.rotate(-you.heading + Math.PI); g.beginPath(); g.moveTo(0, -9); g.lineTo(6, 7); g.lineTo(0, 3.5); g.lineTo(-6, 7); g.closePath(); }
@@ -270,7 +311,7 @@ function drawMap() {
     const items = [];
     Object.keys(spec.places).forEach(pid => {
       const pl = spec.places[pid];
-      if (!pl || pl.guessed) return;
+      if (!pl || pl.guessed || !inView(pl.at)) return;
       const people = cast().filter(n => { const at = personOnMap(n, mz, spec); return at && !at.inside && Math.hypot(at.at[0] - pl.at[0], at.at[1] - pl.at[1]) < 2.2; }).map(n => firstName(n));
       const acts = placeActions(pid).map(a => a.label.replace(/ \(.*\)$/, ''));
       const talk = open.filter(e => (isPhone(e) ? e.place === pid : cast().some(n => n.id === e.npc && (npcPlaceNow(n) === pid)))).map(e => loc(e, 'title'));

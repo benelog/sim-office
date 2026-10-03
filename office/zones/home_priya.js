@@ -1,4 +1,4 @@
-/* Priya's home: a loft at Cedar Street Lofts downtown, on the second floor, one open room of 8 x 6 with windows
+/* Priya's home: a loft at Cedar Street Lofts in Westside, on the second floor, one open room of 8 x 6 with windows
    on every side. The bed area is the north-west corner (a double bed, a night stand, a closet on the west wall)
    behind a half-height partition with low bookcases. Her desk stands under the big north windows next to a
    whiteboard with the roadmap; the kitchen runs along the east half of the north wall (sink, stove, a built-in
@@ -82,10 +82,10 @@
       f('chairModernCushion', 0.45, 0.75, 90), f('chairModernCushion', 1.55, 0.75, 270),
       f('plantSmall1', 1.0, 0.75, 0, { lift: 0.3 })
     ],
-    // ----- outside, a floor and a half down: Cedar Street (east), the parking lot and the market, downtown's towers
+    // ----- outside, a floor and a half down: Cedar Street (east), the residents' lot and the market, the houses of Westside
     [
-      out('city', 'building-skyscraper-a', -7.5, -11.5, 0), out('city', 'building-d', -1.5, -11.0, 0),
-      out('city', 'building-skyscraper-c', 4.5, -12.0, 0), out('city', 'building-f', 11.0, -11.0, 0),
+      out('city', 'building-type-b', -7.5, -11.5, 0), out('city', 'building-d', -1.5, -11.0, 0),
+      out('city', 'building-type-d', 4.5, -12.0, 0), out('city', 'building-f', 11.0, -11.0, 0),
       out('city', 'building-h', -10.0, -1.0, 90), out('city', 'building-a', -10.0, 4.5, 90),
       out('city', 'building-g', 13.5, -3.0, 270), out('city', 'low-detail-building-wide-a', 14.0, 4.0, 270),
       out('city', 'building-e', -3.0, 11.5, 180), out('city', 'building-b', 5.0, 11.5, 180),
@@ -132,7 +132,7 @@
           { pattern: 'road', rect: [6.2, -80, 10.2, 80], dir: 'z' },                                 // Cedar Street
           { pattern: 'road', rect: [-80, -8.6, 80, -5.6], dir: 'x' },
           { pattern: 'lot', rect: [-8, 4.6, 4.5, 7.4], dir: 'x' }] },                                // the parking lot
-        skyline: { kind: 'downtown', seed: 12, y: STREET, h: 12 },
+        skyline: { kind: 'suburb', seed: 12, y: STREET, h: 12 },
         panels: [
           { kind: 'board', wall: 'n', along: 0.55, y: 0.82, w: 0.85, h: 0.55, text: 'Q4 roadmap', frame: '#9aa3ad', rim: 0.03 },
           { kind: 'poster', wall: 'e', along: 2.5, y: 0.85, w: 0.42, h: 0.56, frame: '#ffffff', text: 'Ship it', lines: ['Small steps', 'Every week'], band: '#3d6fb4', bg: '#f7f9fc' },

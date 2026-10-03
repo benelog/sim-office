@@ -63,11 +63,19 @@ export const places = [
   },
   {
     id: 'bus_stop',
-    name: 'Bus stop on Maple Street',
-    name_ko: '메이플 스트리트 버스 정류장',
+    name: 'Westside bus stop',
+    name_ko: '웨스트사이드 버스 정류장',
     zone: 'city',
     kind: 'transit',
-    note: 'The Number 12 bus downtown, $2.50 a ride.'
+    note: 'On Maple Street by the apartments: the Number 12 bus downtown, about 15 minutes, $2.50 a ride.'
+  },
+  {
+    id: 'bus_stop_downtown',
+    name: 'Downtown bus stop',
+    name_ko: '다운타운 버스 정류장',
+    zone: 'city',
+    kind: 'transit',
+    note: 'On Maple Street at Lake Avenue, across from Seaside Labs: the Number 12 bus back to Westside, $2.50 a ride.'
   },
   {
     id: 'client_door',
