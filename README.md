@@ -3,7 +3,7 @@
 미국의 작은 바닷가 도시 Fairview에 있는 IT 회사 **Seaside Labs**에서 일하는 세 사람(신입 개발자 Jun, 시니어 개발자 Derek, 프로덕트 매니저 Priya) 가운데 하나가 되어, 출퇴근하고 회의하고 점심을 먹고 장을 보고 공과금을 내며 **미국의 일상과 직장 생활**을 겪어 보는 오픈 월드 3D 게임입니다. 화면은 영어 또는 한국어 가운데 하나로 보고(🌐), 인물은 영어로 말합니다.
 정적 웹이고 빌드가 없으며, `office/index.html`을 직접 열어도(`file://`) 동작합니다. 루트 `index.html`은 거기로 넘겨 줍니다.
 
-**플레이: https://benelog.github.io/sim-office/** (GitHub Pages, main 브랜치 루트 그대로) · 소스: https://github.com/benelog/sim-office
+**플레이: https://sim-office.benelog.net/** (GitHub Pages, main 브랜치 루트 그대로) · 소스: https://github.com/benelog/sim-office
 
 ```sh
 google-chrome "file://$PWD/office/index.html"

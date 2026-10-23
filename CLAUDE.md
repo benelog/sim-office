@@ -7,7 +7,7 @@ Sim Office — 미국 IT 회사의 직원으로 출퇴근하며 미국의 일상
 - **`file://`에서 동작해야 합니다**: `fetch()` 금지, 외부 텍스처 파일 참조 금지(glb 안에 포함).
 - 점검: `TMPDIR=/tmp/claude-1000 tools/office-check.sh <출력폴더>`. `TMPDIR`이 길면 Chrome이 바로 죽습니다. 스크린숏은 직접 열어 봅니다.
 - 이 컴퓨터의 Chrome 확장 탭에서는 `requestAnimationFrame`이 돌지 않습니다. 사용자에게 보여 줄 때는 `google-chrome "file://$PWD/office/index.html"`처럼 일반 창에 엽니다.
-- 원격 git 저장소: `git@github.com:benelog/sim-office.git`(공개, origin/main). `git push origin main`. GitHub Pages가 main 루트를 https://benelog.github.io/sim-office/ 로 배포합니다(`.nojekyll`).
+- 원격 git 저장소: `git@github.com:benelog/sim-office.git`(공개, origin/main). `git push origin main`. GitHub Pages가 main 루트를 https://sim-office.benelog.net/ 로 배포합니다(`.nojekyll`, `CNAME`; DNS는 Netlify의 benelog.net 영역에 CNAME → benelog.github.io).
 - 엔진은 three.js(MIT, `vendor/three-game.min.js`) 위에 직접 짠 것이고, 자동차·행인 조향은 Yuka(MIT, `vendor/yuka.min.js`)의 Vehicle·FollowPath·Separation·ObstacleAvoidance를 씁니다. 길찾기는 자체 격자 A*(three-pathfinding은 구역마다 메시 생성에 1~3초가 걸려 뺐음).
 - **주인공은 셋**(Jun·Derek·Priya, DoltHub `heroes`): 에피소드와 달력은 `hero` 열로 나뉩니다. 시드를 올리기 전에 `node tools/seed-json.mjs <시드.sql> --out <db.js>` → `node tools/db-lint.mjs <db.js>`로 확인하고, 점검은 `SO_HERO=derek tools/office-check.sh …`처럼 주인공을 고릅니다.
 - 저작권: Kenney·Quaternius 에셋은 CC0(표기 권장), three.js·Yuka는 MIT. 대사·표현은 자체 저작이고 실존 회사·인물 이름을 쓰지 않습니다(Seaside Labs, Summit Retail, Fairview는 가상). 예외: 집 TV(`tv` 표)는 사용자 요청으로 실제 미국 뉴스·IT 뉴스 YouTube 채널을 공식 임베드 플레이어로 보여 줍니다(인터넷 필요, `file://`에서는 YouTube 링크만). 영어 기본, 한국어는 `_ko`(화면에 보이는 글은 모두 `_ko` 짝이 있어야 함: 엔진은 `tr(en, ko)`·`loc(row, field)`).
