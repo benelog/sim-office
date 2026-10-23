@@ -1,7 +1,7 @@
 # Sim Office
 
 미국의 작은 바닷가 도시 Fairview에 있는 IT 회사 **Seaside Labs**에서 일하는 세 사람(신입 개발자 Jun, 시니어 개발자 Derek, 프로덕트 매니저 Priya) 가운데 하나가 되어, 출퇴근하고 회의하고 점심을 먹고 장을 보고 공과금을 내며 **미국의 일상과 직장 생활**을 겪어 보는 오픈 월드 3D 게임입니다. 화면은 영어 또는 한국어 가운데 하나로 보고(🌐), 인물은 영어로 말합니다.
-정적 웹이고 빌드가 없으며, `office/index.html`을 직접 열어도(`file://`) 동작합니다. 루트 `index.html`은 거기로 넘겨 줍니다.
+정적 웹이고 빌드가 없으며, `office/index.html`을 직접 열어도(`file://`) 동작합니다. 루트 `index.html`은 게임 소개 페이지입니다(영어·한국어, 그림은 `site/img/`; 고른 언어는 게임의 `so.v1.settings.lang`에 함께 저장).
 
 **플레이: https://sim-office.benelog.net/** (GitHub Pages, main 브랜치 루트 그대로) · 소스: https://github.com/benelog/sim-office
 
@@ -30,6 +30,7 @@ google-chrome "file://$PWD/office/index.html"
 
 | 경로 | 내용 |
 |---|---|
+| `index.html`, `site/img/` | 소개 페이지(sim-office.benelog.net 첫 화면)와 그 스크린숏(`tools/office-check.sh`로 찍어 webp로 줄임) |
 | `office/index.html`, `game.css`, `game.js` | 엔진: 존·인물·대화·TTS·시간·돈·상점·지난 대화·저장·디버그 API(`SO.debug`) |
 | `office/zones/<zone>.js` | 존 10개의 배치(home, home_derek, home_priya, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
 | `office/data/db.js` | DoltHub에서 내려받은 데이터(`window.SO_DB`). **생성물** |

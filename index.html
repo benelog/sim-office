@@ -2,10 +2,450 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=office/index.html">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Sim Office</title>
+<meta name="description" content="A free open-world 3D game in your browser: work at a software company in a small American city, commute, show up on time, pay the bills and get through the week.">
+<meta name="theme-color" content="#16233b">
+<meta property="og:type" content="website">
+<meta property="og:title" content="Sim Office">
+<meta property="og:description" content="Work at a software company in a small American city: commute, show up on time, pay the bills and get through the week. Free, in your browser.">
+<meta property="og:url" content="https://sim-office.benelog.net/">
+<meta property="og:image" content="https://sim-office.benelog.net/site/img/og.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<script>
+  // the language of this page and of the game: the game keeps it in localStorage so.v1.settings.lang
+  (function () {
+    var lang;
+    try { lang = (JSON.parse(localStorage.getItem('so.v1.settings') || 'null') || {}).lang; } catch (e) { /* private mode */ }
+    if (lang !== 'en' && lang !== 'ko') lang = /^ko\b/i.test(navigator.language || '') ? 'ko' : 'en';
+    document.documentElement.lang = lang;
+  })();
+</script>
+<style>
+  :root {
+    --paper: #fbfaf6;
+    --paper-2: #f2f0e8;
+    --line: #dcdfe5;
+    --ink: #1d2433;
+    --ink-soft: #545d70;
+    --navy: #16233b;
+    --navy-2: #22324f;
+    --accent: #2f7d7a;
+    --accent-deep: #215c5a;
+    --accent-soft: #e2f1ef;
+    --amber: #e0a33a;
+    --red: #c24a3d;
+    --font: "Inter", "Segoe UI", "Helvetica Neue", Arial, "Noto Sans KR", sans-serif;
+    --font-ko: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+    --wrap: 1120px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font: 17px/1.6 var(--font); -webkit-font-smoothing: antialiased; }
+  html[lang="ko"] body { font-family: var(--font-ko); word-break: keep-all; }
+  html[lang="en"] .ko, html[lang="ko"] .en { display: none !important; }
+  img { max-width: 100%; display: block; }
+  a { color: var(--accent-deep); }
+  h1, h2, h3 { line-height: 1.2; margin: 0; }
+  h2 { font-size: clamp(26px, 3.4vw, 36px); letter-spacing: -.01em; }
+  h3 { font-size: 19px; }
+  p { margin: 0; }
+  .wrap { max-width: var(--wrap); margin: 0 auto; padding: 0 20px; }
+  .eyebrow { font-size: 13px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--accent); }
+  .btn { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-weight: 600; text-decoration: none; border-radius: 10px; padding: 12px 20px; border: 1px solid var(--accent-deep); background: var(--accent); color: #fff; cursor: pointer; }
+  .btn:hover { background: var(--accent-deep); }
+  .btn.ghost { background: #ffffff14; border-color: #ffffff55; color: #fff; }
+  .btn.ghost:hover { background: #ffffff26; }
+  .btn:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+
+  /* the bar */
+  .bar { position: sticky; top: 0; z-index: 10; background: #16233bf2; color: #eef2f8; backdrop-filter: blur(6px); }
+  .bar .wrap { display: flex; align-items: center; gap: 16px; height: 56px; }
+  .bar .brand { font-weight: 700; letter-spacing: .02em; color: #fff; text-decoration: none; margin-right: auto; }
+  .bar nav { display: flex; gap: 18px; font-size: 15px; }
+  .bar nav a { color: #c9d3e4; text-decoration: none; }
+  .bar nav a:hover { color: #fff; }
+  .langs { display: flex; border: 1px solid #ffffff40; border-radius: 8px; overflow: hidden; }
+  .langs button { font: inherit; font-size: 14px; padding: 4px 10px; border: 0; background: transparent; color: #c9d3e4; cursor: pointer; }
+  .langs button[aria-pressed="true"] { background: #ffffff26; color: #fff; }
+  .bar .btn { padding: 7px 14px; font-size: 15px; }
+  @media (max-width: 760px) { .bar nav { display: none; } }
+
+  /* the top */
+  .hero { position: relative; color: #fff; background: var(--navy); overflow: hidden; }
+  .hero > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 40%; }
+  .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, #16233bf0 0%, #16233bc0 42%, #16233b30 75%), linear-gradient(0deg, #16233bb0, #0000 40%); }
+  .hero .wrap { position: relative; z-index: 1; padding-top: clamp(64px, 11vw, 140px); padding-bottom: clamp(64px, 11vw, 140px); }
+  .hero .eyebrow { color: #8fd6cf; }
+  .hero h1 { font-size: clamp(48px, 8vw, 88px); letter-spacing: -.02em; margin: 10px 0 18px; }
+  .hero .lead { font-size: clamp(18px, 2.1vw, 22px); max-width: 560px; color: #e3e9f3; }
+  .hero .cta { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 30px; }
+  .hero .cta .btn { font-size: 18px; padding: 14px 24px; }
+  .hero .small { margin-top: 18px; font-size: 14px; color: #b7c2d6; }
+
+  section { padding: clamp(56px, 8vw, 96px) 0; }
+  section.alt { background: var(--paper-2); }
+  .head { max-width: 720px; margin-bottom: 36px; }
+  .head h2 { margin: 8px 0 14px; }
+  .head p { color: var(--ink-soft); font-size: 18px; }
+
+  .shot { border-radius: 12px; overflow: hidden; border: 1px solid var(--line); background: var(--navy); box-shadow: 0 10px 30px #16233b1f; cursor: zoom-in; padding: 0; display: block; width: 100%; }
+  .shot img { width: 100%; height: auto; aspect-ratio: 1280 / 723; object-fit: cover; }
+
+  /* a working day */
+  .day { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .day figure { margin: 0; }
+  .day figcaption { margin-top: 12px; }
+  .day .time { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--accent); font-size: 14px; }
+  .day figcaption b { display: block; font-size: 17px; margin: 2px 0 4px; }
+  .day figcaption span.d { color: var(--ink-soft); font-size: 15px; }
+  @media (max-width: 900px) { .day { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .day { grid-template-columns: 1fr; } }
+
+  /* two columns: a picture and words */
+  .split { display: grid; grid-template-columns: 1.15fr 1fr; gap: clamp(28px, 5vw, 64px); align-items: center; }
+  .split.flip > :first-child { order: 2; }
+  .split .text h2 { margin: 8px 0 16px; }
+  .split .text p + p, .split .text p + ul, .split .text ul + p { margin-top: 14px; }
+  .split .text > p { color: var(--ink-soft); }
+  .stack { display: grid; gap: 16px; }
+  @media (max-width: 860px) { .split { grid-template-columns: 1fr; } .split.flip > :first-child { order: 0; } }
+  ul.ticks { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  ul.ticks li { position: relative; padding-left: 28px; }
+  ul.ticks li::before { content: ""; position: absolute; left: 4px; top: .55em; width: 10px; height: 10px; border-radius: 3px; background: var(--accent); }
+  .points { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .points span { font-size: 14px; font-weight: 600; border-radius: 999px; padding: 4px 12px; background: var(--accent-soft); color: var(--accent-deep); }
+  .points span.bad { background: #f8e3df; color: #8d3127; }
+
+  /* the three heroes */
+  .heroes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  .card { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 24px; display: flex; flex-direction: column; gap: 12px; }
+  .card .who { display: flex; align-items: center; gap: 14px; }
+  .card .av { flex: none; width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 22px; color: #fff; }
+  .card .role { color: var(--ink-soft); font-size: 15px; }
+  .card p.bio { color: var(--ink-soft); font-size: 16px; }
+  .card dl { margin: auto 0 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 15px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .card dt { color: var(--ink-soft); }
+  .card dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+  @media (max-width: 900px) { .heroes { grid-template-columns: 1fr; } }
+
+  /* a grid of small things */
+  .feats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 40px; }
+  .feat { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .feat h3 { font-size: 17px; margin-bottom: 6px; }
+  .feat p { color: var(--ink-soft); font-size: 15px; }
+  @media (max-width: 900px) { .feats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px) { .feats { grid-template-columns: 1fr; } }
+
+  .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  @media (max-width: 700px) { .gallery { grid-template-columns: 1fr; } }
+
+  /* controls */
+  .keys { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 36px; margin-top: 8px; }
+  .keys div { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 16px; }
+  .keys div span:first-child { color: var(--ink-soft); }
+  kbd { font: 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 3px 6px; margin-left: 3px; background: #fff; color: var(--ink); white-space: nowrap; }
+  @media (max-width: 700px) { .keys { grid-template-columns: 1fr; } }
+
+  /* the end */
+  .play { background: var(--navy); color: #fff; text-align: center; }
+  .play h2 { margin-bottom: 14px; }
+  .play p { color: #c9d3e4; max-width: 560px; margin: 0 auto 28px; }
+  footer { background: #0f1a2d; color: #9ba8bf; font-size: 14px; padding: 36px 0 44px; }
+  footer a { color: #c9d3e4; }
+  footer .wrap { display: grid; gap: 10px; }
+
+  /* a bigger look at a picture */
+  dialog.zoom { padding: 0; border: 0; background: transparent; max-width: min(1400px, 96vw); }
+  dialog.zoom::backdrop { background: #0a1020d9; }
+  dialog.zoom img { width: 100%; height: auto; border-radius: 10px; }
+  dialog.zoom p { color: #e3e9f3; text-align: center; margin-top: 10px; font-size: 15px; }
+</style>
 </head>
 <body>
-<p><a href="office/index.html">Sim Office</a></p>
+
+<header class="bar">
+  <div class="wrap">
+    <a class="brand" href="#top">Sim Office</a>
+    <nav aria-label="Sections">
+      <a href="#day"><span class="en">A day</span><span class="ko">하루</span></a>
+      <a href="#people"><span class="en">Who you are</span><span class="ko">주인공</span></a>
+      <a href="#life"><span class="en">Life</span><span class="ko">생활</span></a>
+      <a href="#controls"><span class="en">Controls</span><span class="ko">조작</span></a>
+    </nav>
+    <div class="langs" role="group" aria-label="Language">
+      <button type="button" data-lang="en">EN</button>
+      <button type="button" data-lang="ko">한국어</button>
+    </div>
+    <a class="btn" href="office/index.html"><span class="en">Play</span><span class="ko">플레이</span></a>
+  </div>
+</header>
+
+<main id="top">
+  <div class="hero">
+    <img src="site/img/downtown.webp" alt="Downtown Fairview from above: office towers, a coffee cart and cars on the streets" fetchpriority="high">
+    <div class="wrap">
+      <div class="eyebrow"><span class="en">Fairview · Seaside Labs</span><span class="ko">페어뷰 · 시사이드 랩스</span></div>
+      <h1>Sim Office</h1>
+      <p class="lead">
+        <span class="en">Take a job at a software company in a small American city. Catch the bus, make the standup on time, tip at the diner, pay the rent and get through the week without getting fired.</span>
+        <span class="ko">미국 작은 도시의 소프트웨어 회사에 다니며 살아 보는 오픈 월드 3D 게임입니다. 버스를 타고 출근하고, 스탠드업에 늦지 않고, 다이너에서 팁을 내고, 월세를 내며 해고되지 않고 한 주를 버팁니다.</span>
+      </p>
+      <div class="cta">
+        <a class="btn" href="office/index.html">▶ <span class="en">Play in your browser</span><span class="ko">브라우저에서 플레이</span></a>
+        <a class="btn ghost" href="#day"><span class="en">See what a day looks like</span><span class="ko">하루 둘러보기</span></a>
+      </div>
+      <p class="small"><span class="en">Free · nothing to install · keyboard, mouse or touch · English or Korean on screen</span><span class="ko">무료 · 설치 없음 · 키보드·마우스·터치 · 화면은 영어 또는 한국어</span></p>
+    </div>
+  </div>
+
+  <section id="day">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow"><span class="en">A working day</span><span class="ko">평일 하루</span></div>
+        <h2><span class="en">The alarm goes off at seven</span><span class="ko">알람은 7시에 울립니다</span></h2>
+        <p><span class="en">The clock runs while you walk, a minute a second, and stops while you talk. Shops keep their hours, the bus keeps its timetable and your coworkers keep theirs. At eleven you fall asleep wherever you are.</span><span class="ko">시간은 걸어 다닐 때 1초에 1분씩 흐르고 대화하는 동안에는 멈춥니다. 가게에는 영업시간이, 버스에는 시간표가, 동료에게는 저마다의 일과가 있습니다. 밤 11시가 되면 어디서든 잠이 듭니다.</span></p>
+      </div>
+      <div class="day">
+        <figure>
+          <button class="shot" type="button"><img src="site/img/home.webp" alt="A small studio apartment in the morning" loading="lazy" width="1280" height="723"></button>
+          <figcaption><span class="time">7:00 AM</span><b><span class="en">Wake up at home</span><span class="ko">집에서 일어나기</span></b><span class="d"><span class="en">Eat something: energy runs down by the hour. Cook from what is in the fridge, before it goes bad.</span><span class="ko">뭔가를 먹어 둡니다. 에너지는 시간마다 줄어듭니다. 냉장고에 있는 재료로, 상하기 전에 요리합니다.</span></span></figcaption>
+        </figure>
+        <figure>
+          <button class="shot" type="button"><img src="site/img/bus-stop.webp" alt="The Westside bus stop with a neighbor waiting" loading="lazy" width="1280" height="723"></button>
+          <figcaption><span class="time">8:20 AM</span><b><span class="en">The Number 12 downtown</span><span class="ko">12번 버스로 시내까지</span></b><span class="d"><span class="en">Home is in Westside, work is two miles away. The bus runs late in the rush hour and in the rain. Walking takes ninety minutes.</span><span class="ko">집은 웨스트사이드, 회사는 3km 떨어진 시내에 있습니다. 출근 시간과 비 오는 날에는 버스가 늦습니다. 걸어가면 90분이 걸립니다.</span></span></figcaption>
+        </figure>
+        <figure>
+          <button class="shot" type="button"><img src="site/img/coffee-cart.webp" alt="Nina's coffee cart on Lake Avenue, next to the Seaside Labs building" loading="lazy" width="1280" height="723"></button>
+          <figcaption><span class="time">8:40 AM</span><b><span class="en">Coffee on the way in</span><span class="ko">출근길 커피</span></b><span class="d"><span class="en">Order at Nina's cart, get a stamp on the loyalty card, and keep an eye on the clock. Work starts at nine.</span><span class="ko">니나의 커피 카트에서 주문하고 단골 카드에 도장을 받습니다. 시계를 보세요. 업무는 9시에 시작합니다.</span></span></figcaption>
+        </figure>
+        <figure>
+          <button class="shot" type="button"><img src="site/img/standup.webp" alt="The daily standup in the meeting room at Seaside Labs" loading="lazy" width="1280" height="723"></button>
+          <figcaption><span class="time">9:30 AM</span><b><span class="en">Standup, reviews, one-on-ones</span><span class="ko">스탠드업, 코드 리뷰, 1:1</span></b><span class="d"><span class="en">Say what you did yesterday, ask IT about the laptop, move a meeting, push back on a deadline, sit through benefits enrollment.</span><span class="ko">어제 한 일을 말하고, IT에 노트북 문제를 묻고, 회의를 옮기고, 마감을 다시 협의하고, 복리후생 가입을 합니다.</span></span></figcaption>
+        </figure>
+        <figure>
+          <button class="shot" type="button"><img src="site/img/diner.webp" alt="The counter of the diner with the lunch menu" loading="lazy" width="1280" height="723"></button>
+          <figcaption><span class="time">12:10 PM</span><b><span class="en">Lunch at the diner</span><span class="ko">다이너에서 점심</span></b><span class="d"><span class="en">Prices come before sales tax, and the tip is up to you. Or eat with a coworker who asked you along.</span><span class="ko">가격에는 판매세가 빠져 있고, 팁은 직접 정합니다. 함께 먹자고 한 동료와 먹어도 됩니다.</span></span></figcaption>
+        </figure>
+        <figure>
+          <button class="shot" type="button"><img src="site/img/park.webp" alt="Seaside Park in the evening with people on the benches" loading="lazy" width="1280" height="723"></button>
+          <figcaption><span class="time">6:40 PM</span><b><span class="en">After work</span><span class="ko">퇴근 후</span></b><span class="d"><span class="en">Groceries at Fairview Fresh, the farmers market (cash only), the laundromat, a bench in the park, the news on TV.</span><span class="ko">페어뷰 프레시에서 장보기, 파머스 마켓(현금만), 빨래방, 공원 벤치, TV 뉴스.</span></span></figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap split">
+      <div class="stack">
+        <button class="shot" type="button"><img src="site/img/talk.webp" alt="Ordering a latte at the coffee cart: four things to say" loading="lazy" width="1280" height="723"></button>
+        <button class="shot" type="button"><img src="site/img/talk-wrong.webp" alt="A wrong choice at the first standup and how the product manager reacts" loading="lazy" width="1280" height="723"></button>
+      </div>
+      <div class="text">
+        <div class="eyebrow"><span class="en">Conversations</span><span class="ko">대화</span></div>
+        <h2><span class="en">Say the right thing, the right way</span><span class="ko">맞는 말을, 맞는 말투로</span></h2>
+        <p><span class="en">People talk to you in English, out loud in their own voices. You are told what you want to say, and you pick one of four replies. There are no hints, and the wrong ones sound fine: a fact is off, the tone is wrong for the person, or it doesn't answer the question.</span><span class="ko">사람들은 영어로, 저마다의 목소리로 말을 겁니다. 하고 싶은 말이 안내되면 네 가지 대답 가운데 하나를 고릅니다. 힌트는 없고 틀린 보기도 그럴듯합니다. 사실이 틀렸거나, 상대에게 맞지 않는 말투이거나, 묻는 말에 대한 답이 아닙니다.</span></p>
+        <p><span class="en">Get it wrong and they react, and you try again. Finished conversations stay in your log to read and hear again.</span><span class="ko">틀리면 상대가 반응하고 다시 고릅니다. 끝낸 대화는 기록에 남아 다시 읽고 들을 수 있습니다.</span></p>
+        <div class="points">
+          <span><span class="en">First try +10</span><span class="ko">한 번에 +10</span></span>
+          <span><span class="en">Second +5</span><span class="ko">두 번째 +5</span></span>
+          <span><span class="en">After that +2</span><span class="ko">그 뒤 +2</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="people">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow"><span class="en">Who you are</span><span class="ko">주인공</span></div>
+        <h2><span class="en">Three people at Seaside Labs</span><span class="ko">시사이드 랩스의 세 사람</span></h2>
+        <p><span class="en">Pick one. Each has a home, a desk, a bank balance and fifteen days of their own conversations. The other two are your coworkers.</span><span class="ko">한 사람을 고릅니다. 사람마다 집과 자리, 통장 잔고, 15일치 대화가 따로 있습니다. 고르지 않은 두 사람은 동료로 나옵니다.</span></p>
+      </div>
+      <div class="heroes">
+        <article class="card">
+          <div class="who"><div class="av" style="background:#2f7d7a">J</div><div><h3>Jun Kim</h3><div class="role"><span class="en">Software developer, new hire</span><span class="ko">신입 소프트웨어 개발자</span></div></div></div>
+          <p class="bio"><span class="en">Just moved to Fairview for a first job in the US. Everything is new: the badge, the standup, the tipping, the first business trip.</span><span class="ko">미국 첫 직장 때문에 페어뷰로 막 이사 왔습니다. 출입증도, 스탠드업도, 팁도, 첫 출장도 모두 처음입니다.</span></p>
+          <dl>
+            <dt><span class="en">Home</span><span class="ko">집</span></dt><dd><span class="en">Studio, Maple Street Apartments</span><span class="ko">메이플 스트리트 아파트 원룸</span></dd>
+            <dt><span class="en">In the bank</span><span class="ko">시작 잔고</span></dt><dd>$1,200</dd>
+            <dt><span class="en">Paycheck</span><span class="ko">순급여(격주)</span></dt><dd>$2,600</dd>
+            <dt><span class="en">Rent</span><span class="ko">월세</span></dt><dd>$1,450</dd>
+          </dl>
+        </article>
+        <article class="card">
+          <div class="who"><div class="av" style="background:#3c5a8a">D</div><div><h3>Derek Alvarez</h3><div class="role"><span class="en">Senior developer, onboarding buddy</span><span class="ko">시니어 개발자, 온보딩 버디</span></div></div></div>
+          <p class="bio"><span class="en">Six years at Seaside Labs. Reviews the code, is on call when things break, and shows the new hire the ropes.</span><span class="ko">시사이드 랩스 6년 차. 코드를 리뷰하고, 장애가 나면 호출을 받고, 신입에게 일을 가르칩니다.</span></p>
+          <dl>
+            <dt><span class="en">Home</span><span class="ko">집</span></dt><dd><span class="en">House on River Road</span><span class="ko">리버 로드의 단독 주택</span></dd>
+            <dt><span class="en">In the bank</span><span class="ko">시작 잔고</span></dt><dd>$5,400</dd>
+            <dt><span class="en">Paycheck</span><span class="ko">순급여(격주)</span></dt><dd>$3,900</dd>
+            <dt><span class="en">Mortgage</span><span class="ko">주택담보대출</span></dt><dd>$2,150</dd>
+          </dl>
+        </article>
+        <article class="card">
+          <div class="who"><div class="av" style="background:#b0663a">P</div><div><h3>Priya Nair</h3><div class="role"><span class="en">Product manager</span><span class="ko">프로덕트 매니저</span></div></div></div>
+          <p class="bio"><span class="en">Runs the standup, owns the roadmap and talks to the client. Every meeting ends on time.</span><span class="ko">스탠드업을 진행하고, 로드맵을 책임지고, 고객과 이야기합니다. 회의는 늘 제시간에 끝납니다.</span></p>
+          <dl>
+            <dt><span class="en">Home</span><span class="ko">집</span></dt><dd><span class="en">Loft, Cedar Street Lofts</span><span class="ko">시더 스트리트 로프트</span></dd>
+            <dt><span class="en">In the bank</span><span class="ko">시작 잔고</span></dt><dd>$3,800</dd>
+            <dt><span class="en">Paycheck</span><span class="ko">순급여(격주)</span></dt><dd>$3,500</dd>
+            <dt><span class="en">Rent</span><span class="ko">월세</span></dt><dd>$1,900</dd>
+          </dl>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap split flip">
+      <div><button class="shot" type="button"><img src="site/img/work.webp" alt="The work record: score, standing, hours and paid time off" loading="lazy" width="1280" height="723"></button></div>
+      <div class="text">
+        <div class="eyebrow"><span class="en">Keep your job</span><span class="ko">직장 지키기</span></div>
+        <h2><span class="en">Fifteen days to prove yourself</span><span class="ko">15일 안에 자리 잡기</span></h2>
+        <p><span class="en">The first two weeks and the Monday after are your mission. Finish every conversation and you get a $1,000 bonus. After that the days are yours, but the job is still there on weekdays.</span><span class="ko">처음 2주와 그다음 월요일이 미션입니다. 대화를 모두 해내면 보너스 $1,000을 받습니다. 그 뒤로는 자유롭게 살지만, 평일에는 여전히 출근해야 합니다.</span></p>
+        <ul class="ticks">
+          <li><span class="en">Be in by nine. Late, in after lunch or not in at all, and the strikes add up.</span><span class="ko">9시까지 출근합니다. 지각·오후 출근·결근이 쌓이면 벌점이 됩니다.</span></li>
+          <li><span class="en">A text from your manager, then a final warning from HR, then you are let go and your badge stops opening the door.</span><span class="ko">매니저의 문자, 인사팀의 최종 경고를 거쳐 해고되면 출입증으로 문이 열리지 않습니다.</span></li>
+          <li><span class="en">Call in sick when you have a fever, ask for time off ahead, work from home on your hybrid days.</span><span class="ko">열이 나면 병가 전화를 하고, 휴가는 미리 신청하고, 하이브리드 근무일에는 집에서 일합니다.</span></li>
+        </ul>
+        <div class="points">
+          <span><span class="en">On time +5</span><span class="ko">제시간 +5</span></span>
+          <span class="bad"><span class="en">Late −10</span><span class="ko">지각 −10</span></span>
+          <span class="bad"><span class="en">Afternoon −20</span><span class="ko">오후 출근 −20</span></span>
+          <span class="bad"><span class="en">Absent −30</span><span class="ko">결근 −30</span></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="life">
+    <div class="wrap">
+      <div class="split">
+        <div class="stack">
+          <button class="shot" type="button"><img src="site/img/bank.webp" alt="The bank screen: paychecks, autopay bills and credit cards" loading="lazy" width="1280" height="723"></button>
+        </div>
+        <div class="text">
+          <div class="eyebrow"><span class="en">Everyday life</span><span class="ko">일상</span></div>
+          <h2><span class="en">The paperwork of living in America</span><span class="ko">미국에서 산다는 것의 자잘한 일들</span></h2>
+          <p><span class="en">Paychecks land every other Friday, rent leaves on the 21st, and the bills come out on autopay. Overdraw and the bank charges a fee. Build a credit score with a starter card, pick a health plan in open enrollment, and read your pay stub to see where the taxes went.</span><span class="ko">급여는 격주 금요일에 들어오고, 월세는 21일에 빠지고, 공과금은 자동이체로 나갑니다. 잔고를 넘겨 쓰면 수수료가 붙습니다. 첫 신용카드로 신용 점수를 쌓고, 복리후생 가입 기간에 건강보험을 고르고, 급여명세서에서 세금이 어디로 갔는지 봅니다.</span></p>
+        </div>
+      </div>
+      <div class="feats">
+        <div class="feat"><h3>📱 <span class="en">A phone that rings</span><span class="ko">울리는 휴대전화</span></h3><p><span class="en">Texts, email, voicemail and bank alerts, and also spam calls and phishing texts.</span><span class="ko">문자·이메일·음성 사서함·은행 알림, 그리고 스팸 전화와 피싱 문자까지.</span></p></div>
+        <div class="feat"><h3>🌦️ <span class="en">Weather and seasons</span><span class="ko">날씨와 계절</span></h3><p><span class="en">Rain, fog and cold mornings. Take an umbrella. The leaves turn as the autumn goes on.</span><span class="ko">비·안개·쌀쌀한 아침. 우산을 챙기세요. 가을이 깊어지면 나뭇잎 색이 바뀝니다.</span></p></div>
+        <div class="feat"><h3>📅 <span class="en">A real calendar</span><span class="ko">실제 달력</span></h3><p><span class="en">It starts on Monday, October 5, with real US holidays, paydays, bill dates and trash day.</span><span class="ko">10월 5일 월요일에 시작하고, 미국의 실제 공휴일, 월급날, 공과금 날짜, 쓰레기 내놓는 날이 있습니다.</span></p></div>
+        <div class="feat"><h3>🛒 <span class="en">Shops and cooking</span><span class="ko">장보기와 요리</span></h3><p><span class="en">Groceries with expiration dates, twelve recipes, cash back at the register, online orders delivered to your door.</span><span class="ko">유통기한이 있는 식료품, 요리법 12가지, 계산대에서 현금 인출, 문 앞까지 오는 온라인 주문.</span></p></div>
+        <div class="feat"><h3>🩺 <span class="en">Getting sick</span><span class="ko">아플 때</span></h3><p><span class="en">Flu season, the clinic and its copay, the pharmacy, a free flu shot if you get around to it.</span><span class="ko">독감 철, 진료소와 본인 부담금, 약국, 맞으러 가면 무료인 독감 예방주사.</span></p></div>
+        <div class="feat"><h3>🤝 <span class="en">Coworkers who notice</span><span class="ko">알아봐 주는 동료</span></h3><p><span class="en">Chat, reply, help out and say yes to lunch, and people get closer. Stand them up and they drift away.</span><span class="ko">이야기하고, 답장하고, 도와주고, 점심에 함께 가면 가까워집니다. 약속을 어기면 멀어집니다.</span></p></div>
+        <div class="feat"><h3>🏠 <span class="en">A home to keep</span><span class="ko">돌봐야 하는 집</span></h3><p><span class="en">Laundry, repairs to ask the landlord for, loud neighbors, the radio and the evening news on TV.</span><span class="ko">빨래, 집주인에게 부탁할 수리, 시끄러운 이웃, 라디오와 저녁 TV 뉴스.</span></p></div>
+        <div class="feat"><h3>✈️ <span class="en">A business trip</span><span class="ko">출장</span></h3><p><span class="en">Book the flight and hotel, get through security, sit out a delay, meet the client and file the expenses.</span><span class="ko">항공권과 호텔을 예약하고, 보안 검색을 지나, 지연을 견디고, 고객을 만나고, 경비를 정산합니다.</span></p></div>
+        <div class="feat"><h3>🏃 <span class="en">A run along the shore</span><span class="ko">바닷가 조깅</span></h3><p><span class="en">A first-person jogging game on the Fairview Loop: keep the beat with ← → and hear the waves.</span><span class="ko">페어뷰 루프를 1인칭으로 달리는 미니 게임. ← →로 박자를 맞추고 파도 소리를 듣습니다.</span></p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="alt">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow"><span class="en">Fairview</span><span class="ko">페어뷰</span></div>
+        <h2><span class="en">Two towns, two miles of Maple Street</span><span class="ko">두 동네, 메이플 스트리트 3km</span></h2>
+        <p><span class="en">Westside is where you live: homes, the park, the farmers market, the laundromat and the grocery store. Downtown is where you work: Seaside Labs, the coffee cart, the diner, the Harbor Grill and the airport shuttle. Fields and woods lie between.</span><span class="ko">웨스트사이드에는 집과 공원, 파머스 마켓, 빨래방, 식료품점이 있습니다. 시내에는 시사이드 랩스와 커피 카트, 다이너, 하버 그릴, 공항 셔틀이 있습니다. 그 사이에는 들판과 숲이 펼쳐집니다.</span></p>
+      </div>
+      <div class="gallery">
+        <button class="shot" type="button"><img src="site/img/westside.webp" alt="Westside in the morning: houses, the park and the bus stop" loading="lazy" width="1280" height="608"></button>
+        <button class="shot" type="button"><img src="site/img/westside-dusk.webp" alt="Westside at sunset" loading="lazy" width="1280" height="608"></button>
+        <button class="shot" type="button"><img src="site/img/map.webp" alt="The town map of Westside" loading="lazy" width="1280" height="723"></button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <div><button class="shot" type="button"><img src="site/img/talk-ko.webp" alt="The coffee cart conversation with the screen in Korean" loading="lazy" width="1280" height="723"></button></div>
+      <div class="text">
+        <div class="eyebrow"><span class="en">Language</span><span class="ko">언어</span></div>
+        <h2><span class="en">English or Korean on screen</span><span class="ko">화면은 영어 또는 한국어</span></h2>
+        <p><span class="en">Everything you read, from the lines and replies to the shop, the phone, the bank and the map, shows in the one language you pick with 🌐. The voices always speak English, like subtitles on a film. In Korean, the temperature is in °C.</span><span class="ko">대사와 보기, 상점, 휴대전화, 은행, 지도까지 화면의 글은 🌐에서 고른 한 언어로 보입니다. 목소리는 늘 영어라서 자막을 켜고 영화를 보는 것과 같습니다. 한국어에서는 기온도 °C로 나옵니다.</span></p>
+        <p><span class="en">The choice on this page carries over to the game.</span><span class="ko">이 페이지에서 고른 언어가 게임에도 그대로 적용됩니다.</span></p>
+      </div>
+    </div>
+  </section>
+
+  <section id="controls" class="alt">
+    <div class="wrap">
+      <div class="head">
+        <div class="eyebrow"><span class="en">Controls</span><span class="ko">조작</span></div>
+        <h2><span class="en">Walk, talk, get to work</span><span class="ko">걷고, 말하고, 출근하기</span></h2>
+        <p><span class="en">On a phone there is a joystick and an action button. Your game saves itself in the browser, one save for each person.</span><span class="ko">휴대폰에서는 조이스틱과 행동 버튼을 씁니다. 진행은 브라우저에 주인공마다 하나씩 저절로 저장됩니다.</span></p>
+      </div>
+      <div class="keys">
+        <div><span><span class="en">Walk</span><span class="ko">걷기</span></span><span><kbd>↑</kbd><kbd>↓</kbd> / <kbd>W</kbd><kbd>S</kbd></span></div>
+        <div><span><span class="en">Turn</span><span class="ko">돌기</span></span><span><kbd>←</kbd><kbd>→</kbd> / <kbd>A</kbd><kbd>D</kbd></span></div>
+        <div><span><span class="en">Run</span><span class="ko">달리기</span></span><span><kbd>Shift</kbd></span></div>
+        <div><span><span class="en">Talk, use, enter</span><span class="ko">대화·행동·들어가기</span></span><span><kbd>E</kbd> / <kbd>Enter</kbd></span></div>
+        <div><span><span class="en">Map</span><span class="ko">지도</span></span><span><kbd>M</kbd></span></div>
+        <div><span><span class="en">Phone</span><span class="ko">휴대전화</span></span><span><kbd>P</kbd></span></div>
+        <div><span><span class="en">Calendar</span><span class="ko">달력</span></span><span><kbd>C</kbd></span></div>
+        <div><span><span class="en">Bank</span><span class="ko">은행</span></span><span><kbd>B</kbd></span></div>
+        <div><span><span class="en">Work record</span><span class="ko">근무 기록</span></span><span><kbd>R</kbd></span></div>
+        <div><span><span class="en">Past conversations</span><span class="ko">지난 대화</span></span><span><kbd>T</kbd></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="play">
+    <div class="wrap">
+      <h2><span class="en">Your first day starts Monday</span><span class="ko">첫 출근은 월요일입니다</span></h2>
+      <p><span class="en">Runs in a desktop or phone browser. The first load is a large download of 3D models, so give it a moment.</span><span class="ko">PC와 휴대폰 브라우저에서 돌아갑니다. 처음에는 3D 모델을 내려받느라 조금 걸립니다.</span></p>
+      <a class="btn" href="office/index.html" style="font-size:18px;padding:14px 26px">▶ <span class="en">Play Sim Office</span><span class="ko">Sim Office 플레이</span></a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p><span class="en">Fairview, Seaside Labs, Summit Retail and everyone in them are made up. The lines are written for this game.</span><span class="ko">페어뷰, 시사이드 랩스, 서밋 리테일과 그 안의 사람들은 모두 가상이며, 대사는 이 게임을 위해 썼습니다.</span></p>
+    <p><span class="en">3D models</span><span class="ko">3D 모델</span>: <a href="https://kenney.nl">Kenney</a>, <a href="https://quaternius.com">Quaternius</a> (CC0) · <span class="en">Engine</span><span class="ko">엔진</span>: <a href="https://threejs.org">three.js</a>, <a href="https://mugen87.github.io/yuka/">Yuka</a> (MIT)</p>
+    <p><a href="https://github.com/benelog/sim-office"><span class="en">Source on GitHub</span><span class="ko">GitHub 소스</span></a></p>
+  </div>
+</footer>
+
+<dialog class="zoom" aria-label="Screenshot">
+  <form method="dialog"><button type="submit" style="all:unset;cursor:zoom-out;display:block"><img alt=""><p></p></button></form>
+</dialog>
+
+<script>
+  (function () {
+    var root = document.documentElement;
+    function show(lang) {
+      root.lang = lang;
+      document.querySelectorAll('.langs button').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.lang === lang)); });
+    }
+    show(root.lang === 'ko' ? 'ko' : 'en');
+    document.querySelectorAll('.langs button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        show(b.dataset.lang);
+        try {
+          var s = JSON.parse(localStorage.getItem('so.v1.settings') || 'null') || {};
+          s.lang = b.dataset.lang;
+          localStorage.setItem('so.v1.settings', JSON.stringify(s));
+        } catch (e) { /* private mode: this page only */ }
+      });
+    });
+    var zoom = document.querySelector('dialog.zoom');
+    if (zoom && zoom.showModal) {
+      document.querySelectorAll('button.shot').forEach(function (b) {
+        b.addEventListener('click', function () {
+          var img = b.querySelector('img');
+          zoom.querySelector('img').src = img.src;
+          zoom.querySelector('img').alt = img.alt;
+          zoom.querySelector('p').textContent = img.alt;
+          zoom.showModal();
+        });
+      });
+    }
+  })();
+</script>
 </body>
 </html>
