@@ -183,6 +183,31 @@ export const places = [
     note: 'Farmers market along the park fence: fruit, honey, cider. Weekends 8 AM to 1 PM, cash only.'
   },
   {
+    id: 'grill_bar',
+    name: 'Bar',
+    name_ko: '바',
+    zone: 'grill',
+    kind: 'desk',
+    note: 'Theo works behind it. You order at your table, not here.'
+  },
+  {
+    id: 'grill_door',
+    name: 'Harbor Grill',
+    name_ko: '하버 그릴',
+    zone: 'city',
+    kind: 'door',
+    note: 'Same id on both sides: the street door in city, the way out in the grill zone.'
+  },
+  { id: 'grill_host', name: 'Host stand', name_ko: '안내 데스크', zone: 'grill', kind: 'desk' },
+  {
+    id: 'grill_table',
+    name: 'Table by the window',
+    name_ko: '창가 테이블',
+    zone: 'grill',
+    kind: 'shop',
+    note: 'Sit down and order here: the only table service in town where the menu is sold at the table.'
+  },
+  {
     id: 'home_bed',
     name: 'Your bed',
     name_ko: '내 침대',

@@ -94,7 +94,7 @@ const DOORS = {        // zone:place → [zone, arrive] (only for generated zone
 };
 const ZONE_NAMES = {
   home: ['Your apartment', '내 아파트'], city: ['Fairview', '페어뷰'], office: ['Seaside Labs', '시사이드 랩스'],
-  diner: ['Maple Street Diner', '메이플 스트리트 다이너'], market: ['Fairview Market', '페어뷰 마켓'], airport: ['Fairview Airport', '페어뷰 공항'],
+  diner: ['Maple Street Diner', '메이플 스트리트 다이너'], grill: ['Harbor Grill', '하버 그릴'], market: ['Fairview Market', '페어뷰 마켓'], airport: ['Fairview Airport', '페어뷰 공항'],
   hotel: ['Harbor View Hotel', '하버 뷰 호텔'], client: ['Summit Retail HQ', '서밋 리테일 본사']
 };
 const TRAVEL_ZONES = ['airport', 'hotel', 'client'];

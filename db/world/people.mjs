@@ -365,6 +365,30 @@ export const npcs = [
     ]
   },
   {
+    id: 'naomi',
+    name: 'Naomi',
+    name_ko: '나오미',
+    role: 'Host at the Harbor Grill',
+    role_ko: '하버 그릴 안내 담당',
+    model: 'woman-suit-2',
+    place: 'grill_host',
+    voice_pitch: 1.05,
+    voice_rate: 0.98,
+    voice_like: 'Michelle|Ava|Samantha|Allison',
+    bio: 'Runs the front of the house and knows the regulars by name. Keeps the reservation book in pencil.',
+    bio_ko: '홀을 책임지고 단골의 이름을 모두 기억합니다. 예약 장부는 연필로 씁니다.',
+    chatter: [
+      {
+        line: 'Welcome to the Harbor Grill. Just one tonight? The table by the window is yours.',
+        line_ko: '하버 그릴에 오신 걸 환영해요. 한 분이세요? 창가 테이블에 앉으세요.'
+      },
+      { line: 'The salmon came in this morning. It goes fast.', line_ko: '연어는 오늘 아침에 들어왔어요. 금방 떨어져요.' },
+      { line: 'Fridays get busy after six. Come early if you can.', line_ko: '금요일은 6시 넘으면 붐벼요. 되도록 일찍 오세요.' },
+      { line: "Menu prices don't include tax or the tip.", line_ko: '메뉴 가격에는 세금과 팁이 들어 있지 않아요.' }
+    ],
+    schedule: [{ days: 'mon,tue,wed,thu,fri', time_from: '11:30', time_to: '21:30', place: 'grill_host' }]
+  },
+  {
     id: 'nina',
     name: 'Nina',
     name_ko: '니나',
@@ -496,6 +520,30 @@ export const npcs = [
       { days: 'weekday', time_from: '08:30', time_to: '11:40', place: 'office_it' },
       { days: 'weekday', time_from: '11:40', time_to: '12:15', place: 'office_kitchen' },
       { days: 'weekday', time_from: '12:15', time_to: '17:30', place: 'office_it' }
+    ]
+  },
+  {
+    id: 'theo',
+    name: 'Theo',
+    name_ko: '테오',
+    role: 'Server and bartender at the Harbor Grill',
+    role_ko: '하버 그릴 서버 겸 바텐더',
+    model: 'man-suit',
+    place: 'grill_bar',
+    voice_pitch: 0.95,
+    voice_rate: 0.98,
+    voice_like: 'Ryan|Andrew|Daniel|Fred',
+    bio: "Grew up on a fishing boat and can tell you where tonight's salmon came from.",
+    bio_ko: '고기잡이배에서 자랐고, 오늘 저녁 연어가 어디서 왔는지 말해 줄 수 있습니다.',
+    chatter: [
+      { line: "Take the table by the window. I'll come over for your order.", line_ko: '창가 테이블에 앉으세요. 주문받으러 갈게요.' },
+      { line: "The steak's good, but you came here for the fish.", line_ko: '스테이크도 좋지만, 여기 오셨으면 생선이죠.' },
+      { line: "The chowder is my grandmother's recipe. Don't tell the chef.", line_ko: '차우더는 저희 할머니 조리법이에요. 주방장한테는 비밀이에요.' },
+      { line: 'Iced tea refills are free. Just wave.', line_ko: '아이스티 리필은 무료예요. 손만 흔드세요.' }
+    ],
+    schedule: [
+      { days: 'wed,thu,fri', time_from: '11:30', time_to: '21:30', place: 'grill_bar' },
+      { days: 'sat,sun', time_from: '11:00', time_to: '22:00', place: 'grill_bar' }
     ]
   },
   {

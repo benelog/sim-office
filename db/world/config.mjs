@@ -131,6 +131,13 @@ export const config = {
   'hours_diner_2027-01-01': ['08:00-15:00', "New Year's Day"],
   hours_farm_stand: ['closed', 'the farmers market is on weekends only'],
   hours_farm_stand_weekend: ['08:00-13:00', 'the farmers market: Saturday and Sunday mornings'],
+  hours_grill: ['11:30-21:30', 'Harbor Grill opening hours'],
+  'hours_grill_2026-11-26': ['closed', 'Thanksgiving'],
+  'hours_grill_2026-12-24': ['11:30-15:00', 'Christmas Eve'],
+  'hours_grill_2026-12-25': ['closed', 'Christmas Day'],
+  'hours_grill_2026-12-31': ['11:30-22:30', "New Year's Eve"],
+  'hours_grill_2027-01-01': ['closed', "New Year's Day"],
+  hours_grill_weekend: ['11:00-22:00', 'Harbor Grill on Saturday and Sunday'],
   hours_market: ['07:00-22:00', 'Fairview Market opening hours'],
   'hours_market_2026-11-26': ['07:00-16:00', 'Thanksgiving: the market closes early'],
   'hours_market_2026-12-24': ['07:00-18:00', 'Christmas Eve'],
@@ -249,7 +256,7 @@ export const config = {
     '5.5',
     "state income tax, percent of pay after the premiums and the 401(k) (an effective rate; federal is each hero's own, from benefits_now and salary_net)"
   ],
-  tip_default: ['18', 'the tip chosen at first where you are served at a table (diner, restaurant); 0 at a counter'],
+  tip_default: ['18', 'the tip chosen at first where you are served at a table (diner, Harbor Grill, restaurant); 0 at a counter'],
   tip_options: ['0,15,18,20', 'tip choices in percent where food or drinks are served'],
   transit_sender: ['Fairview Transit', 'who sends the service alert on a rainy day'],
   trash_bags: [

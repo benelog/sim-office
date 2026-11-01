@@ -38,7 +38,8 @@
 - **하이브리드 근무**(2026-10-03, config `hybrid_from` 2026-11-09·`remote_days` mon,fri·`remote_people` maya,derek,priya,jun,linda, `routines.hybrid_days`·`remote_episodes`, `db/seed/87-hybrid.sql`): 11월 9일(36일째)부터 화~목은 사무실, 월·금은 집에서 일함. 10월 26일 린다의 안내 메일과 마야의 문자, 전사 회의 날 저녁 알림, 샘의 재택 체크리스트, 첫날 아침 문자. 재택하는 날에는 집 책상(`heroes.home_desk`)에서 "업무 로그인"이 출근 판정(`late_after`까지 정시, 늦으면 지각·오후 출근, 17시 뒤에는 로그인 불가, 안 하면 결근), `early_before` 전에 로그아웃하거나 로그인한 채 집을 나가면 자리를 비운 것(돌아오거나 다시 로그인하지 않으면 조퇴). 그날 사무실에 나와도 출근으로 침. 팀(`remote_people`)은 사무실에 없고 톰·샘만 나옴(그 사람의 에피소드가 열리면 사무실로 옴: 1월 4일 월요일 평가는 대면). 재택일의 회의는 화상 회의: 그날 일하는 책상(집 또는 사무실 내 자리)에서 전화처럼 열리고(`asCall`, 📹, "화상 회의 참여", 로그인 전이면 함께 로그인), 스탠드업은 화상용 대화 9개(`rt_video_<jun|dk|pr>_n`)를 따로 돌려 씀, 스프린트 계획은 화요일·회고는 목요일로 옮김(기존 대사의 요일 표현을 지움). 집 책상에서 로그인한 동안 "한 시간 일하기"와 업무 사건, 주간 평가·평가 점수에 그대로 들어감. 아침 카드·목표 상자·달력·Work record("하이브리드 근무" 칸, "재택")·잠자리 요약·매니저 문자·재택 중 해고 카드(화상 통화)가 재택에 맞게 바뀜. 사무실 잡담 `hybrid:office`·`hybrid:remote`. 저장 `G.login = { day, from home|office, at, off }`, `work.home { day: 1 }`. 디버그 `remote(d)`, `hybrid`, `login`, `logIn()`, `logOff()`.
 - **배운 표현**: `phrases`는 저장(`phrases`)에만 쌓이고 2026-10-02부터 화면에 보이지 않음(생활 체험으로 바꾸면서 대화 끝 카드와 Conversations에서 뺌).
 - **TTS**: 브라우저 `speechSynthesis`. **미국 영어(en-US) 목소리 우선**, 인물마다 `voice_pitch`·`voice_rate`(·`voice_like`: 목소리 이름 정규식). 인물 대사·답·배운 표현·상점 품목 이름을 읽어 줍니다. 헤더에 Voice 체크박스.
-- **상점**: 식료품점(market)·식당(diner)·커피 카트(coffee_cart)에서 `items`(kind `grocery|meal|drink|gear`)를 삽니다(잔액 확인, "You can't afford that"). 식료품은 인벤토리에 들어가 집에서 먹고, 식사·음료는 바로 먹습니다.
+- **하버 그릴**(2026-11-01, `office/zones/grill.js`): 다이너 옆의 해산물 레스토랑. 카운터에서 주문하는 다이너와 달리 창가 테이블(`grill_table`)에 앉아 주문하고, 팁 기본값은 다이너와 같습니다(`tableService`). 영업시간은 `config.hours_grill*`(평일 11:30~21:30, 주말 11:00~22:00, 추수감사절·성탄절·새해 첫날 휴무). 전용 대화는 없고 나오미·테오의 잡담만 있습니다. 파티는 대화에서만 언급됩니다.
+- **상점**: 식료품점(market)·식당(diner)·해산물 레스토랑(grill)·커피 카트(coffee_cart)에서 `items`(kind `grocery|meal|drink|gear`)를 삽니다(잔액 확인, "You can't afford that"). 식료품은 인벤토리에 들어가 집에서 먹고, 식사·음료는 바로 먹습니다.
 - **잠**: 집 침대(home_bed)에서 Sleep → 다음 날 07:00, 에너지 100, 급여·월세 처리, 그날의 캘린더 요약 카드.
 - **저장**: `localStorage` `so.v1.saves` = `{ [이름]: { name, model, day, minute, money, energy, zone, at, done:{episodeId:true}, inventory:{itemId:n}, phrases:[id], log:[…], score, points:[{day, minute, n, en, ko}], work:{pts, record:{day: on|late|noon|absent|trip|sick}, warned, fired, streak, stopDay}, epScore, saved } }`(캐릭터 이름마다 한 판), `so.v1.last` = 마지막에 한 이름. 자동 저장(에피소드 완료·구매·존 이동·잠). 예전 한 판짜리 `so.v1.save`는 시작할 때 목록으로 옮깁니다.
 - **날씨**(DoltHub `weather`, 하루 한 줄: `clear` `partly` `cloudy` `rain` `fog`, 최고·최저 기온 °F, 예보 문장): 하늘에 구름(하늘 셰이더의 `cover`), 흐리면 해가 약해지고 그림자가 옅어지며, 비 오는 날은 비가 오락가락(빗줄기 `LineSegments`), 안개는 아침에 끼고 11시까지 걷힘. 실내는 창밖 빛이 시간·날씨를 따름. HUD 시계 옆에 지금 기온, 아침 카드와 새 게임 첫 알림에 예보. 표의 마지막 날(21일째) 뒤로는 엔진이 계절로 만듦(`wxDay`: 달마다 평년 최고·최저 기온(10월 72/53 → 12·1월 58/42°F)을 날짜로 보간, 비 올 확률(10월 10% → 1월 35%, 전날 비면 2배), 여름 안개, 하루마다 같은 결과, 예보 문장은 영어·한국어 틀). 시작 날짜가 없으면 표를 되풀이.
@@ -104,6 +105,7 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 | city | 웨스트사이드: apartment_door bus_stop park_bench market_door atm_park farm_stand bakery_stand (derek_door priya_door) · 다운타운: bus_stop_downtown coffee_cart office_door atm_cu diner_door parking airport_shuttle(door→airport, 출장이 잡힌 날만) |
 | office | office_lobby(리셉션) office_desk(내 자리) office_desk_team office_kitchen office_meeting office_manager office_hr office_it office_door(→city office_door) |
 | diner | diner_counter diner_table diner_door |
+| grill | grill_host grill_bar grill_table grill_door |
 | market | market_shelves market_checkout market_door |
 | airport | airport_checkin airport_security airport_gate airport_door(→city) airport_arrive(→hotel) |
 | hotel | hotel_desk hotel_room(sleep) hotel_restaurant hotel_door(→client) hotel_shuttle(→airport) |
@@ -130,6 +132,8 @@ kenney/<pack>/…glb + License.txt      # 쓰는 원본만 복사 (B)
 | tyler | Tyler, weekend cashier (마켓) | man-hoodie-2 | market_checkout |
 | marisol | Marisol, evening server (다이너) | woman-punk | diner_counter |
 | hector | Hector, server, weekends (다이너) | man-adventurer | diner_counter |
+| naomi | Naomi, host (하버 그릴, 월~금) | woman-suit-2(Kelly와 같은 모델) | grill_host |
+| theo | Theo, server and bartender (하버 그릴, 수~일) | man-suit(Greg와 같은 모델) | grill_bar |
 | jess | Jess, weekend barista (커피 카트) | woman-adventurer | coffee_cart |
 
 플레이어 기본 모델 man-casual-3. 고를 수 있는 8명(캐스트가 안 쓰는 모습): man-casual-3 man-hoodie-2 man-suit-2 man-adventurer woman-casual woman-formal woman-adventurer woman-punk. 인물 모델은 겹쳐도 됩니다(행인은 캐스트가 안 쓰는 모습을 먼저 씀, `office/life.js`).
@@ -196,7 +200,7 @@ SO_ZONES.office = {
 - `scale`은 팩 기본 배율에 곱해지는 값(기본 1). `pack:'box'`, `size:[w,h,d]`, `color`는 모델 없이 상자(placeholder, 벽·카운터에도 씀).
 - 존은 서로 독립된 좌표계입니다(엔진이 존을 바꿀 때 씬을 통째로 교체).
 - 인물은 존 파일에 두지 않습니다. `npcs.place` → `places[id].at`에 엔진이 세웁니다. 플레이어의 시작은 `home_bed` 옆.
-- `zones/index.js`: `window.SO_ZONES = {}; window.SO_ZONE_FILES = ['home','city','office','diner','market','airport','hotel','client'];` 엔진은 이 목록대로 `zones/<zone>.js`를 `<script>`로 읽습니다.
+- `zones/index.js`: `window.SO_ZONES = {}; window.SO_ZONE_FILES = ['home','city','office','diner','grill','market','airport','hotel','client'];` 엔진은 이 목록대로 `zones/<zone>.js`를 `<script>`로 읽습니다.
 
 ## 6. 엔진 (A1 → `office/game.js`, `index.html`, `game.css`)
 

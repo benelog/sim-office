@@ -41,7 +41,7 @@ function shopLabel(pid, pl) {
   if (its.every(i => i.kind === 'fare')) return tr('Pay: ' + its[0].name, '내기: ' + loc(its[0]));
   if (its.length === 1) return tr('Buy: ' + its[0].name, '사기: ' + loc(its[0]));
   if (/coffee|cafe/.test(pid)) return tr('Order a drink', '음료 주문');
-  if (/diner|restaurant|kitchen/.test(pid)) return tr('Order food', '음식 주문');
+  if (/diner|grill|restaurant|kitchen/.test(pid)) return tr('Order food', '음식 주문');
   if (/market|shelves/.test(pid)) return tr('Shop for groceries', '장보기');
   return tr('Buy at ' + pl.name, loc(pl) + '에서 사기');
 }

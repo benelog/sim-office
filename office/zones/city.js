@@ -12,7 +12,7 @@
    Downtown is the same grid again round x = DX (105), Lake Avenue running north-south through it: Seaside Labs is the
    tall tower in the north-east block (office_door) with a plaza, Nina's coffee cart on the corner and the credit
    union's ATM beside it (atm_cu); the downtown bus stop is across Lake Avenue (bus_stop_downtown); the diner
-   (diner_door) and the Harbor Grill are south-east, the public parking lot (parking) south-west, and the airport
+   (diner_door) and the Harbor Grill (grill_door) are south-east, the public parking lot (parking) south-west, and the airport
    shuttle waits at the east end of Maple Street (airport_shuttle).
    The Fairview River runs along the north edge with the mountains rising beyond it (from z -48, low enough for the
    camera, which looks down, to see the ridge); south the plain runs down to a beach and the sea (from z 31; the range
@@ -373,8 +373,9 @@
     // ----- south-east: the diner and the Harbor Grill on Maple Street, an office behind them
     c('building-e', DX + 5.4, 5.0, 180, { solid: 'fit', id: 'diner' }),
     c('detail-awning-wide', DX + 4.8, 3.25, 180),
-    c('building-d', DX + 11.0, 5.0, 180, { solid: 'fit' }),
+    c('building-d', DX + 11.0, 5.0, 180, { solid: 'fit', id: 'grill' }),
     c('detail-awning-wide', DX + 11.0, 3.4, 180),
+    K.prop('furniture', 'doorwayFront', DX + 11.0, 3.6, 180),          // the Harbor Grill's front door: building-d has none of its own
     b('building-2-small', DX + 10.5, 10.6, 0, { solid: 'fit' }),
     r('dumpster', DX + 3.0, 7.4, 90, { solid: 'fit' }),
     n('pot_small', DX + 2.9, 3.3, 0, { solid: 'fit', scale: 0.9 }),
@@ -423,6 +424,7 @@
       office_door: { at: [DX + 8.2, -4.4], face: [DX + 6.0, -4.2] },
       atm_cu: { at: [DX + 2.4, -5.45], face: [DX + 2.4, -6.1] },
       diner_door: { at: [DX + 4.8, 2.2], face: [DX + 3.0, 2.0] },
+      grill_door: { at: [DX + 11.0, 2.2], face: [DX + 9.5, 2.0] },
       parking: { at: [DX - 7.5, 6.3], face: [DX - 7.5, 7.0] },
       airport_shuttle: { at: [DX + 18.0, -3.0], face: [DX + 18.0, -1.2] }
     },
@@ -434,6 +436,7 @@
       { at: [11.0, 3.35], size: [1.0, 0.6], to: 'market', arrive: 'market_door', label: 'Enter the grocery store', label_ko: '식료품점에 들어가기' },
       { at: [DX + 8.2, -5.6], size: [1.4, 0.6], to: 'office', arrive: 'office_door', label: 'Enter Seaside Labs', label_ko: '시사이드 랩스에 들어가기' },
       { at: [DX + 4.8, 3.05], size: [1.0, 0.6], to: 'diner', arrive: 'diner_door', label: 'Enter the diner', label_ko: '식당에 들어가기' },
+      { at: [DX + 11.0, 3.2], size: [1.0, 0.6], to: 'grill', arrive: 'grill_door', label: 'Enter the Harbor Grill', label_ko: '하버 그릴에 들어가기' },
       { at: [DX + 18.0, -1.9], size: [1.2, 0.6], to: 'airport', arrive: 'airport_door', label: 'Take the airport shuttle', label_ko: '공항 셔틀 타기' }
     ],
     // you can walk round Westside out to the running trail round it (office/jog.js), the river bank and the beach,
@@ -460,7 +463,6 @@
         { name: 'Fairview River', name_ko: '페어뷰 강', at: [10, -25.4], water: true },
         { name: 'Wash & Fold', name_ko: '빨래방', at: [5.0, 5.2] },
         { name: 'Seaside Labs', name_ko: '시사이드 랩스', at: [DX + 8.2, -8.6] },
-        { name: 'Harbor Grill', name_ko: '하버 그릴', at: [DX + 11.0, 5.2] },
         { name: 'to Downtown, 2 mi', name_ko: '다운타운까지 약 3km', at: [52, 4.2] }
       ]
     },

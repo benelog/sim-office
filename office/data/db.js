@@ -103,6 +103,13 @@ window.SO_DB = {
   "hours_diner_2027-01-01": "08:00-15:00",
   "hours_farm_stand": "closed",
   "hours_farm_stand_weekend": "08:00-13:00",
+  "hours_grill": "11:30-21:30",
+  "hours_grill_2026-11-26": "closed",
+  "hours_grill_2026-12-24": "11:30-15:00",
+  "hours_grill_2026-12-25": "closed",
+  "hours_grill_2026-12-31": "11:30-22:30",
+  "hours_grill_2027-01-01": "closed",
+  "hours_grill_weekend": "11:00-22:00",
   "hours_market": "07:00-22:00",
   "hours_market_2026-11-26": "07:00-16:00",
   "hours_market_2026-12-24": "07:00-18:00",
@@ -421,6 +428,38 @@ window.SO_DB = {
    "zone": "city",
    "kind": "shop",
    "note": "Farmers market along the park fence: fruit, honey, cider. Weekends 8 AM to 1 PM, cash only."
+  },
+  {
+   "id": "grill_bar",
+   "name": "Bar",
+   "name_ko": "바",
+   "zone": "grill",
+   "kind": "desk",
+   "note": "Theo works behind it. You order at your table, not here."
+  },
+  {
+   "id": "grill_door",
+   "name": "Harbor Grill",
+   "name_ko": "하버 그릴",
+   "zone": "city",
+   "kind": "door",
+   "note": "Same id on both sides: the street door in city, the way out in the grill zone."
+  },
+  {
+   "id": "grill_host",
+   "name": "Host stand",
+   "name_ko": "안내 데스크",
+   "zone": "grill",
+   "kind": "desk",
+   "note": null
+  },
+  {
+   "id": "grill_table",
+   "name": "Table by the window",
+   "name_ko": "창가 테이블",
+   "zone": "grill",
+   "kind": "shop",
+   "note": "Sit down and order here: the only table service in town where the menu is sold at the table."
   },
   {
    "id": "home_bed",
@@ -891,6 +930,20 @@ window.SO_DB = {
    "bio_ko": "저녁 교대로 일하는 대학생입니다. 가게의 할인 상품을 전부 꿰고 있어서, 묻지 않아도 알려 줍니다."
   },
   {
+   "id": "naomi",
+   "name": "Naomi",
+   "name_ko": "나오미",
+   "role": "Host at the Harbor Grill",
+   "role_ko": "하버 그릴 안내 담당",
+   "model": "woman-suit-2",
+   "place": "grill_host",
+   "voice_pitch": 1.05,
+   "voice_rate": 0.98,
+   "voice_like": "Michelle|Ava|Samantha|Allison",
+   "bio": "Runs the front of the house and knows the regulars by name. Keeps the reservation book in pencil.",
+   "bio_ko": "홀을 책임지고 단골의 이름을 모두 기억합니다. 예약 장부는 연필로 씁니다."
+  },
+  {
    "id": "nina",
    "name": "Nina",
    "name_ko": "니나",
@@ -959,6 +1012,20 @@ window.SO_DB = {
    "voice_like": "David|Roger|Rocko|Brian",
    "bio": "Unflappable IT guy with three monitors and a cold brew. His first question is always \"Have you tried restarting it?\"",
    "bio_ko": "모니터 세 대와 콜드브루를 곁에 둔 느긋한 IT 담당입니다. 첫 질문은 언제나 \"Have you tried restarting it?\"입니다."
+  },
+  {
+   "id": "theo",
+   "name": "Theo",
+   "name_ko": "테오",
+   "role": "Server and bartender at the Harbor Grill",
+   "role_ko": "하버 그릴 서버 겸 바텐더",
+   "model": "man-suit",
+   "place": "grill_bar",
+   "voice_pitch": 0.95,
+   "voice_rate": 0.98,
+   "voice_like": "Ryan|Andrew|Daniel|Fred",
+   "bio": "Grew up on a fishing boat and can tell you where tonight's salmon came from.",
+   "bio_ko": "고기잡이배에서 자랐고, 오늘 저녁 연어가 어디서 왔는지 말해 줄 수 있습니다."
   },
   {
    "id": "tom",
@@ -1339,6 +1406,30 @@ window.SO_DB = {
    "line_ko": "종이? 비닐? 농담이에요, 계산할 때 물어볼게요."
   },
   {
+   "npc": "naomi",
+   "seq": 1,
+   "line": "Welcome to the Harbor Grill. Just one tonight? The table by the window is yours.",
+   "line_ko": "하버 그릴에 오신 걸 환영해요. 한 분이세요? 창가 테이블에 앉으세요."
+  },
+  {
+   "npc": "naomi",
+   "seq": 2,
+   "line": "The salmon came in this morning. It goes fast.",
+   "line_ko": "연어는 오늘 아침에 들어왔어요. 금방 떨어져요."
+  },
+  {
+   "npc": "naomi",
+   "seq": 3,
+   "line": "Fridays get busy after six. Come early if you can.",
+   "line_ko": "금요일은 6시 넘으면 붐벼요. 되도록 일찍 오세요."
+  },
+  {
+   "npc": "naomi",
+   "seq": 4,
+   "line": "Menu prices don't include tax or the tip.",
+   "line_ko": "메뉴 가격에는 세금과 팁이 들어 있지 않아요."
+  },
+  {
    "npc": "nina",
    "seq": 1,
    "line": "Morning! The usual?",
@@ -1451,6 +1542,30 @@ window.SO_DB = {
    "seq": 4,
    "line": "Password expires every ninety days. Sorry, not my rule.",
    "line_ko": "비밀번호는 90일마다 만료돼요. 미안, 제가 정한 규칙은 아니에요."
+  },
+  {
+   "npc": "theo",
+   "seq": 1,
+   "line": "Take the table by the window. I'll come over for your order.",
+   "line_ko": "창가 테이블에 앉으세요. 주문받으러 갈게요."
+  },
+  {
+   "npc": "theo",
+   "seq": 2,
+   "line": "The steak's good, but you came here for the fish.",
+   "line_ko": "스테이크도 좋지만, 여기 오셨으면 생선이죠."
+  },
+  {
+   "npc": "theo",
+   "seq": 3,
+   "line": "The chowder is my grandmother's recipe. Don't tell the chef.",
+   "line_ko": "차우더는 저희 할머니 조리법이에요. 주방장한테는 비밀이에요."
+  },
+  {
+   "npc": "theo",
+   "seq": 4,
+   "line": "Iced tea refills are free. Just wave.",
+   "line_ko": "아이스티 리필은 무료예요. 손만 흔드세요."
   },
   {
    "npc": "tom",
@@ -24674,8 +24789,8 @@ window.SO_DB = {
    "episode": "rt_allhands_2",
    "seq": 3,
    "speaker": "linda",
-   "situation": "Linda closes with the holiday party: a Friday evening at the Harbor Grill on Lake Avenue, starting at six. Partners and spouses are welcome, and RSVPs go through the online form.",
-   "situation_ko": "린다가 연말 파티 소식으로 마무리합니다. 금요일 저녁 6시, 레이크 애비뉴의 하버 그릴에서 열립니다. 애인과 배우자도 올 수 있고, 참석 여부는 온라인 양식으로 알립니다.",
+   "situation": "Linda closes with the holiday party: a Friday evening at the Harbor Grill on Maple Street, starting at six. Partners and spouses are welcome, and RSVPs go through the online form.",
+   "situation_ko": "린다가 연말 파티 소식으로 마무리합니다. 금요일 저녁 6시, 메이플 스트리트의 하버 그릴에서 열립니다. 애인과 배우자도 올 수 있고, 참석 여부는 온라인 양식으로 알립니다.",
    "line": "Any questions about the party?",
    "line_ko": "파티에 대해 질문 있어요?",
    "prompt": "You're not sure what to wear. Ask about it.",
@@ -37185,6 +37300,126 @@ window.SO_DB = {
    "cook_only": 0
   },
   {
+   "id": "grill_caesar",
+   "name": "Caesar salad",
+   "name_ko": "시저 샐러드",
+   "kind": "meal",
+   "price": 13.5,
+   "model": "salad",
+   "energy": 30,
+   "place": "grill_table",
+   "note": "romaine, parmesan and croutons",
+   "note_ko": "로메인, 파르메산 치즈, 크루통",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_chowder",
+   "name": "New England clam chowder",
+   "name_ko": "뉴잉글랜드 클램 차우더",
+   "kind": "meal",
+   "price": 9.5,
+   "model": "bowl-soup",
+   "energy": 24,
+   "place": "grill_table",
+   "note": "with oyster crackers",
+   "note_ko": "오이스터 크래커 포함",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_crab_sandwich",
+   "name": "Crab cake sandwich",
+   "name_ko": "크랩 케이크 샌드위치",
+   "kind": "meal",
+   "price": 18,
+   "model": "burger",
+   "energy": 46,
+   "place": "grill_table",
+   "note": "with fries or coleslaw",
+   "note_ko": "감자튀김이나 코울슬로 포함",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_fish_chips",
+   "name": "Fish and chips",
+   "name_ko": "피시 앤 칩스",
+   "kind": "meal",
+   "price": 19.5,
+   "model": "fries",
+   "energy": 50,
+   "place": "grill_table",
+   "note": "battered cod with fries",
+   "note_ko": "대구튀김과 감자튀김",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_iced_tea",
+   "name": "Iced tea (free refills)",
+   "name_ko": "아이스티(리필 무료)",
+   "kind": "drink",
+   "price": 3.75,
+   "model": "glass",
+   "energy": 7,
+   "place": "grill_table",
+   "note": "with lemon",
+   "note_ko": "레몬 포함",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_pie",
+   "name": "Key lime pie",
+   "name_ko": "키 라임 파이",
+   "kind": "meal",
+   "price": 8.5,
+   "model": "cake-slicer",
+   "energy": 16,
+   "place": "grill_table",
+   "note": "made here daily",
+   "note_ko": "매일 직접 만듦",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_salmon",
+   "name": "Grilled salmon",
+   "name_ko": "연어구이",
+   "kind": "meal",
+   "price": 26,
+   "model": "fish",
+   "energy": 52,
+   "place": "grill_table",
+   "note": "with rice and vegetables",
+   "note_ko": "밥과 채소 포함",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
+   "id": "grill_steak",
+   "name": "New York strip steak",
+   "name_ko": "뉴욕 스트립 스테이크",
+   "kind": "meal",
+   "price": 34,
+   "model": "meat-patty",
+   "energy": 58,
+   "place": "grill_table",
+   "note": "with mashed potatoes",
+   "note_ko": "매시트포테이토 포함",
+   "shelf_days": null,
+   "uses": 1,
+   "cook_only": 0
+  },
+  {
    "id": "ground_beef",
    "name": "Ground beef (1 lb)",
    "name_ko": "다진 소고기(1파운드)",
@@ -39519,6 +39754,14 @@ window.SO_DB = {
    "place": "market_checkout"
   },
   {
+   "npc": "naomi",
+   "seq": 1,
+   "days": "mon,tue,wed,thu,fri",
+   "time_from": "11:30",
+   "time_to": "21:30",
+   "place": "grill_host"
+  },
+  {
    "npc": "nina",
    "seq": 1,
    "days": "mon,tue,wed,thu,fri",
@@ -39597,6 +39840,22 @@ window.SO_DB = {
    "time_from": "12:15",
    "time_to": "17:30",
    "place": "office_it"
+  },
+  {
+   "npc": "theo",
+   "seq": 1,
+   "days": "wed,thu,fri",
+   "time_from": "11:30",
+   "time_to": "21:30",
+   "place": "grill_bar"
+  },
+  {
+   "npc": "theo",
+   "seq": 2,
+   "days": "sat,sun",
+   "time_from": "11:00",
+   "time_to": "22:00",
+   "place": "grill_bar"
   },
   {
    "npc": "tom",

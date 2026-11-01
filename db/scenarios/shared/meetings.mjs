@@ -774,8 +774,8 @@ export const episodes = [
       },
       {
         speaker: 'linda',
-        situation: 'Linda closes with the holiday party: a Friday evening at the Harbor Grill on Lake Avenue, starting at six. Partners and spouses are welcome, and RSVPs go through the online form.',
-        situation_ko: '린다가 연말 파티 소식으로 마무리합니다. 금요일 저녁 6시, 레이크 애비뉴의 하버 그릴에서 열립니다. 애인과 배우자도 올 수 있고, 참석 여부는 온라인 양식으로 알립니다.',
+        situation: 'Linda closes with the holiday party: a Friday evening at the Harbor Grill on Maple Street, starting at six. Partners and spouses are welcome, and RSVPs go through the online form.',
+        situation_ko: '린다가 연말 파티 소식으로 마무리합니다. 금요일 저녁 6시, 메이플 스트리트의 하버 그릴에서 열립니다. 애인과 배우자도 올 수 있고, 참석 여부는 온라인 양식으로 알립니다.',
         line: 'Any questions about the party?',
         line_ko: '파티에 대해 질문 있어요?',
         prompt: "You're not sure what to wear. Ask about it.",

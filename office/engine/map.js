@@ -16,7 +16,7 @@ const MAPC = {
   pin: '#2f7d7a', pinEdge: '#215c5a', door: '#7b5a3e', label: '#1d2433', labelBox: 'rgba(255,255,255,0.88)', street: '#7a7366', area: '#3f6b3a',
   you: '#16233b', person: '#e0a33a', personEdge: '#8a5f12', bang: '#c24a3d', goal: '#e0a33a'
 };
-const KEY_BUILDINGS = { seaside_labs: 'office', diner: 'diner', market: 'market' };      // a prop with home: '<hero>' is that hero's home
+const KEY_BUILDINGS = { seaside_labs: 'office', diner: 'diner', grill: 'diner', market: 'market' };      // a prop with home: '<hero>' is that hero's home
 const OPEN_DIRS = { straight: [0, 2], crossing: [0, 2], bend: [2, 1], end: [2], square: [], all: [0, 1, 2, 3] };     // east, south, west, north at turn 0
 function mapZone() { return MAP.tab === 'room' && zoneId && zoneId !== 'city' ? zoneId : 'city'; }
 // world-axis rectangle of a prop's footprint, from the zone kit's bounding boxes (like the engine's solids)

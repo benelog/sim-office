@@ -32,7 +32,7 @@ google-chrome "file://$PWD/office/index.html"
 |---|---|
 | `index.html`, `site/img/` | 소개 페이지(sim-office.benelog.net 첫 화면)와 그 스크린숏(`tools/office-check.sh`로 찍어 webp로 줄임) |
 | `office/index.html`, `game.css`, `game.js` | 엔진: 존·인물·대화·TTS·시간·돈·상점·지난 대화·저장·디버그 API(`SO.debug`) |
-| `office/zones/<zone>.js` | 존 10개의 배치(home, home_derek, home_priya, city, office, diner, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
+| `office/zones/<zone>.js` | 존 11개의 배치(home, home_derek, home_priya, city, office, diner, grill, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
 | `office/data/db.js` | DoltHub에서 내려받은 데이터(`window.SO_DB`). **생성물** |
 | `office/life.js` | 거리의 삶: 걷는 행인·앉은 사람, 달리는 차, 신호등 |
 | `office/jog.js` | 조깅 미니 게임: 달리기 길, 박자 판정, 경쟁 주자, 파도 소리 |

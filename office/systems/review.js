@@ -133,13 +133,13 @@ function closeMissions(day) {
 }
 // Sales tax and tips: prices on a menu or a shelf are before tax. Meals, drinks and other goods are taxed
 // (config sales_tax); groceries and fares are not. Where food or drinks are served the panel asks about a tip
-// (config tip_options, percent of the price before tax): tip_default at a table (diner, restaurant), none at a counter.
+// (config tip_options, percent of the price before tax): tip_default at a table (diner, Harbor Grill, restaurant), none at a counter.
 const TAX = Math.max(0, +CFG.sales_tax || 0), TIPS = listOf(CFG.tip_options).map(Number).filter(n => n >= 0);
 const cents = (n) => Math.round(n * 100) / 100;
 const pct = (r) => +(r * 100).toFixed(2) + '%';
 const taxed = (i) => /^(meal|drink|other|gear)$/.test(i.kind);
 const tipAsked = (pid) => TIPS.length > 1 && rows('items').some(i => i.place === pid && /^(meal|drink)$/.test(i.kind) && +i.price > 0);
-const tableService = (pid) => /diner|restaurant/.test(pid || '');
+const tableService = (pid) => /diner|grill|restaurant/.test(pid || '');
 const tipChoice = {};
 const tipRate = (pid) => !tipAsked(pid) ? 0 : (tipChoice[pid] != null ? tipChoice[pid] : tableService(pid) ? +CFG.tip_default || 0 : 0) / 100;
 // A punch card (config punch_card_place, punch_card_every: 6 = buy 5 drinks, the 6th is free). The tip on a free
