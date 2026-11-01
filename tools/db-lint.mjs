@@ -84,7 +84,10 @@ function checkHeroes() {
 const CARE = ['pickup', 'otc', 'rx', 'clinic'];
 function checkErrand(w, e, tags) {
   const kinds = CARE.filter(k => tags.includes(k));
-  if (kinds.length !== 1) { bad(w, `an errand needs one of ${CARE.join(', ')} in its tags (has ${kinds.join(', ') || 'none'})`); return; }
+  if (kinds.length !== 1) {
+    bad(w, `an errand needs one of ${CARE.join(', ')} in its tags (has ${kinds.join(', ') || 'none'})`);
+    return;
+  }
   const want = kinds[0] === 'clinic' ? 'clinic' : 'pharmacy';
   if (placeKind(e.place) !== want) bad(w, `a ${kinds[0]} errand at ${e.place}, which is not a place of kind ${want}`);
   if (kinds[0] === 'clinic' && tags.filter(t => t === 'cold' || t === 'flu').length !== 1) bad(w, 'a clinic visit needs cold or flu in its tags');
@@ -116,7 +119,7 @@ function checkEpisodes() {
     if (!nt) bad(w, 'has no turns');
     else if (nt < 3 || nt > 6) bad(w, `${nt} turns (want 3-6)`);
     if (np > 8) warn(w, `${np} phrases (more than 8)`);          // phrases are kept in the save but no longer shown (2026-10-02): none is fine
-    if (tags.includes('video') && !remoteCalls.has(e.id)) bad(w, 'tagged video but in no routine\'s remote_episodes: it never opens');
+    if (tags.includes('video') && !remoteCalls.has(e.id)) bad(w, "tagged video but in no routine's remote_episodes: it never opens");
     if (tags.includes('errand')) checkErrand(w, e, tags);
   }
   const errands = DB.episodes.filter(e => tagsOf(e).includes('errand'));
@@ -191,9 +194,9 @@ function checkCalendar() {
     if (c.place && !places.has(c.place)) bad(w, `place "${c.place}" not in places`);
     requireHero(w, c.hero);
     if (!c.episode) continue;
-    const e = episodes.get(c.episode);
+    const e = episodes.get(c.episode);          // its day_to NULL: no last day
     if (!e) bad(w, `episode "${c.episode}" does not exist`);
-    else if (c.day < e.day_from || (e.day_to != null && c.day > e.day_to)) bad(w, `episode ${e.id} is not open on day ${c.day}`);          // NULL: no last day
+    else if (c.day < e.day_from || (e.day_to != null && c.day > e.day_to)) bad(w, `episode ${e.id} is not open on day ${c.day}`);
     else if (!heroesOf(e.hero).includes(c.hero)) bad(w, `episode ${e.id} belongs to ${e.hero}, the calendar row to ${c.hero}`);
   }
 }
@@ -208,7 +211,7 @@ function recurs(w, m) {
   if (m.every && answered.has(m.id)) bad(w, 'a message that comes back cannot have replies');
 }
 
-const MSG_KINDS = new Set(['text', 'email', 'voicemail', 'alert']), msgIds = new Set(DB.messages.map(m => m.id));
+const MSG_KINDS = new Set(['text', 'email', 'voicemail', 'alert']);
 function checkMessages() {
   for (const m of DB.messages) {
     const w = `messages ${m.id}`;
@@ -220,7 +223,7 @@ function checkMessages() {
     if (m.hero && m.hero === m.sender) bad(w, 'the hero cannot send a message to themselves');
     if (m.kind === 'email' && !m.subject) warn(w, 'an email without a subject');
     if (!m.body_ko) warn(w, 'no body_ko');
-    if (/^(text|email|voicemail)$/.test(m.kind) && !answered.has(m.id) && /reply|RSVP|call (us|me|back)/i.test(m.body) && !/^(alert)$/.test(m.kind)) {
+    if (/^(text|email|voicemail)$/.test(m.kind) && !answered.has(m.id) && /reply|RSVP|call (us|me|back)/i.test(m.body)) {
       warn(w, 'asks for an answer but has no replies');
     }
     recurs(w, m);
@@ -244,12 +247,15 @@ const MAIL_KINDS = new Set(['junk', 'bill', 'letter', 'notice', 'card']);
 const holidayDates = new Set(DB.holidays.filter(h => h.kind === 'federal').map(h => h.date));
 function checkMail() {
   for (const m of DB.mail) {
-    const w = `mail ${m.id}`, t = new Date(utc(start).getTime() + (m.day - 1) * 864e5);          // Invalid Date when start_date is bad: checkStartDate says so
+    const w = `mail ${m.id}`;
+    const t = new Date(utc(start).getTime() + (m.day - 1) * 864e5);          // Invalid Date when start_date is bad: checkStartDate says so
     if (m.hero && m.hero !== 'all') requireHero(w, m.hero);
     checkKind(w, m.kind, MAIL_KINDS);
     if (!m.sender || !m.body) bad(w, 'sender and body are required');
     if (!m.body_ko) warn(w, 'no body_ko');
-    if (!isNaN(t) && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
+    if (!isNaN(t) && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) {
+      bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
+    }
     recurs(w, m);
   }
 }
@@ -328,7 +334,9 @@ function checkRoutines() {
     if (!HHMM.test(r.time || '')) bad(w, `bad time ${r.time}`);
     if (!['week', '2weeks', 'month'].includes(r.every)) bad(w, `every "${r.every}" is not week, 2weeks or month`);
     if (!days.length || days.some(d => !ROUTINE_DAYS.has(d))) bad(w, `days "${r.days}" are not names of days`);
-    if (r.hybrid_days != null && (!hybrid.length || hybrid.some(d => !ROUTINE_DAYS.has(d)))) bad(w, `hybrid_days "${r.hybrid_days}" are not names of days`);
+    if (r.hybrid_days != null && (!hybrid.length || hybrid.some(d => !ROUTINE_DAYS.has(d)))) {
+      bad(w, `hybrid_days "${r.hybrid_days}" are not names of days`);
+    }
     if (REMOTE_DAYS.some(d => hybrid.includes(d))) warn(w, `hybrid_days "${r.hybrid_days}" include a remote day: a video call`);
 
     const pool = poolOf(w, r, listOf(r.episodes), 'episode');
@@ -338,7 +346,9 @@ function checkRoutines() {
     const calls = poolOf(w, r, remoteIds, 'remote episode');
     for (const e of calls) {
       if (!tagsOf(e).includes('video')) bad(w, `remote episode ${e.id} is not tagged video`);
-      if (!heroesOf(e.hero).some(h => heroes.get(h)?.home_desk === e.place)) warn(w, `remote episode ${e.id} is at ${e.place}, not at its hero's desk at home`);
+      if (!heroesOf(e.hero).some(h => heroes.get(h)?.home_desk === e.place)) {
+        warn(w, `remote episode ${e.id} is at ${e.place}, not at its hero's desk at home`);
+      }
     }
     if (remoteIds.length) for (const h of heroesWithout(r, calls)) bad(w, `no video call for ${h}`);
   }
@@ -352,7 +362,9 @@ function checkChoices(w, choices, n, cost, lo, hi) {
   cs.forEach((c, i) => {
     const v = c[cost] ?? 0;
     for (const k of ['t', 't_ko', 'r', 'r_ko']) if (!c[k]) bad(w, `choice ${i + 1} has no ${k}`);
-    if (!Number.isInteger(c.points ?? 0) || !Number.isInteger(v) || v < lo || v > hi) bad(w, `choice ${i + 1}: points and ${cost} (${lo} to ${hi}) must be whole numbers`);
+    if (!Number.isInteger(c.points ?? 0) || !Number.isInteger(v) || v < lo || v > hi) {
+      bad(w, `choice ${i + 1}: points and ${cost} (${lo} to ${hi}) must be whole numbers`);
+    }
   });
   const points = cs.map(c => c.points || 0);
   if (cs.length && !(Math.max(...points) > 0 && Math.min(...points) < 0)) bad(w, 'want a choice with points and one that loses some');
@@ -488,7 +500,9 @@ function checkHomeEvents() {
     const mineOf = (k) => DB.home_events.filter(r => r.kind === k && heroesOf(r.hero).includes(h));
     if (!mineOf('repair').length) bad('home_events', `no repair for ${h}`);
     if (!mineOf('noise').length) bad('home_events', `no noise for ${h}`);
-    for (const n of HOME_NOTES) if (!DB.home_events.some(r => r.id === `n_${n}_${h}` || r.id === `n_${n}`)) bad('home_events', `no message n_${n} for ${h}`);
+    for (const n of HOME_NOTES) {
+      if (!DB.home_events.some(r => r.id === `n_${n}_${h}` || r.id === `n_${n}`)) bad('home_events', `no message n_${n} for ${h}`);
+    }
   }
 }
 
@@ -507,7 +521,9 @@ function checkBusConfig() {
   for (const k of ['bus_late_rain', 'bus_late_rush', 'bus_late', 'bus_full_gap']) {
     const m = cfg[k] == null ? null : RANGE.exec(String(cfg[k]));
     if (cfg[k] != null && (!m || +m[1] > +m[2])) bad(`config ${k}`, `"${cfg[k]}" is not minutes as a-b`);
-    else if (m && cfg.bus_delay_max != null && +m[2] > +cfg.bus_delay_max) warn(`config ${k}`, `up to ${m[2]} minutes, more than bus_delay_max ${cfg.bus_delay_max}`);
+    else if (m && cfg.bus_delay_max != null && +m[2] > +cfg.bus_delay_max) {
+      warn(`config ${k}`, `up to ${m[2]} minutes, more than bus_delay_max ${cfg.bus_delay_max}`);
+    }
   }
   if (cfg.bus_delay_max != null && !(Number.isInteger(+cfg.bus_delay_max) && +cfg.bus_delay_max >= 0 && +cfg.bus_delay_max <= 20)) {
     bad('config bus_delay_max', `"${cfg.bus_delay_max}" is not 0 to 20 minutes`);
@@ -544,9 +560,12 @@ function checkHybridConfig() {
   const iso = String(cfg.hybrid_from), day = (utc(iso) - utc(start)) / 864e5 + 1;
   if (!isDate(iso)) bad('config hybrid_from', `"${iso}" is not a date (YYYY-MM-DD)`);
   else if (day <= MISSION_DAYS) bad('config hybrid_from', `${iso} falls in the missions (day ${day})`);
-  if (!REMOTE_DAYS.length || REMOTE_DAYS.some(d => !['mon', 'tue', 'wed', 'thu', 'fri'].includes(d))) bad('config remote_days', `"${cfg.remote_days}" are not weekday names`);
+  if (!REMOTE_DAYS.length || REMOTE_DAYS.some(d => !['mon', 'tue', 'wed', 'thu', 'fri'].includes(d))) {
+    bad('config remote_days', `"${cfg.remote_days}" are not weekday names`);
+  }
   if (REMOTE_DAYS.length >= 5) bad('config remote_days', 'every weekday is remote: no office days');
-  for (const id of listOf(cfg.remote_people)) if (!npcs.has(id)) bad('config remote_people', `"${id}" not in npcs`);
+  // an empty value comes through gameData as 0
+  for (const id of listOf(cfg.remote_people || '')) if (!npcs.has(id)) bad('config remote_people', `"${id}" not in npcs`);
 }
 
 // benefits_now / benefits_default name plans of each kind for every hero, and the dates follow open <= close < start
@@ -565,7 +584,9 @@ function checkBenefitsConfig() {
     else checkPlanSet(`config benefits_now ${h}`, now[h]);
   }
   const ds = ['benefits_open', 'benefits_close', 'benefits_start'].map(k => String(cfg[k] || ''));
-  if (ds.some(d => !isDate(d)) || !(ds[0] <= ds[1] && ds[1] < ds[2])) bad('config benefits_open/close/start', `want dates with open <= close < start, not ${ds.join(', ')}`);
+  if (ds.some(d => !isDate(d)) || !(ds[0] <= ds[1] && ds[1] < ds[2])) {
+    bad('config benefits_open/close/start', `want dates with open <= close < start, not ${ds.join(', ')}`);
+  }
   for (const k of ['k401_auto', 'k401_match', 'k401_match_up_to', 'k401_max', 'tax_state', 'tax_ss', 'tax_medicare']) {
     if (!Number.isFinite(+cfg[k]) || +cfg[k] < 0) bad(`config ${k}`, 'want a number of 0 or more');
   }
@@ -581,10 +602,16 @@ function checkFriendConfig() {
 
 // the rules of falling ill are numbers: copay_*, ill_chance and flu_share as month:percent, ill_days as cold:days,flu:days
 function checkIllnessConfig() {
-  for (const k of Object.keys(cfg).filter(k => /^copay_/.test(k))) if (!(Number(cfg[k]) >= 0)) bad(`config ${k}`, `"${cfg[k]}" is not an amount of dollars`);
+  for (const k of Object.keys(cfg).filter(k => /^copay_/.test(k))) {
+    if (!(Number(cfg[k]) >= 0)) bad(`config ${k}`, `"${cfg[k]}" is not an amount of dollars`);
+  }
   const percent = (p) => { const m = /^\s*(\d{1,2}):(\d+(\.\d+)?)\s*$/.exec(p); return m && +m[1] >= 1 && +m[1] <= 12 && +m[2] <= 100; };
-  for (const k of ['ill_chance', 'flu_share']) if (cfg[k] != null && !String(cfg[k]).split(',').every(percent)) bad(`config ${k}`, `"${cfg[k]}" is not month:percent,…`);
-  if (cfg.ill_days != null && !String(cfg.ill_days).split(',').every(p => /^\s*(cold|flu):\d+\s*$/.test(p))) bad('config ill_days', `"${cfg.ill_days}" is not cold:days,flu:days`);
+  for (const k of ['ill_chance', 'flu_share']) {
+    if (cfg[k] != null && !String(cfg[k]).split(',').every(percent)) bad(`config ${k}`, `"${cfg[k]}" is not month:percent,…`);
+  }
+  if (cfg.ill_days != null && !String(cfg.ill_days).split(',').every(p => /^\s*(cold|flu):\d+\s*$/.test(p))) {
+    bad('config ill_days', `"${cfg.ill_days}" is not cold:days,flu:days`);
+  }
 }
 
 // the heroes' starting cards exist (card_start) and the statement dates are ones a bank could set
@@ -594,11 +621,15 @@ function checkCardConfig() {
   for (const [h, id] of pairsOf(cfg.card_start)) {
     requireHero('config card_start', h);
     if (id && !cards.has(id)) bad('config card_start', `card "${id}" not in cards`);
-    if (id && !months.find(x => x[0] === h)?.[1]) warn('config card_start', `${h} starts with a card but has no credit_months (no score until the first statement)`);
+    if (id && !months.find(x => x[0] === h)?.[1]) {
+      warn('config card_start', `${h} starts with a card but has no credit_months (no score until the first statement)`);
+    }
   }
   for (const [h, n] of months) if (!(+n >= 0)) bad('config credit_months', `${h}: "${n}" is not a number of months`);
   const dom = +cfg.card_close_dom;
-  if (cfg.card_close_dom != null && !(Number.isInteger(dom) && dom >= 1 && dom <= 28)) bad('config card_close_dom', `${cfg.card_close_dom} is not a date of every month (1-28)`);
+  if (cfg.card_close_dom != null && !(Number.isInteger(dom) && dom >= 1 && dom <= 28)) {
+    bad('config card_close_dom', `${cfg.card_close_dom} is not a date of every month (1-28)`);
+  }
   if (cfg.card_due_days != null && !(+cfg.card_due_days >= 21)) bad('config card_due_days', 'the law gives at least 21 days to pay');
 }
 
@@ -623,8 +654,7 @@ for (const check of [
   checkCardConfig, checkCashConfig
 ]) check();
 
-const count = (t) => `${t} ${Array.isArray(DB[t]) ? DB[t].length : 0}`;
-console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items', 'calendar', 'messages', 'holidays', 'recipes', 'replies', 'mail', 'radio', 'tv', 'routines', 'tasks', 'plans', 'friends', 'cards', 'catalog', 'home_events'].map(count).join(', '));
+console.log(TABLES.filter(t => t !== 'config').map(t => `${t} ${DB[t].length}`).join(', '));
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);
