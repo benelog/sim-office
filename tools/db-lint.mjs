@@ -100,8 +100,8 @@ for (const [ep, list] of Object.entries(turnsBy)) {
     if (!t.line || !t.prompt || !t.model) bad(w, 'line, prompt and model are required');
     const norm = (x) => String(x).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     for (const k of ['distractors', 'distractors_ko', 'reactions', 'reactions_ko']) if (!isStrArr(t[k], 3)) bad(w, `${k} must be 3 strings`);
-    if (isStrArr(t.distractors, 3)) for (const d of t.distractors) if (norm(d) === norm(t.model)) bad(w, `distractor equals model: "${d}"`);
-    if (isStrArr(t.distractors, 3)) {
+    if (isStrArr(t.distractors, 3) && t.model) {
+      for (const d of t.distractors) if (norm(d) === norm(t.model)) bad(w, `distractor equals model: "${d}"`);
       const longest = Math.max(...t.distractors.map(d => d.length));
       if (t.model.length > longest * 1.3) warn(w, `the model (${t.model.length}) is much longer than every wrong answer (${longest}): a giveaway`);
     }
@@ -129,8 +129,8 @@ for (const c of rows('calendar')) {
   if (c.episode) {
     const e = rows('episodes').find(x => x.id === c.episode);
     if (!e) bad(w, `episode "${c.episode}" does not exist`);
-    else if (c.day < e.day_from || c.day > e.day_to) bad(w, `episode ${e.id} is not open on day ${c.day}`);
-    else if ((e.hero || 'jun') !== (c.hero || 'jun')) bad(w, `episode ${e.id} belongs to ${e.hero}, the calendar row to ${c.hero}`);
+    else if (c.day < e.day_from || (e.day_to != null && c.day > e.day_to)) bad(w, `episode ${e.id} is not open on day ${c.day}`);          // NULL: no last day
+    else if (!heroesOf(e.hero).includes(c.hero || 'jun')) bad(w, `episode ${e.id} belongs to ${e.hero}, the calendar row to ${c.hero}`);
   }
 }
 
@@ -218,12 +218,12 @@ for (const r of DB.replies || []) {
 for (const m of DB.messages || []) if (/^(text|email|voicemail)$/.test(m.kind) && !(DB.replies || []).some(r => r.msg === m.id) && /reply|RSVP|call (us|me|back)/i.test(m.body) && !/^(alert)$/.test(m.kind)) warn(`messages ${m.id}`, 'asks for an answer but has no replies');
 const holidayDates = new Set((DB.holidays || []).filter(h => h.kind === 'federal').map(h => h.date));
 for (const m of DB.mail || []) {
-  const w = `mail ${m.id}`, t = start ? new Date(new Date(start + 'T00:00:00Z').getTime() + (m.day - 1) * 864e5) : null;
+  const w = `mail ${m.id}`, t = new Date(Date.parse(start + 'T00:00:00Z') + (m.day - 1) * 864e5);          // Invalid Date when start_date is bad: reported above
   if (m.hero && m.hero !== 'all' && heroes.size && !heroes.has(m.hero)) bad(w, `hero "${m.hero}" not in heroes`);
   if (!MAIL_KINDS.has(m.kind)) bad(w, `kind "${m.kind}" is not one of ${[...MAIL_KINDS].join('/')}`);
   if (!m.sender || !m.body) bad(w, 'sender and body are required');
   if (!m.body_ko) warn(w, 'no body_ko');
-  if (t && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
+  if (!isNaN(t) && (t.getUTCDay() === 0 || holidayDates.has(t.toISOString().slice(0, 10)))) bad(w, `day ${m.day} is a Sunday or federal holiday: no mail`);
   recurs(w, m);
 }
 for (const b of DB.bills || []) if (!b.company) warn(`bills ${b.id}`, 'no company: no statement email after the missions');
@@ -276,7 +276,7 @@ const cfg = DB.config || {}, isVideo = (e) => /(^|,)\s*video\s*(,|$)/.test(e.tag
 for (const r of DB.routines || []) {
   const w = `routines ${r.id}`;
   if (r.hybrid_days != null && (!String(r.hybrid_days).split(',').map(x => x.trim()).filter(Boolean).length || String(r.hybrid_days).split(',').some(d => !ROUTINE_DAYS.has(d.trim())))) bad(w, `hybrid_days "${r.hybrid_days}" are not names of days`);
-  if (r.hybrid_days && String(cfg.remote_days || '').split(',').some(d => String(r.hybrid_days).split(',').map(x => x.trim()).includes(d.trim()))) warn(w, `hybrid_days "${r.hybrid_days}" include a remote day: a video call`);
+  if (r.hybrid_days && String(cfg.remote_days || 'mon,fri').split(',').some(d => String(r.hybrid_days).split(',').map(x => x.trim()).includes(d.trim()))) warn(w, `hybrid_days "${r.hybrid_days}" include a remote day: a video call`);
   const pool = String(r.remote_episodes || '').split(',').map(x => x.trim()).filter(Boolean);
   for (const id of pool) {
     remotePools.add(id);
@@ -507,4 +507,4 @@ console.log(['places', 'npcs', 'chatter', 'episodes', 'turns', 'phrases', 'items
 warnings.forEach(l => console.log(l));
 problems.forEach(l => console.log(l));
 console.log(`${problems.length} problem(s), ${warnings.length} warning(s)`);
-process.exit(problems.length ? 1 : 0);
+process.exitCode = problems.length ? 1 : 0;          // not process.exit: it drops what a pipe has not taken yet, the end of the report
