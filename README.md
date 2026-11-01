@@ -17,7 +17,7 @@ google-chrome "file://$PWD/office/index.html"
 - **에피소드**: 장소와 인물에서 열리는 대화(머리 위 `!`). 인물의 대사를 듣고(브라우저 TTS, 미국 영어 목소리 우선) 하고 싶은 말(안내)에 맞는 대답을 **네 가지 보기에서 고릅니다**. 힌트는 없고, 틀린 보기도 그럴듯합니다(사실이 틀리거나, 상대·상황에 맞지 않는 말투이거나, 묻는 말에 대한 답이 아님). 틀리면 상대가 반응하고 다시 고릅니다. 끝난 대화는 **Conversations**에 남습니다(▶로 다시 듣기).
 - **점수와 근무 평가**: 대화에서 한 번에 맞히면 10점, 두 번째 5점, 그 뒤 2점. 평일 출근은 제시간(09:15까지) +5, 지각 −10, 오후 출근 −20, 결근 −30. 지각(벌점 2)·오후 출근(3)·결근(4)이 쌓이면 매니저의 문자(2점), 인사팀의 최종 경고 이메일(4점)을 거쳐 **해고**(6점)됩니다. 5일 연속 제시간에 오면 벌점 1점이 줄고, 출장과 병가 전화를 한 날은 결근이 아닙니다. 해고되면 마지막 급여가 들어오고 업무 대화가 끝나며, 사무실 문 앞에서 출입증이 막혀 들어가지 못합니다. Menu > Work record(R) 또는 HUD의 ★.
 - **Jun의 15일치 46개 에피소드**: 출입증 받기, 온보딩, 스탠드업, 코드 리뷰, 회의 옮기기, IT 헬프데스크, 1:1, 스프린트 플래닝, 마감 협의, HR 서류(W-4·PPO/HMO·401(k)), 급여명세서 읽기, 해피아워 거절, 다이너 주문과 팁, 식료품 계산, 집주인에게 수리 요청, 고객 킥오프, 범위·가격·지급 조건(Net 30/45)·SLA 협상, 출장 승인과 per diem, 항공권·호텔 예약, 공항 체크인·보안 검색·지연, 호텔 체크인·체크아웃, 고객사 방문, 고객과 저녁, 계약 서명, 초과 예약 바우처 협상, 경비 정산, 병가 전화(다음 날은 병가라 결근이 아님) 등. 입사 2주 만의 연봉 인상 요청은 현실성이 없어 2026-10-02에 뺐습니다.
-- **돈**: 시작 $1,200. 격주 금요일(5일·19일)에 순급여 $2,600이 입금되고 21일에 월세 $1,450이 빠집니다. 커피·버스·점심·식료품·출장비를 씁니다.
+- **돈**: 시작 $1,200. 격주 금요일(5일·19일)에 순급여 $2,600이 입금되고 매달 1일에 월세 $1,450이 빠집니다. 커피·버스·점심·식료품·출장비를 씁니다.
 - **현실감**: 날마다 다른 날씨(비·안개·기온), 세전 가격에 판매세와 팁, 가게 영업시간, 인물의 하루 일과(주말 사무실은 비어 있음), 자동이체 공과금과 은행 내역(B), 출퇴근 시간에 붐비는 거리. 실제 날짜와 미국 공휴일(10월 5일 월요일에 시작), 문자·이메일·음성 사서함·은행 알림이 오는 휴대전화(P, 스팸 전화와 피싱 문자 포함), 버스 시간표와 막차, 비 오는 날의 우산과 빗소리, 커피 카트의 단골 카드, 초과 인출 수수료, 지각, 식료품의 유통기한과 집에서 하는 요리(요리법 12가지).
 - **목소리와 지난 대화**: 인물마다 다른 목소리로 읽고, 내가 한 말도 주인공의 목소리로 읽습니다. 끝낸 대화는 Menu > Conversations(T)에서 다시 읽고 듣습니다.
 - **언어**: 헤더(좁은 화면에서는 Menu)의 🌐에서 English / 한국어. 대사·보기·안내·상점·휴대전화·달력·은행·지도까지 고른 언어 하나로 보입니다(한국어에서는 기온도 °C). 목소리는 늘 영어(자막처럼).
@@ -31,42 +31,47 @@ google-chrome "file://$PWD/office/index.html"
 | 경로 | 내용 |
 |---|---|
 | `index.html`, `site/img/` | 소개 페이지(sim-office.benelog.net 첫 화면)와 그 스크린숏(`tools/office-check.sh`로 찍어 webp로 줄임) |
-| `office/index.html`, `game.css`, `game.js` | 엔진: 존·인물·대화·TTS·시간·돈·상점·지난 대화·저장·디버그 API(`SO.debug`) |
+| `office/index.html`, `office/game.css` | 화면 |
+| `office/engine/` | 엔진: 존·인물·대화·TTS·시간·상점·지난 대화·저장·디버그 API(`SO.debug`) |
+| `office/systems/` | 생활의 규칙: 근태·휴가·집안일·건강·돈 등. 훅(`office/engine/hooks.js`)으로 엔진에 붙음 |
 | `office/zones/<zone>.js` | 존 11개의 배치(home, home_derek, home_priya, city, office, diner, grill, market, airport, hotel, client). `index.js`의 `SO_ZONE_KIT`가 배치 도우미(방 꾸미기, 마을 밖 산맥·바다) |
-| `office/data/db.js` | DoltHub에서 내려받은 데이터(`window.SO_DB`). **생성물** |
+| `office/data/db.js` | `db/`에서 만든 데이터(`window.SO_DB`). **생성물** |
 | `office/life.js` | 거리의 삶: 걷는 행인·앉은 사람, 달리는 차, 신호등 |
 | `office/jog.js` | 조깅 미니 게임: 달리기 길, 박자 판정, 경쟁 주자, 파도 소리 |
-| `office/models/*.js` | 모델(base64 .glb): Kenney 소품 팩, Quaternius 인물(`man-*`, `woman-*`)과 리그(`rig-*`). **생성물**, 목록은 `office/models/README.md` |
+| `office/models/*.js` | 모델(base64 .glb): Kenney·Quaternius 소품 팩, Quaternius 인물(`man-*`, `woman-*`)과 리그(`rig-*`). **생성물**, 목록은 `office/models/README.md` |
 | `office/PLAN.md` | 설계서: 규칙, 데이터 모양, 장소·인물 id, 존 파일 명세, 엔진 요구사항 |
-| `db/schema.sql`, `db/seed/*.sql` | DoltHub에 넣는 스키마와 시드(대화·인물·물품·달력) |
-| `tools/dolt.mjs` | DoltHub push / query / pull |
-| `tools/db-lint.mjs` | 데이터 검사(참조·턴 순서·보기·반응·한국어) |
-| `tools/office-models.py`, `office-models-check.mjs` | Kenney .glb → 소품 팩 만들기와 검사 |
+| `db/world/`, `db/scenarios/` | 데이터의 원본: 세계(규칙·장소·인물·물품)와 주인공별 대화. 쓰는 법은 `db/README.md` |
+| `db/schema.sql` | 표와 열 |
+| `tools/db.mjs`, `tools/lib/` | `db/` → `db.js`(build), DoltHub diff / push / pull / query / sql |
+| `tools/db-lint.mjs` | 데이터 검사(참조·턴 순서·보기·반응·한국어·일과·날씨·잡담) |
+| `tools/office-models.py`, `office-models-check.mjs` | Kenney·Quaternius 원본 → 소품 팩 만들기와 검사 |
 | `tools/office-characters.py`, `office-characters-check.mjs` | Quaternius → 인물·리그 만들기와 검사 |
 | `tools/office-check.sh`, `office-check.mjs` | 헤드리스 Chrome 점검 |
 | `kenney/<kit>/` | Kenney CC0 원본 .glb, 텍스처, 라이선스(쓰는 것만) |
-| `quaternius/<pack>/` | Quaternius CC0 인물 원본(.gltf, .blend), 라이선스(쓰는 것만) |
+| `quaternius/<pack>/` | Quaternius CC0 원본(인물·자동차·식물·집 가구·건물·숲), 라이선스(쓰는 것만) |
 | `vendor/three-game.min.js` | three.js r186 + GLTFLoader·SkeletonUtils(MIT) |
+| `vendor/yuka.min.js` | Yuka 0.7.8: 자동차·행인 조향(MIT) |
 
-## 데이터: DoltHub
+## 데이터: `db/`와 DoltHub
 
-대화·인물·잡담·물품·달력·설정의 원본은 DoltHub **[benelog/sim-office](https://www.dolthub.com/repositories/benelog/sim-office)**(main)입니다. 게임은 `file://`에서 fetch를 못 쓰므로 표를 통째로 `office/data/db.js`로 내려받아 씁니다.
+대화·인물·잡담·물품·달력·설정의 원본은 `db/`의 JS 모듈입니다(쓰는 법은 `db/README.md`). 게임은 `file://`에서 fetch를 못 쓰므로 `node tools/db.mjs build`가 모듈을 모아 `office/data/db.js`로 만듭니다. 공개 사본은 DoltHub **[benelog/sim-office](https://www.dolthub.com/repositories/benelog/sim-office)**(main)에 있습니다.
 
 ```sh
-source .envrc                                   # DOLTHUB_TOKEN
-node tools/dolt.mjs push db/seed/14-week1.sql   # SQL 파일의 문장을 하나씩 DoltHub에 (문장마다 커밋 하나, 약 2초)
-node tools/dolt.mjs query "select id, title from episodes where day_from = 3"
-node tools/dolt.mjs pull                        # 모든 표 → office/data/db.js
-node tools/db-lint.mjs                          # 내려받은 데이터 검사
+node tools/db.mjs build                 # db/ → office/data/db.js, 이어서 tools/db-lint.mjs (인터넷 필요 없음)
+source .envrc                           # DOLTHUB_TOKEN (아래 명령은 모두 토큰이 필요)
+node tools/db.mjs diff                  # db/와 DoltHub에서 다른 행
+node tools/db.mjs push                  # 바뀐 행만 DoltHub에 (문장 하나가 커밋 하나, 약 2초)
+node tools/db.mjs query "select id, title from episodes where day_from = 3"
+node tools/db.mjs pull                  # DoltHub → office/data/db.js (공개된 내용을 볼 때)
 ```
 
-- 표: `config`, `places`, `npcs`, `chatter`, `episodes`, `turns`, `phrases`, `items`, `calendar` (`db/schema.sql`에 설명).
-- 쓰기 API는 **문장 하나에 커밋 하나**라서 시드는 여러 행을 한 `REPLACE INTO`에 넣습니다. URL로 인코딩해 16KB를 넘는 문장은 거부되니 큰 표는 문장을 나눕니다. 문장 구분은 줄 끝의 `;`.
-- 문구를 고칠 때는 `db/seed/*.sql`을 고쳐 push하고 pull합니다. `db.js`는 직접 고치지 않습니다.
+- 표와 열은 `db/schema.sql`에 있습니다. 열을 바꿀 때는 `schema.sql`을 고치고 같은 내용의 `ALTER TABLE`을 `node tools/db.mjs sql <파일>`로 DoltHub에 한 번 실행합니다.
+- 쓰기 API는 **문장 하나에 커밋 하나**이고 16KB를 넘는 문장은 거부합니다. `push`가 행을 묶어 보내고 크기 한도에 맞춰 문장을 나눕니다.
+- 문구를 고칠 때는 `db/`의 모듈을 고쳐 `build`합니다. `db.js`는 직접 고치지 않습니다.
 
 ## 모델: Kenney·Quaternius CC0
 
-인물은 Quaternius의 Ultimate Modular Men과 Ultimate Modular Women(같은 골격, 옷마다 머리·몸·다리·발 부품)을 부품을 섞고 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 자동차(Car Kit), 가구(Furniture Kit 140개), 음식(Food Kit 78개), 자연물(Nature Kit 71개: 나무·덤불·꽃·바위·길, 팔레트는 도시 키트에 맞춰 다시 칠함)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney 파일 이름 그대로이고 텍스처는 .glb 안에 들어 있습니다.
+인물은 Quaternius의 Ultimate Modular Men과 Ultimate Modular Women(같은 골격, 옷마다 머리·몸·다리·발 부품)을 부품을 섞고 옷·머리·피부색을 바꿔 22명으로 만들었습니다(키 약 0.95, 애니메이션은 남녀 리그 파일 `rig-umc`, `rig-women`에 idle walk sprint sit emote-yes emote-no interact-right). 소품은 Kenney의 도시(City Kit Commercial·Suburban), 도로(City Kit Roads), 가구(Furniture Kit 140개), 음식(Food Kit 78개), 가게 소품(Mini Market·Mini Arcade·Factory Kit 13개), 공원 소품(Nature Kit 16개, 팔레트는 도시 키트에 맞춰 다시 칠함)과 Quaternius의 자동차(Cars Pack 7개), 식물(Stylized Nature MegaKit 49개), 집 가구(Ultimate Furniture Pack 19개), 건물(Buildings Pack 9개), 마을 밖 숲(Ultimate Nature Pack 33개)을 Blender 5.2로 팩 하나씩 .glb로 합쳐 base64 js로 만듭니다. 노드 이름은 Kenney는 파일 이름 그대로, Quaternius는 게임에서 붙인 이름이고 텍스처는 .glb 안에 들어 있습니다.
 
 ```sh
 blender -b --python tools/office-models.py                    # 전부
@@ -79,7 +84,7 @@ node tools/office-characters-check.mjs                        # 키·발·앞·�
 ## 점검
 
 ```sh
-TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office-check/out            # 3일치: 제목 → 존 8개 → 열리는 대화 전부 → 잠 → 휴대폰 화면
+TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office-check/out            # 3일치: 제목 → 존 전부 → 열리는 대화 전부 → 잠 → 휴대폰 화면
 SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office-check/out # 15일치(미션 전부)
 ```
 
@@ -93,7 +98,8 @@ SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office
 ## 저작권·출처
 
 - 인물: [Quaternius](https://quaternius.com) — [Ultimate Modular Men](https://quaternius.com/packs/ultimatemodularmen.html), [Ultimate Modular Women](https://quaternius.com/packs/ultimatemodularwomen.html)(원본 Google Drive가 다운로드 한도로 막혀 [poly.pizza 묶음](https://poly.pizza/bundle/Ultimate-Modular-Women-Pack-aCBDXDdTNN)의 glb를 씀) — CC0.
-- 소품: [Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial), [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban), [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Car Kit](https://kenney.nl/assets/car-kit)(달리는 차와 주차된 차 전부), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit), [Nature Kit](https://kenney.nl/assets/nature-kit) — CC0.
-- three.js — MIT (`vendor/three.LICENSE`).
+- 소품: [Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial), [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban), [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit), [Nature Kit](https://kenney.nl/assets/nature-kit) — CC0.
+- 소품: [Quaternius](https://quaternius.com) — [Cars Pack](https://quaternius.com/packs/cars.html)(달리는 차와 주차된 차 전부), [Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html)(무료 standard판), [Ultimate Furniture Pack](https://quaternius.com/packs/ultimatefurniture.html), [Buildings Pack](https://quaternius.com/packs/buildings.html), [Ultimate Nature Pack](https://quaternius.com/packs/ultimatenature.html) — CC0.
+- three.js — MIT (`vendor/three.LICENSE`). Yuka — MIT (`vendor/yuka.LICENSE`).
 - 대사·표현·인물·회사(Seaside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
 - 이 저장소는 2026-09-26 어린 왕자 3D 게임으로 시작했다가 같은 날 Sim Office로 바꿨습니다(이전 게임은 커밋 609621f).

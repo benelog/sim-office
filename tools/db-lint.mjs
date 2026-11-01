@@ -25,6 +25,7 @@ const turnsBy = Map.groupBy(DB.turns, t => t.episode), phrasesBy = Map.groupBy(D
 const cfg = DB.config, start = String(cfg.start_date || '');
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DAY_NAMES = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 // a list in a column or in config, read the way the game reads it (listOf in office/engine/core.js)
 const listOf = (v) => v == null ? [] : String(v).split(/[,\s]+/).filter(Boolean);
 const pairsOf = (v) => listOf(v).map(x => x.split(':')).filter(x => x[0]);          // 'jun:0,derek:168'
@@ -33,6 +34,11 @@ const utc = (iso) => new Date(iso + 'T00:00:00Z');
 const placeKind = (id) => places.get(id)?.kind;
 const tagsOf = (e) => listOf(e.tags);
 const checkKind = (w, v, set, key = 'kind') => { if (!set.has(v)) bad(w, `${key} "${v}" is not one of ${Array.from(set).join(', ')}`); };
+function checkSpan(w, from, to) {          // two times of a day in order; false when they are not
+  if (!HHMM.test(from || '') || !HHMM.test(to || '')) { bad(w, `bad time ${from}–${to}`); return false; }
+  if (from >= to) { bad(w, `time_from ${from} is not before time_to ${to}`); return false; }
+  return true;
+}
 // a row's hero: a hero id, a list ('jun,derek') or all
 const heroesOf = (h) => h === 'all' ? heroIds : listOf(h);
 const requireHero = (w, h) => { if (!heroes.has(h)) bad(w, `hero "${h}" not in heroes`); };
@@ -105,8 +111,7 @@ function checkEpisodes() {
     else if (npc.place !== e.place && !tags.includes('video')) {          // a video call is at your desk
       warn(w, `npc ${e.npc} normally stands at ${npc.place}, episode is at ${e.place}`);
     }
-    if (!HHMM.test(e.time_from || '') || !HHMM.test(e.time_to || '')) bad(w, `bad time ${e.time_from}–${e.time_to}`);
-    else if (e.time_from >= e.time_to) bad(w, `time_from ${e.time_from} is not before time_to ${e.time_to}`);
+    checkSpan(w, e.time_from, e.time_to);
     if (e.day_to != null && e.day_from > e.day_to) bad(w, `day_from ${e.day_from} > day_to ${e.day_to}`);          // NULL: no last day
     if (!Number.isInteger(e.reward ?? 0) || !Number.isInteger(e.energy ?? 0)) bad(w, 'reward and energy must be whole numbers');
     for (const r of listOf(e.requires)) {
@@ -142,7 +147,7 @@ function checkTurns() {
         if (who && hs.includes(who)) bad(w, `speaker "${who}" is the hero of this episode (the player)`);
       }
       // multiple choice only (2026-10-02): the model and three plausible wrong answers, each with how the other person reacts,
-      // all in English and Korean (the screen shows one language). answers/hints are no longer used by the game.
+      // all in English and Korean (the screen shows one language).
       if (!t.line || !t.prompt || !t.model) bad(w, 'line, prompt and model are required');
       for (const k of ['distractors', 'distractors_ko', 'reactions', 'reactions_ko']) if (!isThree(t[k])) bad(w, `${k} must be 3 strings`);
       if (isThree(t.distractors) && t.model) {
@@ -199,6 +204,80 @@ function checkCalendar() {
     else if (c.day < e.day_from || (e.day_to != null && c.day > e.day_to)) bad(w, `episode ${e.id} is not open on day ${c.day}`);
     else if (!heroesOf(e.hero).includes(c.hero)) bad(w, `episode ${e.id} belongs to ${e.hero}, the calendar row to ${c.hero}`);
   }
+}
+
+// schedule (where a person is through the day, scheduledPlace in office/engine/people.js): a known person and place, times
+// in order, and days in a form the game reads: all, weekday, weekend, names of days, or game days ('11-12'), never a mix
+// ('weekday,sat' would only be Saturdays). The first row that fits wins, so a row the ones above it always beat never
+// happens. A company holiday counts as a weekend, which gives twelve kinds of day: each name off, and Monday to Friday worked
+const GAME_DAYS = /^(\d+)(?:-(\d+))?$/;
+const WEEK_KINDS = DAY_NAMES.flatMap((name, i) => i < 5 ? [{ name, off: false }, { name, off: true }] : [{ name, off: true }]);
+function fitsDay(days, kind) {          // onDay in scheduledPlace
+  const m = GAME_DAYS.exec(days);
+  if (m) return kind.day >= +m[1] && kind.day <= +(m[2] || m[1]);
+  return days === 'all' || days === (kind.off ? 'weekend' : 'weekday') || listOf(days).includes(kind.name);
+}
+function gameDayKinds(days) {
+  const m = GAME_DAYS.exec(days), out = [];
+  if (m) for (let d = +m[1]; d <= +(m[2] || m[1]); d++) out.push({ day: d, name: DAY_NAMES[(d - 1) % 7], off: (d - 1) % 7 >= 5 });
+  return out;
+}
+function checkScheduleDays(w, days) {
+  const m = GAME_DAYS.exec(days), names = listOf(days);
+  const known = m ? +m[1] >= 1 && +m[1] <= +(m[2] || m[1])
+    : ['all', 'weekday', 'weekend'].includes(days) || (names.length > 0 && names.every(d => DAY_NAMES.includes(d)));
+  if (!known) bad(w, `days "${days}" are not all, weekday, weekend, names of days or game days`);
+  return known;
+}
+function checkSchedule() {
+  for (const [npc, rows] of Map.groupBy(DB.schedule, s => s.npc)) {
+    if (!npcs.has(npc)) bad(`schedule ${npc}`, 'npc does not exist');
+    const fine = rows.filter(s => {
+      const w = `schedule ${npc}/${s.seq}`, days = checkScheduleDays(w, s.days), times = checkSpan(w, s.time_from, s.time_to);
+      if (!places.has(s.place)) bad(w, `place "${s.place}" not in places`);
+      return days && times;
+    });
+    const used = new Set(), times = new Set(fine.flatMap(s => [s.time_from, s.time_to]));
+    for (const kind of WEEK_KINDS.concat(fine.flatMap(s => gameDayKinds(s.days)))) for (const t of times) {
+      used.add(fine.find(s => fitsDay(s.days, kind) && s.time_from <= t && t < s.time_to));
+    }
+    for (const s of fine) if (!used.has(s)) bad(`schedule ${npc}/${s.seq}`, `never happens: the rows above it take ${s.days} ${s.time_from}–${s.time_to}`);
+  }
+}
+
+// weather (one row a game day, office/engine/environment.js): a kind the game can show, days from 1 with no gap (a day
+// without a row shows the weather of another row), whole °F that Fairview could have (Celsius falls outside them) with
+// the low below the high, and a forecast in both languages that says so when it rains or is foggy
+const WX_KINDS = new Set(['clear', 'partly', 'cloudy', 'rain', 'fog']);
+const WX_WORDS = { rain: /rain|shower|drizzle/i, fog: /fog/i };
+function checkWeather() {
+  const gap = DB.weather.findIndex((d, i) => d.day !== i + 1);
+  if (gap >= 0) bad('weather', `no row for day ${gap + 1}: that day would show the weather of another row`);
+  for (const d of DB.weather) {
+    const w = `weather ${d.day}`;
+    checkKind(w, d.kind, WX_KINDS);
+    if (![d.low_f, d.high_f].every(t => Number.isInteger(t) && t >= 25 && t <= 105)) bad(w, `low ${d.low_f}, high ${d.high_f}: want whole °F from 25 to 105`);
+    if (!(d.low_f < d.high_f)) bad(w, `low ${d.low_f} is not below high ${d.high_f}`);
+    if (!d.forecast || !d.forecast_ko) bad(w, 'forecast and forecast_ko are required');
+    if (WX_WORDS[d.kind] && !WX_WORDS[d.kind].test(d.forecast)) warn(w, `a ${d.kind} day, but the forecast does not say so`);
+  }
+}
+
+// smalltalk (remark in office/engine/hud.js): the game asks for these topics by name, so any other is never said and each
+// of them needs lines (every weather kind too: the engine makes days of all of them); the lines go on screen in both
+// languages, with nothing filled in but {name} (personal in office/engine/talk.js)
+const TALK_TOPICS = new Set([
+  ...Array.from(WX_KINDS, k => 'weather:' + k), 'day:monday', 'day:friday', 'day:weekend', 'holiday', 'hybrid:office', 'hybrid:remote',
+  'time:morning', 'time:lunch', 'time:evening', 'time:dark', 'you:wet', 'you:late', 'you:laundry'
+]);
+function checkSmalltalk() {
+  for (const s of DB.smalltalk) {
+    const w = `smalltalk ${s.topic}/${s.seq}`;
+    checkKind(w, s.topic, TALK_TOPICS, 'topic');
+    if (!s.line || !s.line_ko) bad(w, 'line and line_ko are required');
+    if (/\{(?!name\})\w+\}/.test(String(s.line) + (s.line_ko || ''))) bad(w, 'a placeholder nothing fills (only {name} is)');
+  }
+  if (DB.smalltalk.length) for (const t of TALK_TOPICS) if (!DB.smalltalk.some(s => s.topic === t)) bad('smalltalk', `no lines for ${t}`);
 }
 
 // a message or a letter that comes back: every (days; 30 or more = the same date every month) and last_day are whole
@@ -315,7 +394,7 @@ function checkTv() {
 // and open around its time; every hero of the routine has at least one. Hybrid work (config hybrid_from, remote_days,
 // remote_people) adds a routine's days after the start (hybrid_days) and its video calls for remote days
 // (remote_episodes: tagged video, at the hero's desk at home, around the routine's time, one for every hero of the routine)
-const ROUTINE_DAYS = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']);
+const ROUTINE_DAYS = new Set(DAY_NAMES);
 const openAround = (e, time) => !HHMM.test(time || '') || !HHMM.test(e.time_from || '') || (e.time_from <= time && time < e.time_to);
 function poolOf(w, r, ids, what) {          // the episodes of ids that exist, after what both kinds of pool must be
   const pool = ids.map(id => episodes.get(id) || (bad(w, `${what} "${id}" does not exist`), null)).filter(Boolean);
@@ -648,10 +727,10 @@ function checkCashConfig() {
 }
 
 for (const check of [
-  checkPlaces, checkNpcs, checkHeroes, checkEpisodes, checkTurns, checkPhrases, checkItems, checkCalendar, checkMessages, checkReplies, checkMail,
-  checkBills, checkHolidays, checkRecipes, checkRadio, checkTv, checkRoutines, checkTasks, checkPlans, checkFriends, checkCards, checkCatalog,
-  checkHomeEvents, checkStartDate, checkBusConfig, checkSeasonConfig, checkHybridConfig, checkBenefitsConfig, checkFriendConfig, checkIllnessConfig,
-  checkCardConfig, checkCashConfig
+  checkPlaces, checkNpcs, checkHeroes, checkEpisodes, checkTurns, checkPhrases, checkItems, checkCalendar, checkSchedule, checkWeather, checkSmalltalk,
+  checkMessages, checkReplies, checkMail, checkBills, checkHolidays, checkRecipes, checkRadio, checkTv, checkRoutines, checkTasks, checkPlans,
+  checkFriends, checkCards, checkCatalog, checkHomeEvents, checkStartDate, checkBusConfig, checkSeasonConfig, checkHybridConfig, checkBenefitsConfig,
+  checkFriendConfig, checkIllnessConfig, checkCardConfig, checkCashConfig
 ]) check();
 
 console.log(TABLES.filter(t => t !== 'config').map(t => `${t} ${DB[t].length}`).join(', '));

@@ -1,6 +1,7 @@
--- Sim Office game data. Source of truth: DoltHub benelog/sim-office (branch main).
--- Apply with: node tools/dolt.mjs push db/schema.sql   (one statement per DoltHub operation)
--- Export to the game with: node tools/dolt.mjs pull  → office/data/db.js (window.SO_DB)
+-- The tables of the Sim Office game data. Their rows come from the modules in db/ (see db/README.md).
+-- Build the game's data with: node tools/db.mjs build  → office/data/db.js (window.SO_DB)
+-- Publish the rows with: node tools/db.mjs push (DoltHub benelog/sim-office, branch main). To change the columns
+-- there, run the same ALTER TABLE once with: node tools/db.mjs sql <file>
 DROP TABLE IF EXISTS _probe;
 
 CREATE TABLE IF NOT EXISTS config (
@@ -164,9 +165,10 @@ CREATE TABLE IF NOT EXISTS weather (
   forecast_ko varchar(160)
 );
 
--- What people say in passing about the weather, the day or the time. topic: weather:<kind> | day:monday |
--- day:friday | day:weekend | time:morning | time:lunch | time:evening | hybrid:office (an office day of hybrid work, at
--- the office) | hybrid:remote (a remote day, at the quiet office).
+-- What people say in passing about the weather, the day, the time or how you look. topic: weather:<kind> |
+-- day:monday | day:friday | day:weekend | holiday | time:morning | time:lunch | time:evening | time:dark |
+-- hybrid:office (an office day of hybrid work, at the office) | hybrid:remote (a remote day, at the quiet office) |
+-- you:wet | you:late | you:laundry.
 CREATE TABLE IF NOT EXISTS smalltalk (
   topic varchar(24) NOT NULL,
   seq int NOT NULL,
@@ -455,7 +457,7 @@ CREATE TABLE IF NOT EXISTS catalog (
   sort int NOT NULL DEFAULT 0
 );
 
--- Home life (office/game.js, db/seed/81-home.sql). kind: repair | noise | text | email. hero: all, a hero id or a list.
+-- Home life (office/systems/home.js, db/world/home.mjs). kind: repair | noise | text | email. hero: all, a hero id or a list.
 -- repair: something at home that breaks after the missions; title = the thing (kitchen faucet), body = what you notice,
 -- place = the kind of place at home where you report it (eat | sleep | desk), effect = what it does until the visit
 -- (cook | dishes | cold | sleep | shower | fridge), days = days from the request to the visit, cost = what a repair
