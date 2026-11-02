@@ -3,7 +3,7 @@
 'use strict';
 // ---------------------------------------------------------------- the api a zone file's setup/update sees
 const api = {
-  T, scene, camera, renderer, toon, litMaterial, shadows, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
+  T, scene, camera, renderer, toon, litMaterial, grassMaterial, shadows, packNode, addProp: (p) => addProp(p, false), toast, say, speak, play,
   get zone() { return zoneId; }, get spec() { return Z; }, get group() { return zoneGroup; }, get player() { return player; },
   get npcs() { return npcActors; }, get props() { return zoneProps; }, get game() { return G; }, get state() { return state; },
   get day() { return G ? G.day : 0; }, get minute() { return hourNow() * 60; }, isDone: (id) => !!(G && G.done[id]),

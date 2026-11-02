@@ -193,7 +193,7 @@ async function enterZone(z, arrive, at, heading) {
   const fw = spec.indoor ? w : Math.max(w, wk[2] - wk[0]) + 160, fd = spec.indoor ? d : Math.max(d, wk[3] - wk[1]) + 160;
   const fg = new T.PlaneGeometry(fw, fd).rotateX(-Math.PI / 2);
   disposables.push(fg);
-  const floor = new T.Mesh(fg, toon(spec.floor || '#c8c8c8'));
+  const floor = new T.Mesh(fg, spec.indoor ? toon(spec.floor || '#c8c8c8') : grassMaterial(spec.floor));      // outdoors: the lawn (engine/grass.js)
   if (!spec.indoor) floor.position.set((wk[0] + wk[2]) / 2, 0, (wk[1] + wk[3]) / 2);
   floor.position.y = -0.01;
   floor.receiveShadow = true;

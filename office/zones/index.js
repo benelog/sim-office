@@ -947,6 +947,12 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     api.group.add(cap, base);
   }
 
+  function lawnMat(api, keep, color) {     // grass: the engine's lawn (world-space blades, patches), its own copy so skyTint can dim it
+    var key = 'lawn:' + (color || '');
+    if (!MATS[key]) MATS[key] = api.grassMaterial(color || '#80ad5f', true);
+    (keep.outdoor = keep.outdoor || []).push(MATS[key]);
+    return MATS[key];
+  }
   function outMat(api, keep, p) {         // a material of the land outside, dimmed after dark by skyTint
     var m = litMat(api, 'out:' + p.key, p.t);
     (keep.outdoor = keep.outdoor || []).push(m);
@@ -995,7 +1001,8 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     if (o.ground) {
       var gy = o.ground.y == null ? -0.03 : o.ground.y, R = Math.max(w, d) / 2 + 70;
       var gp = patternTex(api, o.ground.pattern || 'grass');
-      g.add(flat(api, [-R, -R, R, R], gy, outMat(api, keep, gp), gp.tile));
+      var gm = gp.key.indexOf('pat:grass:') === 0 && api.grassMaterial ? lawnMat(api, keep, o.ground.a) : outMat(api, keep, gp);
+      g.add(flat(api, [-R, -R, R, R], gy, gm, gp.tile));
       (o.ground.strips || []).forEach(function (sp, k) {
         if (sp.pattern === 'water' && window.SO_WATER) { g.add(SO_WATER.strip(sp.rect, gy + 0.004 + k * 0.001, sp.water)); return; }      // water: engine/water.js
         var st = patternTex(api, sp), across = sp.dir === 'z' ? sp.rect[2] - sp.rect[0] : sp.rect[3] - sp.rect[1];
