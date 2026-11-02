@@ -29,6 +29,7 @@ function frame() {
   placeTags();
   walkSignTick();
   waterTick(dt);
+  tuftTick(dt);
   renderer.render(scene, camera);
   if (state === 'title') renderPreview(dt);
 }
