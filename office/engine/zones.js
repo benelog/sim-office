@@ -107,8 +107,11 @@ function addProp(p, isTile) {
   let obj = null, fallback = false;
   if (p.pack === 'box' || !p.pack) {
     const sz = p.size || [1, 1, 1];
-    obj = new T.Mesh(boxGeo, toon(p.color || '#9aa3b5'));
-    obj.scale.set(sz[0], sz[1], sz[2]);
+    if (p.water) obj = waterProp(p, sz);          // a river or a harbour: a water surface on the box's top (engine/water.js)
+    else {
+      obj = new T.Mesh(boxGeo, toon(p.color || '#9aa3b5'));
+      obj.scale.set(sz[0], sz[1], sz[2]);
+    }
   } else {
     obj = packNode(p.pack, p.node);
     if (obj) {
@@ -135,7 +138,7 @@ function addProp(p, isTile) {
   zoneGroup.add(holder);
   holder.updateMatrixWorld(true);
   holder.traverse(o => { o.matrixAutoUpdate = false; });
-  const flat = isTile || p.pack === 'food' || /^(floor|rug|path|driveway|tile|road-(?!sign))/i.test(p.node || '');
+  const flat = isTile || p.pack === 'food' || !!p.water || /^(floor|rug|path|driveway|tile|road-(?!sign))/i.test(p.node || '');
   shadows(holder, !flat);
   if (!isTile && !flat) zoneBox.union(new T.Box3().setFromObject(holder));
   if (p.pack === 'roads' && /^light-(square|curved)/.test(p.node || '')) addLamp(p, holder);

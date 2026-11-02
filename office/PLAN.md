@@ -65,6 +65,7 @@
 - **빨래**(`config.closet_outfits` 7, `laundry_hours` 07:00-22:00, `items` `detergent` 16회분·`laundry_load` $5): 깨끗한 옷 수(`clean`, 처음 5벌)는 아침마다 한 벌 줄고, 없으면 어제 옷을 입은 날(`dirtyDay`)이라 사무실 사람들이 한마디(smalltalk `you:laundry`). 집 현관에서 `Do laundry`: 세제 1회분과 90분, 세입자(Jun·Priya)는 건물 세탁실(영업시간, $5), 집주인(Derek, housing Mortgage)은 자기 세탁기(무료, 21:00까지 시작). 끝나면 7벌. 아침 카드에 옷이 떨어져 가면 알림, Inventory 위에 깨끗한 옷 수. 세탁실 규칙 안내문이 우편함에 옴(2일).
 - **목소리**: 인물마다 `npcs.voice_like`(목소리 이름 패턴, 미국 영어 목소리에서 먼저 찾음) → 없으면 모델의 성별(`man-`/`woman-`)에 맞는 미국 영어 목소리 중 id로 고른 것 → 그것도 없으면 기본 목소리의 음높이를 남자는 −0.3, 여자는 +0.3. **주인공이 한 말(입력·선택한 답)도 주인공의 목소리로 읽고**, 상대의 답은 그 뒤에 이어집니다.
 - **지난 대화**(Menu > Conversations, `T`): 끝낸 대화를 최근 것부터 다시 읽고 ▶로 들음(맞는 대답과 그 대화의 점수).
+- **바다와 강**(2026-11-02, `office/engine/water.js`, [Ultra Water](https://github.com/Humpalumps/Ultra-Water)(MIT)를 옮김): GPU의 Tessendorf FFT 파도(128² 캐스케이드 4개 60·13.1·3.1·0.83 m, JONSWAP 바람 파도 + 남서쪽 너울, 야코비안 물마루 거품, 300초 고리)가 세 가지 물에 쓰임. **바다**(존 킷 `sea`): 카메라 둘레 극좌표 격자를 바다 사각형 안으로 모아 변위, 모래는 풀밭 끝에서 평평하다가 바닷속으로 지수 경사(위 7%, 결국 7 m)로 이어지고 엔진 바닥은 모래에서 멈춤(`SO_WATER.landEnd`, 방문마다). 해안파는 곧은 해변의 이코날 도달 시간(닫힌 꼴)을 따라 느려지고 몰리고 부서지며(구간마다 일찍·늦게, 세트, 흰 거품이 해안 쪽으로 흐름, 쇄파대에 남는 레이스), 모래 셰이더(툰 재질에 주입)가 스워시(밀려 올라왔다 빠지는 물, 거품 끝, 마르는 젖은 모래), 픽셀 단위 물가 거품, 커스틱, 물기둥(빨강부터 흡수, 산란색)을 그림. 수면은 그 위에 반사·햇빛·거품만 알파로 얹어 얕은 곳은 모래가 청록으로, 깊은 곳은 물빛으로 보임(얇은 곳은 투명해져 격자 교선이 안 보임). **강**(소품 `water: 'river'`, `flow`): 평면에 잔물결이 흐름 방향으로 흘러가고(2상 플로 맵), 둑 쪽으로 얕아지며 둑을 따라 거품 줄, 반사 아래쪽에 맞은편 둑의 나무. **실내에서 보이는 물**(바닥 띠 `pattern: 'water'`, `water: 'river'`가 아니면 항구): 깊은 물. 모두 게임 하늘(돔과 같은 그라데이션·노을빛·구름)을 비추고, 해나 달은 GGX 하이라이트와 반짝임(포아송 면 개수), 프레넬(거칠기 반영 F90), 장면과 같은 ACES 톤 매핑과 안개. 날씨가 파도 세기를 바꿈(비 ×1.75, 흐림 ×1.3, 안개 ×0.6, 서서히). 낮음 그래픽: 격자 절반, 반짝임·반사 구름 없음, 시뮬레이션은 두 프레임에 한 번. float 렌더 타깃이 없으면 파도 없이 평평한 물(나머지는 그대로). 통합 GPU 2560×1440에서 해변 장면 +2 ms. 디버그 `SO_WATER.sim`·`SO_WATER.params`·`SO_WATER.U`.
 - **조깅**(`office/jog.js`): 시내를 한 바퀴 도는 달리기 길 Fairview Loop(서쪽 가장자리 → 해변 → 동쪽 가장자리 → 강변, 약 175). 집 현관에서 `Go for a jog`(40분 경과, 에너지 −12) 또는 제목 화면의 `Jogging mini-game`(게임 없이 단독). 1인칭 시점으로 저절로 달리고, 박자(0.4초)에 맞춰 왼발·오른발을 번갈아 누릅니다(← → / A D / F J, 터치는 화면 좌우). Perfect·Good·OK에 따라 페이스가 올라 속도 2.2~5.6, 점수는 연속 성공 배수. 다른 주자 셋과 순위를 겨루고, 앞지를 때 "On your left!". 최고 기록은 `localStorage so.v1.jog`. 해변에 가까워지면 파도 소리(Web Audio로 합성, 시내 남쪽을 걸을 때도 들림).
 - **마을 구경**(제목 화면 `Look around town`): 시내를 자유 카메라로 둘러봄. ↑↓/WS 이동, ←→/AD 회전, QE 옆으로, ZX·휠 확대, RF 높이, Shift 빠르게, Space 자동 회전, T 시간대, Y 날씨, Esc 돌아가기, 마우스·터치 끌기.
 - **조작**: ↑↓/WS 걷기, ←→/AD 돌기, Shift 달리기, E/Enter 행동. 터치: 왼쪽 아래 조이스틱, 행동 버튼. HUD: 요일·날짜·시각, $잔액, 에너지 막대, 다음 일정, 현재 목표.
@@ -74,7 +75,7 @@
 ```
 office/
   index.html  game.css                # 화면 (A1)
-  engine/*.js                         # 엔진: 세계·화면·대화, 한 범위를 함께 쓰는 일반 스크립트 (A1)
+  engine/*.js                         # 엔진: 세계·화면·대화, 한 범위를 함께 쓰는 일반 스크립트 (A1; water.js는 바다·강)
   systems/*.js                        # 생활의 규칙: 근태·휴가·집안일·건강·돈 … (engine/hooks.js로 엔진에 붙음)
   life.js  jog.js  season.js          # 거리의 자동차·행인 / 조깅 미니 게임 / 계절 풍경(단풍·낙엽·연말 장식)
   zones/index.js, zones/<zone>.js     # 존 배치 (A2)
@@ -201,7 +202,7 @@ SO_ZONES.office = {
 ```
 
 - `solid`: `true`이면 노드의 바운딩 박스로, `[w,d]`이면 그 크기의 축정렬 사각형(월드 축, `at` 중심)으로 충돌. 없으면 통과. **가구 조각은 원점이 모서리**(x 0..w, z -d..0)라 가구는 `solid:true`를 씁니다. `zones/index.js`의 `SO_ZONE_KIT.prop()`은 발자국 중심으로 적은 `at`을 노드 원점으로 바꿔 줍니다.
-- `scale`은 팩 기본 배율에 곱해지는 값(기본 1). `pack:'box'`, `size:[w,h,d]`, `color`는 모델 없이 상자(placeholder, 벽·카운터에도 씀).
+- `scale`은 팩 기본 배율에 곱해지는 값(기본 1). `pack:'box'`, `size:[w,h,d]`, `color`는 모델 없이 상자(placeholder, 벽·카운터에도 씀). 상자에 `water: 'river' | 'harbor'`(와 `flow: [x, z]`, 기본은 긴 쪽)를 주면 상자 대신 그 윗면에 엔진의 물(`engine/water.js`)이 깔림(색은 지도용, 그림자 상자 계산에서 빠짐).
 - 존은 서로 독립된 좌표계입니다(엔진이 존을 바꿀 때 씬을 통째로 교체).
 - 인물은 존 파일에 두지 않습니다. `npcs.place` → `places[id].at`에 엔진이 세웁니다. 플레이어의 시작은 `home_bed` 옆.
 - `zones/index.js`: `window.SO_ZONES = {}; window.SO_ZONE_FILES = ['home','home_derek','home_priya','city','office','diner','grill','market','airport','hotel','client'];` 엔진은 이 목록대로 `zones/<zone>.js`를 `<script>`로 읽습니다.
@@ -223,4 +224,4 @@ SO_ZONES.office = {
 
 ## 7. 저작권·표기
 
-Kenney 에셋은 CC0(표기 권장: "Kenney (www.kenney.nl)"), Quaternius 에셋도 CC0(quaternius.com). three.js·Yuka는 MIT. 대사·표현은 전부 자체 저작, 실제 회사·인물 이름을 쓰지 않습니다(Seaside Labs, Summit Retail, Fairview는 가상). 안내는 영어 기본, 한국어는 `_ko`.
+Kenney 에셋은 CC0(표기 권장: "Kenney (www.kenney.nl)"), Quaternius 에셋도 CC0(quaternius.com). three.js·Yuka는 MIT. 물(`office/engine/water.js`)은 Humpalumps의 Ultra Water(MIT, `vendor/ultra-water.LICENSE`)를 옮긴 것. 대사·표현은 전부 자체 저작, 실제 회사·인물 이름을 쓰지 않습니다(Seaside Labs, Summit Retail, Fairview는 가상). 안내는 영어 기본, 한국어는 `_ko`.

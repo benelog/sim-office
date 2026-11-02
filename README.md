@@ -51,6 +51,7 @@ google-chrome "file://$PWD/office/index.html"
 | `quaternius/<pack>/` | Quaternius CC0 원본(인물·자동차·식물·집 가구·건물·숲), 라이선스(쓰는 것만) |
 | `vendor/three-game.min.js` | three.js r186 + GLTFLoader·SkeletonUtils(MIT) |
 | `vendor/yuka.min.js` | Yuka 0.7.8: 자동차·행인 조향(MIT) |
+| `vendor/ultra-water.LICENSE` | `office/engine/water.js`(바다·강: FFT 파도, 해안파, 스워시)가 옮긴 Ultra Water의 MIT 라이선스 |
 
 ## 데이터: `db/`와 DoltHub
 
@@ -101,5 +102,6 @@ SO_DAYS=15 TMPDIR=/tmp/claude-1000 tools/office-check.sh /tmp/claude-1000/office
 - 소품: [Kenney](https://www.kenney.nl) — [City Kit (Commercial)](https://kenney.nl/assets/city-kit-commercial), [City Kit (Suburban)](https://kenney.nl/assets/city-kit-suburban), [City Kit (Roads)](https://kenney.nl/assets/city-kit-roads), [Furniture Kit](https://kenney.nl/assets/furniture-kit), [Food Kit](https://kenney.nl/assets/food-kit), [Mini Market](https://kenney.nl/assets/mini-market), [Mini Arcade](https://kenney.nl/assets/mini-arcade), [Factory Kit](https://kenney.nl/assets/factory-kit), [Nature Kit](https://kenney.nl/assets/nature-kit) — CC0.
 - 소품: [Quaternius](https://quaternius.com) — [Cars Pack](https://quaternius.com/packs/cars.html)(달리는 차와 주차된 차 전부), [Stylized Nature MegaKit](https://quaternius.com/packs/stylizednaturemegakit.html)(무료 standard판), [Ultimate Furniture Pack](https://quaternius.com/packs/ultimatefurniture.html), [Buildings Pack](https://quaternius.com/packs/buildings.html), [Ultimate Nature Pack](https://quaternius.com/packs/ultimatenature.html) — CC0.
 - three.js — MIT (`vendor/three.LICENSE`). Yuka — MIT (`vendor/yuka.LICENSE`).
+- 바다·강의 물: [Ultra Water](https://github.com/Humpalumps/Ultra-Water)(Humpalumps)의 FFT 파도·거품·해안파·스워시 셰이더를 옮김 — MIT (`vendor/ultra-water.LICENSE`).
 - 대사·표현·인물·회사(Seaside Labs, Summit Retail, Fairview)는 모두 자체 저작이며 가상입니다.
 - 이 저장소는 2026-09-26 어린 왕자 3D 게임으로 시작했다가 같은 날 Sim Office로 바꿨습니다(이전 게임은 커밋 609621f).

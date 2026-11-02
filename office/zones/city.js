@@ -248,9 +248,10 @@
     car('suv', 14.2, 7.5, 180, { solid: 'fit' }),
 
     // ----- the Fairview River along the north edge, Oak Avenue crossing it on a bridge
-    { pack: 'box', size: [98.5, 0.02, 5.6], at: [-50.75, -25.4], color: '#4f97d6', solid: [98.5, 5.6] },
-    { pack: 'box', size: [228.5, 0.02, 5.6], at: [115.75, -25.4], color: '#4f97d6', solid: [228.5, 5.6] },
-    { pack: 'box', size: [3.0, 0.02, 5.6], at: [0, -25.4], color: '#4f97d6' },
+    // (water: the engine's flowing water on the box's top, engine/water.js; the colour is for the map)
+    { pack: 'box', size: [98.5, 0.02, 5.6], at: [-50.75, -25.4], color: '#4f97d6', solid: [98.5, 5.6], water: 'river', flow: [1, 0] },
+    { pack: 'box', size: [228.5, 0.02, 5.6], at: [115.75, -25.4], color: '#4f97d6', solid: [228.5, 5.6], water: 'river', flow: [1, 0] },
+    { pack: 'box', size: [3.0, 0.02, 5.6], at: [0, -25.4], color: '#4f97d6', water: 'river', flow: [1, 0] },
     { pack: 'box', size: [0.12, 0.42, 6.0], at: [-1.42, -25.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },   // the bridge's railings
     { pack: 'box', size: [0.12, 0.42, 6.0], at: [1.42, -25.5], color: '#8a7a66', lift: 0.05, solid: [0.14, 6.0] },
     // the bank: reeds, rocks, a canoe pulled up on the grass, lilies in the water

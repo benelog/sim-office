@@ -28,6 +28,7 @@ function frame() {
   placeBubbles();
   placeTags();
   walkSignTick();
+  waterTick(dt);
   renderer.render(scene, camera);
   if (state === 'title') renderPreview(dt);
 }

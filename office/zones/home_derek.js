@@ -164,7 +164,7 @@
         ],
         walls: { color: '#e6cfa6', trim: '#f7f0e0', base: '#7a5230' },
         ground: { pattern: 'grass', strips: [
-          { pattern: 'water', rect: [-90, -18, 90, -9.4] },                                         // the Fairview River
+          { pattern: 'water', water: 'river', rect: [-90, -18, 90, -9.4] },                                         // the Fairview River
           { pattern: 'sand', rect: [-90, -9.4, 90, -8.7] },
           { pattern: 'sidewalk', rect: [-90, 6.6, 90, 8.0] }, { pattern: 'road', rect: [-90, 8.0, 90, 12.0] },
           { pattern: 'sidewalk', rect: [-90, 12.0, 90, 13.6] },

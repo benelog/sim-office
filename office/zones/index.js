@@ -289,7 +289,8 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
   // turns the painted town to its night version after dark. Everything is made once per zone and kept.
   //   opts.floor: pattern name or { pattern, a, b } for the whole room; opts.floors: [{ pattern, rect: [x0, z0, x1, z1] }]
   //   opts.walls: { color, back, trim, base, scale }   (back: the other side; scale: height of the pieces, 1 = 1.29)
-  //   opts.ground: { pattern, y, strips: [{ pattern, rect, dir: 'x' | 'z' }] }   (the land around the room)
+  //   opts.ground: { pattern, y, strips: [{ pattern, rect, dir: 'x' | 'z' }] }   (the land around the room; a strip with the
+  //     pattern 'water' is the engine's water, a harbour, or a river with water: 'river')
   //   opts.mountains: { side: 'n' | 's' | 'w' | 'e', from, depth, width, height, seed, cx, cz }   (a range beyond the town;
   //     cx, cz move its middle off the centre)
   //   opts.sea: { side, from, beach, width, depth, cx, cz }   (the sea beyond the town, a strip of sand before it)
@@ -455,11 +456,23 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     return g;
   }
 
-  // the sea: water out to the horizon (fog takes it), a strip of sand between the grass and the water
+  // the sea: water out to the horizon (fog takes it), a strip of sand between the grass and the water. With the
+  // engine's water (engine/water.js): the sand runs on down under the sea, the waves come in and break on it, and
+  // the engine's ground stops at the sand (SO_WATER.landEnd, again on every visit); without it, flat pictures.
   function sea(api, keep, o) {
     var T = api.T, W = o.width || 320, D = o.depth || 130, beach = o.beach == null ? 3 : o.beach;
     var grp = new T.Group();
     grp.name = 'sea';
+    if (window.SO_WATER) {
+      var sand = patternTex(api, 'sand');
+      grp.add(SO_WATER.seaBed({ width: W, depth: D, beach: beach, sand: sand.t, tile: sand.tile }));
+      shiftBy(sidePlace(grp, o.side, o.from || 31), o);
+      var out = new T.Group();
+      out.add(grp, SO_WATER.seaSurface(grp));
+      keep.seaEnd = true;
+      SO_WATER.landEnd(api.group);
+      return out;
+    }
     var wt = patternTex(api, { pattern: 'water', a: '#4a8fbf' });
     grp.add(flat(api, [-W / 2, -D, W / 2, -beach], 0.006, outMat(api, keep, wt), wt.tile));
     if (beach > 0) {
@@ -964,7 +977,7 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
     if (o.ground) api.group.children.forEach(function (c) {      // the engine's plain outer plane: our ground replaces it
       if (c.isMesh && c.geometry && c.geometry.type === 'PlaneGeometry' && Math.abs(c.position.y + 0.03) < 1e-4) c.visible = false;
     });
-    if (keep.group) { api.group.add(keep.group); refresh(api, keep); return keep.group; }
+    if (keep.group) { api.group.add(keep.group); if (keep.seaEnd) SO_WATER.landEnd(api.group); refresh(api, keep); return keep.group; }
     keep.live = [];
     var g = keep.group = new T.Group();
     g.name = 'dress';
@@ -984,6 +997,7 @@ window.SO_ZONE_FILES = ['home', 'home_derek', 'home_priya', 'city', 'office', 'd
       var gp = patternTex(api, o.ground.pattern || 'grass');
       g.add(flat(api, [-R, -R, R, R], gy, outMat(api, keep, gp), gp.tile));
       (o.ground.strips || []).forEach(function (sp, k) {
+        if (sp.pattern === 'water' && window.SO_WATER) { g.add(SO_WATER.strip(sp.rect, gy + 0.004 + k * 0.001, sp.water)); return; }      // water: engine/water.js
         var st = patternTex(api, sp), across = sp.dir === 'z' ? sp.rect[2] - sp.rect[0] : sp.rect[3] - sp.rect[1];
         var tile = [st.tile[0], st.tile[1] || across];
         g.add(flat(api, sp.rect, gy + 0.004 + k * 0.001, outMat(api, keep, st), tile, sp.dir === 'z'));
